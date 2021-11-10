@@ -58,6 +58,7 @@ func (t *TableHeap) HardDeleteTuple(rid Rid, txn concurrency.Transaction) error 
 	return nil
 }
 
+// TODO: does not set rid in row
 func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, error) {
 	// TODO: unpin pages
 	currPage, err := t.GetFirstPage()
@@ -128,6 +129,7 @@ func (t *TableHeap) ReadTuple(rid Rid, dest *Row, txn concurrency.Transaction) e
 	slottedPage := pages.SlottedPageInstanceFromRawPage(p)
 	data := slottedPage.GetTuple(int(rid.SlotIdx))
 	dest.Data = data
+	dest.Rid = rid
 	t.Pool.Unpin(p.GetPageId(), false)
 	return nil
 }

@@ -19,6 +19,7 @@ func (p RealPersistentPage) GetPageId() Pointer {
 type BufferPoolPager struct {
 	pool          *buffer.BufferPool
 	keySerializer KeySerializer
+	keySize       int
 }
 
 func (b *BufferPoolPager) UnpinByPointer(p Pointer, isDirty bool) {
@@ -34,7 +35,7 @@ func (b *BufferPoolPager) NewInternalNode(firstPointer Pointer) Node {
 
 	p, err := b.pool.NewPage()
 	common.PanicIfErr(err)
-	node := PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, serializer: b.keySerializer}
+	node := PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, serializer: b.keySerializer, keySize: b.keySize}
 
 	// write header
 	data := node.GetData()
@@ -58,7 +59,7 @@ func (b *BufferPoolPager) NewLeafNode() Node {
 
 	p, err := b.pool.NewPage() // TODO: handle error
 	common.PanicIfErr(err)
-	node := PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, serializer: b.keySerializer}
+	node := PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, serializer: b.keySerializer, keySize: b.keySize}
 
 	// write header
 	data := node.GetData()
@@ -75,18 +76,19 @@ func (b *BufferPoolPager) GetNode(p Pointer) Node {
 	common.PanicIfErr(err)
 	h := ReadPersistentNodeHeader(page.GetData())
 	if h.IsLeaf == 1 {
-		return &PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, serializer: b.keySerializer}
+		return &PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, serializer: b.keySerializer, keySize: b.keySize}
 	}
-	return &PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, serializer: b.keySerializer}
+	return &PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, serializer: b.keySerializer, keySize: b.keySize}
 }
 
 func (b *BufferPoolPager) Unpin(n Node, isDirty bool) {
 	b.pool.Unpin(int(n.GetPageId()), isDirty)
 }
 
-func NewBufferPoolPager(pool *buffer.BufferPool, serializer KeySerializer) *BufferPoolPager {
+func NewBufferPoolPager(pool *buffer.BufferPool, serializer KeySerializer, keySize int) *BufferPoolPager {
 	return &BufferPoolPager{
 		pool:          pool,
 		keySerializer: serializer,
+		keySize:       keySize,
 	}
 }

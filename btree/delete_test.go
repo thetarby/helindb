@@ -53,7 +53,7 @@ func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_2(t *testing.T) {
 }
 
 func TestDelete_Internals(t *testing.T) {
-	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}})
+	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}, KeySize: 8})
 	p := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,
@@ -83,7 +83,7 @@ func TestDelete_Internals(t *testing.T) {
 }
 
 func TestDelete_Internals2(t *testing.T) {
-	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}})
+	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}, KeySize: 8})
 	p := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,

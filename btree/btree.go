@@ -67,7 +67,7 @@ func (tree *BTree) Insert(key Key, value interface{}) {
 	i, stack = root.findAndGetStack(key, stack)
 	defer tree.pager.Unpin(root, false)
 	if i != nil {
-		panic("key already exists")
+		panic(fmt.Sprintf("key already exists:  %v", key))
 	}
 
 	var rightNod = value
