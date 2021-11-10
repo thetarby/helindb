@@ -7,6 +7,11 @@ import (
 	"helin/disk/pages"
 )
 
+/*
+	TODO: tuple might be an interface for TableHeap which implements size and data methods. Table heap does not
+	need to now about internals of the heap such as its schema etc..
+*/
+
 type Rid btree.SlotPointer
 
 func NewRid(pageID, slotIdx int) Rid {
@@ -18,13 +23,13 @@ func NewRid(pageID, slotIdx int) Rid {
 
 type ITableHeap interface {
 	// InsertTuple Insert a tuple into the table. If the tuple is too large (>= page_size), return error.
-	InsertTuple(tuple Tuple, txn concurrency.Transaction) (Rid, error)
+	InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, error)
 
 	// UpdateTuple if the new tuple is too large to fit in the old page, return error (will delete and insert)
-	UpdateTuple(tuple Tuple, rid Rid, txn concurrency.Transaction) error
+	UpdateTuple(tuple Row, rid Rid, txn concurrency.Transaction) error
 
 	// ReadTuple if tuple does not exist at Rid returns an error
-	ReadTuple(rid Rid, dest *Tuple, txn concurrency.Transaction) error
+	ReadTuple(rid Rid, dest *Row, txn concurrency.Transaction) error
 
 	// HardDeleteTuple if tuple does not exist at Rid returns an error
 	HardDeleteTuple(rid Rid, txn concurrency.Transaction) error
@@ -53,7 +58,7 @@ func (t *TableHeap) HardDeleteTuple(rid Rid, txn concurrency.Transaction) error 
 	return nil
 }
 
-func (t *TableHeap) InsertTuple(tuple Tuple, txn concurrency.Transaction) (Rid, error) {
+func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, error) {
 	// TODO: unpin pages
 	currPage, err := t.GetFirstPage()
 	if err != nil {
@@ -99,7 +104,7 @@ func (t *TableHeap) InsertTuple(tuple Tuple, txn concurrency.Transaction) (Rid, 
 	}
 }
 
-func (t *TableHeap) UpdateTuple(tuple Tuple, rid Rid, txn concurrency.Transaction) error {
+func (t *TableHeap) UpdateTuple(tuple Row, rid Rid, txn concurrency.Transaction) error {
 	page, err := t.Pool.GetPage(int(rid.PageId))
 	if err != nil {
 		return err
@@ -114,7 +119,7 @@ func (t *TableHeap) UpdateTuple(tuple Tuple, rid Rid, txn concurrency.Transactio
 	return nil
 }
 
-func (t *TableHeap) ReadTuple(rid Rid, dest *Tuple, txn concurrency.Transaction) error {
+func (t *TableHeap) ReadTuple(rid Rid, dest *Row, txn concurrency.Transaction) error {
 	p, err := t.Pool.GetPage(int(rid.PageId))
 	if err != nil {
 		return err
@@ -151,4 +156,25 @@ func (t *TableHeap) GetFirstPage() (*pages.SlottedPage, error) {
 	slottedPage := pages.SlottedPageInstanceFromRawPage(rawPage)
 
 	return slottedPage, nil
+}
+
+func NewTableHeap(pool *buffer.BufferPool, firstPageId int) *TableHeap {
+	return &TableHeap{
+		Pool:        pool,
+		FirstPageID: firstPageId,
+	}
+}
+
+func NewTableHeapWithTxn(pool *buffer.BufferPool, txn concurrency.Transaction) (*TableHeap, error) {
+	p, err := pool.NewPage()
+	if err != nil {
+		return nil, err
+	}
+	defer pool.Unpin(p.GetPageId(), true)
+	sp := pages.FormatAsSlottedPage(p)
+
+	return &TableHeap{
+		Pool:        pool,
+		FirstPageID: sp.GetPageId(),
+	}, nil
 }

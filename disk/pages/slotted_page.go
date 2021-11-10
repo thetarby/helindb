@@ -46,6 +46,9 @@ type ISlottedPage interface {
 	GetTuple(idxAtSlot int) []byte
 	InsertTuple(data []byte) (int, error)
 	UpdateTuple(idxAtSlot int, data []byte) error
+
+	// GetNextIdx returns the next not deleted slots idx in the slot array. If it is the last one that is not deleted returns error
+	GetNextIdx(currIdxAtSlot int) (int, error)
 }
 
 type SlottedPageHeader struct {
@@ -76,6 +79,22 @@ var HEADER_SIZE = binary.Size(SlottedPageHeader{})
 
 type SlottedPage struct {
 	RawPage
+}
+
+func (sp *SlottedPage) GetNextIdx(currIdxAtSlot int) (int, error) {
+	arr := sp.getSlotArr()
+	if len(arr) <= currIdxAtSlot+1 {
+		return 0, errors.New("")
+	}
+
+	for i := currIdxAtSlot + 1; i < len(arr); i++ {
+		entry := arr[i]
+		if !isDeleted(entry) {
+			return i, nil
+		}
+	}
+
+	return 0, errors.New("")
 }
 
 func (sp *SlottedPage) vacuum() {
