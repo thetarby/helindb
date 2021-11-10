@@ -39,7 +39,7 @@ type TableHeap struct {
 	lastPageID  int
 }
 
-func (t *TableHeap) HardDeleteTuple(rid Rid, dest Tuple, txn concurrency.Transaction) error {
+func (t *TableHeap) HardDeleteTuple(rid Rid, txn concurrency.Transaction) error {
 	page, err := t.pool.GetPage(int(rid.PageId))
 	if err != nil {
 		return err
@@ -100,7 +100,18 @@ func (t *TableHeap) InsertTuple(tuple Tuple, txn concurrency.Transaction) (Rid, 
 }
 
 func (t *TableHeap) UpdateTuple(tuple Tuple, rid Rid, txn concurrency.Transaction) error {
-	panic("implement me")
+	page, err := t.pool.GetPage(int(rid.PageId))
+	if err != nil {
+		return err
+	}
+
+	slottedPage := pages.SlottedPageInstanceFromRawPage(page)
+	if err := slottedPage.UpdateTuple(int(rid.SlotIdx), tuple.GetData()); err != nil {
+		// if error is because of tuple does not have enough space then update should do delete-insert
+		return err
+	}
+
+	return nil
 }
 
 func (t *TableHeap) ReadTuple(rid Rid, dest *Tuple, txn concurrency.Transaction) error {

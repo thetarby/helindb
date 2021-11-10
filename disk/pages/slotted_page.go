@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"helin/common"
 	"helin/disk"
 	"unsafe"
@@ -38,13 +39,13 @@ type ISlottedPage interface {
 	// vacuum push all content of the page to the rightmost to eliminate fragmentation
 	vacuum()
 
-	InsertTuple(data []byte) (int, error)
 	GetFreeSpace() int
 
 	// DeleteTuple deletes the tuple which is pointed by the value in the slot array at idxAtSlot
 	DeleteTuple(idxAtSlot int)
-
 	GetTuple(idxAtSlot int) []byte
+	InsertTuple(data []byte) (int, error)
+	UpdateTuple(idxAtSlot int, data []byte) error
 }
 
 type SlottedPageHeader struct {
@@ -63,7 +64,7 @@ const (
 	// DELETE_MASK first bit of the TupleSizeType holds tuple's deleted status and, it can be accessed by applying DELETE_MASK
 	// to a TupleSizeType instance
 	// uint32 comes from SlotArrEntry.Size
-	DELETE_MASK uint32 = 1<<unsafe.Sizeof(uint32(1))*4 - 1
+	DELETE_MASK uint32 = 1 << (unsafe.Sizeof(uint32(1))*4 - 1)
 
 	LOW_BYTES  = (1 << 32) - 1
 	HIGH_BYTES = LOW_BYTES << 32
@@ -83,7 +84,7 @@ func (sp *SlottedPage) vacuum() {
 
 func (sp *SlottedPage) GetTuple(idxAtSlot int) []byte {
 	entry := sp.getFromSlotArr(idxAtSlot)
-	if entry.Size == 0 {
+	if entry.Size == 0 || isDeleted(entry) {
 		return nil
 	}
 
@@ -189,6 +190,33 @@ func (sp *SlottedPage) DeleteTuple(idxAtSlot int) {
 	sp.vacuum()
 }
 
+func (sp *SlottedPage) UpdateTuple(idxAtSlot int, data []byte) error {
+	oldData := sp.GetTuple(idxAtSlot)
+	if oldData == nil {
+		msg := fmt.Sprintf("tried to update a nonexistent or deleted tuple idxAtSlot: %v, pageID: %v", idxAtSlot, sp.GetPageId())
+		return errors.New(msg)
+	}
+
+	if sp.GetFreeSpace()+len(oldData) < len(data) {
+		return errors.New("not enough space in slotted page") // TODO: return typed error. because this error will indicate that the caller should do an delete-insert to do an update
+	}
+
+	if err := sp.HardDelete(idxAtSlot); err != nil { // NOTE: this will cause a deadlock when write latches are implemented
+		panic(err) // this should not return error
+	}
+
+	h := sp.GetHeader()
+	h.FreeSpacePointer -= uint32(len(data))
+	copy(sp.GetData()[h.FreeSpacePointer:], data)
+	sp.SetHeader(h)
+	sp.setInSlotArr(idxAtSlot, SLotArrEntry{
+		Offset: h.FreeSpacePointer,
+		Size:   uint32(len(data)),
+	})
+
+	return nil
+}
+
 func (sp *SlottedPage) HardDelete(idxAtSlot int) error {
 	arr := sp.getSlotArr()
 	if idxAtSlot >= len(arr) {
@@ -203,7 +231,7 @@ func (sp *SlottedPage) HardDelete(idxAtSlot int) error {
 	h := sp.GetHeader()
 	data := sp.GetData()
 
-	copy(data[h.FreeSpacePointer:entry.Offset], data[h.FreeSpacePointer+entry.Size:])
+	copy(data[h.FreeSpacePointer+entry.Size:entry.Offset+entry.Size], data[h.FreeSpacePointer:entry.Offset])
 	h.FreeSpacePointer += entry.Size
 	deletedEntry := entry
 	entry.Size = 0
@@ -219,6 +247,7 @@ func (sp *SlottedPage) HardDelete(idxAtSlot int) error {
 			continue
 		} else if currEntry.Offset < deletedEntry.Offset && currEntry.Size != 0 { // if size is 0 it means slot is empty hence no need to update it
 			currEntry.Offset += deletedEntry.Size
+			sp.setInSlotArr(i, currEntry)
 		}
 	}
 

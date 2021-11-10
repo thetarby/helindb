@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"helin/common"
 	"helin/disk"
 	"testing"
@@ -129,7 +130,7 @@ func TestSlottedPage_HardDeleted_Slots_Should_Not_Be_Found(t *testing.T) {
 	p := newSlottedPageTestInstance()
 	tupleSize := 10
 	insertCount := 50
-	toDeleteIndexes := []int{1, 2, 3}
+	toDeleteIndexes := []int{1, 2, 3, 16}
 
 	pairs := make([]SlotIdxOffsetPair, 0, insertCount)
 
@@ -142,18 +143,19 @@ func TestSlottedPage_HardDeleted_Slots_Should_Not_Be_Found(t *testing.T) {
 	}
 
 	for _, idx := range toDeleteIndexes {
-		p.HardDelete(idx)
+		p.HardDelete(pairs[idx].idx)
 	}
 
 	for i, pair := range pairs {
-		if common.Contains(toDeleteIndexes, pair.idx) {
-			entry := p.getFromSlotArr(i)
-			assert.True(t, isDeleted(entry))
+		println(i)
+		if common.Contains(toDeleteIndexes, i) {
+			entry := p.getFromSlotArr(pair.idx)
+			require.True(t, isDeleted(entry))
 			continue
 		}
 
 		tuple := p.GetTuple(pair.idx)
-		assert.Equal(t, byte(i), tuple[0])
+		require.Equal(t, byte(i), tuple[0])
 	}
 }
 
@@ -187,6 +189,21 @@ func TestSlottedPage_HardDeleted_Slots_Should_Not_Be_Found_2(t *testing.T) {
 		tuple := p.GetTuple(pair.idx)
 		assert.Equal(t, byte(i), tuple[0])
 	}
+}
+
+func TestSlottedPage_Update_Should_Not_Return_Error_When_There_Is_Enough_Space_In_Page(t *testing.T) {
+	p := newSlottedPageTestInstance()
+	tupleSize := p.GetFreeSpace() - SLOT_ARRAY_ENTRY_SIZE
+	data := make([]byte, tupleSize)
+	idx, err := p.InsertTuple(data)
+	require.NoError(t, err)
+
+	data[0] = byte('x')
+	err = p.UpdateTuple(idx, data)
+	require.NoError(t, err)
+
+	newData := p.GetTuple(idx)
+	require.Equal(t, byte('x'), newData[0])
 }
 
 func TestReadSLotArrEntrySliceFromBytes(t *testing.T) {
