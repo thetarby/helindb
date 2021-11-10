@@ -61,13 +61,9 @@ func (n NoopPersistentPage) GetPageId() Pointer {
 type NoopPager struct {
 }
 
-func (b *NoopPager) UnpinByPointer(p Pointer, isDirty bool) {
-	panic("implement me")
-}
+func (b *NoopPager) UnpinByPointer(p Pointer, isDirty bool) {}
 
-func (b *NoopPager) Unpin(n Node, isDirty bool) {
-
-}
+func (b *NoopPager) Unpin(n Node, isDirty bool) {}
 
 var lastPageId Pointer = 0
 

@@ -41,7 +41,7 @@ func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 	defer os.Remove(dbFile)
 	tree := NewBtreeWithPager(100, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 
-	n := 100000
+	n := 10000
 	for num, i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
 			PageId:  int64(i),

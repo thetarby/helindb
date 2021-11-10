@@ -9,8 +9,6 @@ import (
 	"unsafe"
 )
 
-type TupleSizeType uint32
-
 /**
  * Slotted page format:
  *  ---------------------------------------------------------
@@ -34,7 +32,7 @@ type ISlottedPage interface {
 	getFromSlotArr(idx int) SLotArrEntry
 	setInSlotArr(idx int, val SLotArrEntry)
 	appendSlotArr(val SLotArrEntry)
-	getHeader() SlottedPageHeader
+	GetHeader() SlottedPageHeader
 	SetHeader(h SlottedPageHeader)
 
 	// vacuum push all content of the page to the rightmost to eliminate fragmentation
@@ -52,6 +50,8 @@ type ISlottedPage interface {
 type SlottedPageHeader struct {
 	FreeSpacePointer uint32
 	SLotArrLen       uint16
+	NextPageID       int64
+	PrevPageID       int64
 }
 
 type SLotArrEntry struct {
@@ -62,7 +62,8 @@ type SLotArrEntry struct {
 const (
 	// DELETE_MASK first bit of the TupleSizeType holds tuple's deleted status and, it can be accessed by applying DELETE_MASK
 	// to a TupleSizeType instance
-	DELETE_MASK = 1<<unsafe.Sizeof(TupleSizeType(1))*8 - 1
+	// uint32 comes from SlotArrEntry.Size
+	DELETE_MASK uint32 = 1<<unsafe.Sizeof(uint32(1))*4 - 1
 
 	LOW_BYTES  = (1 << 32) - 1
 	HIGH_BYTES = LOW_BYTES << 32
@@ -90,13 +91,13 @@ func (sp *SlottedPage) GetTuple(idxAtSlot int) []byte {
 }
 
 func (sp *SlottedPage) GetFreeSpace() int {
-	h := sp.getHeader()
+	h := sp.GetHeader()
 	startingOffset := HEADER_SIZE + int(h.SLotArrLen)*SLOT_ARRAY_ENTRY_SIZE
 	return int(h.FreeSpacePointer) - startingOffset
 }
 
 func (sp *SlottedPage) getSlotArr() []SLotArrEntry {
-	header := sp.getHeader()
+	header := sp.GetHeader()
 	return readSLotArrEntrySliceFromBytes(int(header.SLotArrLen), sp.GetData()[HEADER_SIZE:])
 }
 
@@ -122,14 +123,14 @@ func (sp *SlottedPage) setInSlotArr(idx int, val SLotArrEntry) {
 }
 
 func (sp *SlottedPage) appendSlotArr(val SLotArrEntry) {
-	h := sp.getHeader()
+	h := sp.GetHeader()
 	h.SLotArrLen++
 	defer sp.SetHeader(h)
 
 	sp.setInSlotArr(int(h.SLotArrLen)-1, val)
 }
 
-func (sp *SlottedPage) getHeader() SlottedPageHeader {
+func (sp *SlottedPage) GetHeader() SlottedPageHeader {
 	reader := bytes.NewReader(sp.GetData())
 	dest := SlottedPageHeader{}
 	binary.Read(reader, binary.BigEndian, &dest)
@@ -166,7 +167,7 @@ func (sp *SlottedPage) InsertTuple(data []byte) (int, error) {
 	}
 
 	// if an empty slot is found, copy data and set free space pointer to the starting point of new data
-	h := sp.getHeader()
+	h := sp.GetHeader()
 	h.FreeSpacePointer -= uint32(len(data))
 	if i == len(arr) {
 		h.SLotArrLen++
@@ -188,6 +189,66 @@ func (sp *SlottedPage) DeleteTuple(idxAtSlot int) {
 	sp.vacuum()
 }
 
+func (sp *SlottedPage) HardDelete(idxAtSlot int) error {
+	arr := sp.getSlotArr()
+	if idxAtSlot >= len(arr) {
+		return errors.New("slot cannot be found")
+	}
+
+	entry := arr[idxAtSlot]
+	if isDeleted(entry) {
+		entry.Size = entry.Size & (^DELETE_MASK) // unset  deleted flag
+	}
+
+	h := sp.GetHeader()
+	data := sp.GetData()
+
+	copy(data[h.FreeSpacePointer:entry.Offset], data[h.FreeSpacePointer+entry.Size:])
+	h.FreeSpacePointer += entry.Size
+	deletedEntry := entry
+	entry.Size = 0
+	entry.Offset = 0
+	sp.setInSlotArr(idxAtSlot, entry)
+	sp.SetHeader(h)
+
+	// update all tuples' offsets that comes before the deleted one
+	for i := 0; i < int(h.SLotArrLen); i++ {
+		arr := sp.getSlotArr()
+		currEntry := arr[i]
+		if currEntry.Offset > deletedEntry.Offset {
+			continue
+		} else if currEntry.Offset < deletedEntry.Offset && currEntry.Size != 0 { // if size is 0 it means slot is empty hence no need to update it
+			currEntry.Offset += deletedEntry.Size
+		}
+	}
+
+	return nil
+}
+
+func (sp *SlottedPage) SoftDelete(idxAtSlot int) error {
+	arr := sp.getSlotArr()
+	if idxAtSlot >= len(arr) {
+		return errors.New("slot cannot be found")
+	}
+
+	entry := arr[idxAtSlot]
+	if isDeleted(entry) {
+		return errors.New("slot is already deleted")
+	}
+
+	// if raw bytes of tuple size is not 0 and its delete bit is not set
+	entry.Size = entry.Size | DELETE_MASK
+	sp.setInSlotArr(idxAtSlot, entry)
+
+	return nil
+}
+
+func isDeleted(entry SLotArrEntry) bool {
+	size := entry.Size
+	x := entry.Size & DELETE_MASK
+	return x != 0 || size == 0
+}
+
 func readSLotArrEntrySliceFromBytes(count int, data []byte) []SLotArrEntry {
 	reader := bytes.NewReader(data)
 	res := make([]SLotArrEntry, 0)
@@ -198,4 +259,25 @@ func readSLotArrEntrySliceFromBytes(count int, data []byte) []SLotArrEntry {
 		res = append(res, x)
 	}
 	return res
+}
+
+func SlottedPageInstanceFromRawPage(page *RawPage) *SlottedPage {
+	return &SlottedPage{
+		RawPage: *page,
+	}
+}
+
+func FormatAsSlottedPage(page *RawPage) *SlottedPage {
+	s := &SlottedPage{
+		RawPage: *page,
+	}
+
+	s.SetHeader(SlottedPageHeader{
+		FreeSpacePointer: uint32(disk.PageSize),
+		SLotArrLen:       0,
+		NextPageID:       0,
+		PrevPageID:       0,
+	})
+
+	return s
 }

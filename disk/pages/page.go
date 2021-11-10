@@ -27,7 +27,7 @@ type IPage interface {
 type RawPage struct {
 	pageId   int
 	isDirty  bool
-	rwLatch  sync.RWMutex
+	rwLatch  *sync.RWMutex
 	PinCount int
 	Data     []byte
 }
@@ -36,7 +36,7 @@ func NewRawPage(pageId int) *RawPage {
 	return &RawPage{
 		pageId:   pageId,
 		isDirty:  false,
-		rwLatch:  sync.RWMutex{},
+		rwLatch:  &sync.RWMutex{},
 		PinCount: 0,
 		Data:     make([]byte, disk.PageSize, disk.PageSize),
 	}
