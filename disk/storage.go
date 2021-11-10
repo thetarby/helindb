@@ -17,6 +17,7 @@ type IDiskManager interface {
 	ReadPage(pageId int) ([]byte, error)
 	NewPage() (pageId int)
 	FreePage(pageId int)
+	Close() error
 }
 
 const PageSize int = 4096
@@ -171,6 +172,10 @@ func (d *DiskManager) NewPage() (pageId int) {
 
 func (d *DiskManager) FreePage(pageId int) {
 	// TODO: noop for now
+}
+
+func (d *DiskManager) Close() error {
+	return d.file.Close()
 }
 
 func (d *DiskManager) InitFreePages(newFile bool) {
