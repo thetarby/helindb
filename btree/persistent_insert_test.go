@@ -1,6 +1,7 @@
 package btree
 
 import (
+	"fmt"
 	"github.com/stretchr/testify/assert"
 	"helin/buffer"
 	"io/ioutil"
@@ -53,9 +54,9 @@ func TestPersistentInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *test
 func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 	os.Remove("db2.helin")
 	pool := buffer.NewBufferPool("db2.helin")
-	tree := NewBtreeWithPager(80, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
-	n := 10000
+	n := 1000
 	for idx, i := range rand.Perm(n) {
 		println(idx)
 		tree.Insert(PersistentKey(i), SlotPointer{
@@ -76,6 +77,8 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 			SlotIdx: int16(i),
 		}, val.(SlotPointer))
 	}
+	fmt.Println(buffer.Victims)
+	fmt.Println(buffer.Accessed)
 }
 
 func TestPersistentInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {

@@ -1,24 +1,37 @@
 package buffer
 
 import (
-	"container/heap"
+	"errors"
 	"sync"
-	"time"
 )
 
 type LruReplacer struct {
-	pinned  map[int]int
-	minHeap *IntHeap
-	size    int
-	lock    sync.Mutex
+	unpinned []int
+	pinned   map[int]int
+	size     int
+	lock     sync.Mutex
 }
+
+var Victims = make(map[int]int)
+var Accessed = make(map[int]int)
 
 func (l *LruReplacer) Pin(frameId int) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	now := int(time.Now().UnixNano())
-	heap.Push(l.minHeap, now)
+	idx, ok := l.findFrameId(frameId)
+	if !ok {
+		l.pinned[frameId] = 1
+		return
+	}
+	if len(l.unpinned) == 1 {
+		l.unpinned = make([]int, 0)
+		l.pinned[frameId] = 1
+		return
+	}
+
+	copy(l.unpinned[idx:], l.unpinned[idx+1:])
+	l.unpinned = l.unpinned[:len(l.unpinned)-1]
 	l.pinned[frameId] = 1
 }
 
@@ -26,15 +39,55 @@ func (l *LruReplacer) Unpin(frameId int) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	delete(l.pinned, frameId)
+	if _, ok := l.pinned[frameId]; !ok {
+		panic("unpinning a page which is not pinned")
+	}
+
+	_, ok := l.findFrameId(frameId)
+	if !ok {
+		l.unpinned = append(l.unpinned, frameId)
+		delete(l.pinned, frameId)
+		return
+	}
+	panic("unpinning a frame which is already unpinned")
 }
 
 func (l *LruReplacer) ChooseVictim() (frameId int, err error) {
-	panic("implement me")
+	if len(l.unpinned) == 0 {
+		return 0, errors.New("nothing is unpinned")
+	}
+
+	victim := l.unpinned[0]
+	val, ok := Victims[victim]
+	if !ok {
+		Victims[victim] = 1
+	} else {
+		Victims[victim] = val + 1
+	}
+	l.unpinned = l.unpinned[1:]
+	return victim, nil
 }
 
 func (l *LruReplacer) GetSize() int {
 	return l.size
+}
+
+func (l *LruReplacer) findFrameId(frameId int) (int, bool) {
+	for idx, curr := range l.unpinned {
+		if curr == frameId {
+			return idx, true
+		}
+	}
+	return 0, false
+}
+
+func NewLruReplacer() *LruReplacer {
+	return &LruReplacer{
+		unpinned: make([]int, 0),
+		pinned:   make(map[int]int),
+		size:     PoolSize, // TODO: is size really needed?
+		lock:     sync.Mutex{},
+	}
 }
 
 type IntHeap []int
