@@ -5,4 +5,5 @@ type IReplacer interface {
 	Unpin(frameId int)
 	ChooseVictim() (frameId int, err error)
 	GetSize() int
+	NumPinnedPages() int
 }

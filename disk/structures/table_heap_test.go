@@ -23,14 +23,14 @@ func TestTableHeap(t *testing.T) {
 	firstPage, _ := pool.NewPage()
 	pages.FormatAsSlottedPage(firstPage)
 	table := TableHeap{
-		pool:        pool,
-		firstPageID: firstPage.GetPageId(),
-		lastPageID:  0,
+		Pool:        pool,
+		FirstPageID: firstPage.GetPageId(),
+		LastPageID:  0,
 	}
 
 	rid, err := table.InsertTuple(Tuple{
-		data: make([]byte, 10),
-		rid:  Rid{},
+		Data: make([]byte, 10),
+		Rid:  Rid{},
 	}, "")
 
 	assert.NoError(t, err)
@@ -46,16 +46,16 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 	firstPage, _ := pool.NewPage()
 	pages.FormatAsSlottedPage(firstPage)
 	table := TableHeap{
-		pool:        pool,
-		firstPageID: firstPage.GetPageId(),
-		lastPageID:  0,
+		Pool:        pool,
+		FirstPageID: firstPage.GetPageId(),
+		LastPageID:  0,
 	}
 
 	inserted := make([]Rid, 0)
 	for i := 0; i < 3000; i++ {
 		rid, err := table.InsertTuple(Tuple{
-			data: []byte(strconv.Itoa(i)),
-			rid:  Rid{},
+			Data: []byte(strconv.Itoa(i)),
+			Rid:  Rid{},
 		}, "")
 
 		assert.NoError(t, err)
@@ -67,7 +67,7 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 		tuple := Tuple{}
 		table.ReadTuple(rid, &tuple, "")
 
-		assert.Equal(t, []byte(strconv.Itoa(i)), tuple.data)
+		assert.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
 	}
 }
 
@@ -81,16 +81,16 @@ func TestTableHeap_Delete(t *testing.T) {
 	firstPage, _ := pool.NewPage()
 	pages.FormatAsSlottedPage(firstPage)
 	table := TableHeap{
-		pool:        pool,
-		firstPageID: firstPage.GetPageId(),
-		lastPageID:  0,
+		Pool:        pool,
+		FirstPageID: firstPage.GetPageId(),
+		LastPageID:  0,
 	}
 
 	inserted := make([]Rid, 0)
 	for i := 0; i < 10_000; i++ {
 		rid, err := table.InsertTuple(Tuple{
-			data: []byte(strconv.Itoa(i)),
-			rid:  Rid{},
+			Data: []byte(strconv.Itoa(i)),
+			Rid:  Rid{},
 		}, "")
 
 		assert.NoError(t, err)
@@ -113,7 +113,7 @@ func TestTableHeap_Delete(t *testing.T) {
 		}
 		table.ReadTuple(rid, &tuple, "")
 
-		require.Equal(t, []byte(strconv.Itoa(i)), tuple.data)
+		require.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
 	}
 }
 
@@ -126,16 +126,16 @@ func TestTableHeap_Delete_Last_Inserted_Item(t *testing.T) {
 	firstPage, _ := pool.NewPage()
 	pages.FormatAsSlottedPage(firstPage)
 	table := TableHeap{
-		pool:        pool,
-		firstPageID: firstPage.GetPageId(),
-		lastPageID:  0,
+		Pool:        pool,
+		FirstPageID: firstPage.GetPageId(),
+		LastPageID:  0,
 	}
 
 	inserted := make([]Rid, 0)
 	for i := 0; i < 10; i++ {
 		rid, err := table.InsertTuple(Tuple{
-			data: []byte(strconv.Itoa(i)),
-			rid:  Rid{},
+			Data: []byte(strconv.Itoa(i)),
+			Rid:  Rid{},
 		}, "")
 
 		assert.NoError(t, err)
@@ -157,7 +157,7 @@ func TestTableHeap_Delete_Last_Inserted_Item(t *testing.T) {
 		tuple := Tuple{}
 		table.ReadTuple(rid, &tuple, "")
 
-		require.Equal(t, []byte(strconv.Itoa(i)), tuple.data)
+		require.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
 	}
 }
 
@@ -170,16 +170,16 @@ func TestTableHeap_Delete_First_Inserted_Item(t *testing.T) {
 	firstPage, _ := pool.NewPage()
 	pages.FormatAsSlottedPage(firstPage)
 	table := TableHeap{
-		pool:        pool,
-		firstPageID: firstPage.GetPageId(),
-		lastPageID:  0,
+		Pool:        pool,
+		FirstPageID: firstPage.GetPageId(),
+		LastPageID:  0,
 	}
 
 	inserted := make([]Rid, 0)
 	for i := 0; i < 10; i++ {
 		rid, err := table.InsertTuple(Tuple{
-			data: []byte(strconv.Itoa(i)),
-			rid:  Rid{},
+			Data: []byte(strconv.Itoa(i)),
+			Rid:  Rid{},
 		}, "")
 
 		assert.NoError(t, err)
@@ -201,7 +201,7 @@ func TestTableHeap_Delete_First_Inserted_Item(t *testing.T) {
 		tuple := Tuple{}
 		table.ReadTuple(rid, &tuple, "")
 
-		require.Equal(t, []byte(strconv.Itoa(i)), tuple.data)
+		require.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
 	}
 }
 
@@ -215,16 +215,16 @@ func TestTableHeap_Update(t *testing.T) {
 	firstPage, _ := pool.NewPage()
 	pages.FormatAsSlottedPage(firstPage)
 	table := TableHeap{
-		pool:        pool,
-		firstPageID: firstPage.GetPageId(),
-		lastPageID:  0,
+		Pool:        pool,
+		FirstPageID: firstPage.GetPageId(),
+		LastPageID:  0,
 	}
 
 	inserted := make([]Rid, 0)
 	for i := 0; i < 100; i++ {
 		rid, err := table.InsertTuple(Tuple{
-			data: []byte(strconv.Itoa(i)),
-			rid:  Rid{},
+			Data: []byte(strconv.Itoa(i)),
+			Rid:  Rid{},
 		}, "")
 
 		assert.NoError(t, err)
@@ -233,7 +233,7 @@ func TestTableHeap_Update(t *testing.T) {
 
 	toUpdate := []int{15, 25, 35}
 	for _, i := range toUpdate {
-		err := table.UpdateTuple(Tuple{data: []byte("updated")}, inserted[i], "")
+		err := table.UpdateTuple(Tuple{Data: []byte("updated")}, inserted[i], "")
 		assert.NoError(t, err)
 	}
 
@@ -247,6 +247,6 @@ func TestTableHeap_Update(t *testing.T) {
 		}
 		table.ReadTuple(rid, &tuple, "")
 
-		require.Equal(t, []byte(strconv.Itoa(i)), tuple.data)
+		require.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
 	}
 }

@@ -34,8 +34,9 @@ func NewBtree(degree int) *BTree {
 
 func NewBtreeWithPager(degree int, pager Pager) *BTree {
 	l := pager.NewLeafNode()
-
 	root := pager.NewInternalNode(l.GetPageId())
+	defer pager.Unpin(root, true)
+	defer pager.Unpin(l, true)
 
 	return &BTree{
 		degree: degree,
@@ -62,7 +63,9 @@ func (tree *BTree) Insert(key Key, value interface{}) {
 	pager := tree.pager
 	var stack = make([]NodeIndexPair, 0, 0)
 	var i interface{}
-	i, stack = tree.GetRoot().findAndGetStack(key, stack)
+	root := tree.GetRoot()
+	i, stack = root.findAndGetStack(key, stack)
+	defer tree.pager.Unpin(root, false)
 	if i != nil {
 		panic("key already exists")
 	}
@@ -81,7 +84,7 @@ func (tree *BTree) Insert(key Key, value interface{}) {
 			rightNod, _, rightKey = popped.SplitNode((tree.degree) / 2)
 			tree.pager.Unpin(popped, true)
 			tree.pager.Unpin(tree.pager.GetNode(rightNod.(Pointer)), true)
-			tree.pager.Unpin(popped, true)
+			//tree.pager.Unpin(popped, true)
 			if popped.GetPageId() == tree.Root {
 				leftNode := popped
 
@@ -96,9 +99,9 @@ func (tree *BTree) Insert(key Key, value interface{}) {
 		}
 	}
 
-	for _, pair := range stack {
-		tree.pager.Unpin(tree.pager.GetNode(pair.Node), false)
-	}
+	//for _, pair := range stack {
+	//	tree.pager.Unpin(tree.pager.GetNode(pair.Node), false)
+	//}
 }
 
 func (tree *BTree) InsertOrReplace(key Key, value interface{}) (isInserted bool) {
@@ -144,6 +147,29 @@ func (tree *BTree) InsertOrReplace(key Key, value interface{}) (isInserted bool)
 func (tree *BTree) Find(key Key) interface{} {
 	res, stack := tree.GetRoot().findAndGetStack(key, []NodeIndexPair{})
 	for _, pair := range stack {
+		tree.pager.UnpinByPointer(pair.Node, false)
+	}
+	return res
+}
+
+func (tree *BTree) FindUntil(key Key) []interface{} {
+	_, stack := tree.GetRoot().findAndGetStack(key, []NodeIndexPair{})
+
+	node := tree.pager.GetNode(stack[len(stack)-1].Node)
+	vals := node.GetValues()
+	res := vals[:stack[len(stack)-1].Index]
+	for {
+		p := node.GetLeft()
+		if p == 0 {
+			break
+		}
+		node = tree.pager.GetNode(p)
+		vals := node.GetValues()
+		res = append(vals, res...)
+	}
+
+	for _, pair := range stack {
+		tree.pager.UnpinByPointer(pair.Node, false)
 		tree.pager.UnpinByPointer(pair.Node, false)
 	}
 	return res
@@ -322,28 +348,33 @@ func (tree *BTree) DeleteOld(key Key) bool {
 func (tree *BTree) Delete(key Key) bool {
 	var stack = make([]NodeIndexPair, 0, 0)
 	var i interface{}
-	i, stack = tree.GetRoot().findAndGetStack(key, stack)
+	root := tree.GetRoot()
+	defer tree.pager.Unpin(root, false)
+	i, stack = root.findAndGetStack(key, stack)
 	if i == nil {
 		return false
 	}
 
 	for len(stack) > 0 {
 		popped := tree.pager.GetNode(stack[len(stack)-1].Node)
+		isPoppedDirty := false
 		stack = stack[:len(stack)-1]
 		if popped.IsLeaf() {
 			index, _ := popped.findKey(key)
 			popped.DeleteAt(index)
+			isPoppedDirty = true
 		}
 
 		if len(stack) == 0 {
-			// if no parent left in stack it is done
+			// if no parent left in stack(this is correct only if popped is root) it is done
 			tree.pager.Unpin(popped, false) // NOTE: this one is tricky. But if root is dirty then previous turn in the loop should have already set it dirty
 			return true
 		}
-		indexAtParent := stack[len(stack)-1].Index
-		parent := tree.pager.GetNode(stack[len(stack)-1].Node)
 
 		if popped.IsUnderFlow(tree.degree) {
+			indexAtParent := stack[len(stack)-1].Index
+			parent := tree.pager.GetNode(stack[len(stack)-1].Node)
+
 			// get siblings
 			var rightSibling, leftSibling, merged Node
 			if indexAtParent > 0 {
@@ -402,13 +433,14 @@ func (tree *BTree) Delete(key Key) bool {
 				tree.Root = merged.GetPageId()
 			}
 		} else {
+			tree.pager.Unpin(popped, isPoppedDirty)
 			break
 		}
 	}
 
-	for _, pair := range stack {
-		tree.pager.Unpin(tree.pager.GetNode(pair.Node), false)
-	}
+	//for _, pair := range stack {
+	//	tree.pager.Unpin(tree.pager.GetNode(pair.Node), false)
+	//}
 
 	return true
 }

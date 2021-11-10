@@ -25,7 +25,7 @@ type BufferPool struct {
 	frames      []*pages.RawPage
 	pageMap     map[int]int // physical page_id => frame index which keeps that page
 	emptyFrames []int       // list of indexes that points to empty frames in the pool
-	replacer    IReplacer
+	Replacer    IReplacer
 	DiskManager disk.IDiskManager
 	lock        sync.Mutex
 }
@@ -43,7 +43,7 @@ func NewBufferPool(dbFile string, poolSize int) *BufferPool {
 		emptyFrames: emptyFrames,
 		DiskManager: d,
 		lock:        sync.Mutex{},
-		replacer:    NewRandomReplacer(poolSize),
+		Replacer:    NewRandomReplacer(poolSize),
 	}
 }
 
@@ -83,7 +83,7 @@ func (b *BufferPool) GetPage(pageId int) (*pages.RawPage, error) {
 	}
 
 	// else choose a victim. write victim to disk if it is dirty. read new page and pin it.
-	victimIdx, err := b.replacer.ChooseVictim()
+	victimIdx, err := b.Replacer.ChooseVictim()
 	log.Printf("victim is chosen %v\n", victimIdx)
 	if err != nil {
 		return nil, err
@@ -124,7 +124,7 @@ func (b *BufferPool) pin(pageId int) error {
 
 	page := b.frames[frameIdx]
 	page.IncrPinCount()
-	b.replacer.Pin(frameIdx)
+	b.Replacer.Pin(frameIdx)
 	return nil
 }
 
@@ -152,7 +152,7 @@ func (b *BufferPool) Unpin(pageId int, isDirty bool) bool {
 	// decrease pin count and if it is 0 unpin frame in the replacer so that new pages can be read
 	page.DecrPinCount()
 	if page.GetPinCount() == 0 {
-		b.replacer.Unpin(frameIdx)
+		b.Replacer.Unpin(frameIdx)
 		return true
 	}
 	return false
@@ -223,7 +223,7 @@ func (b *BufferPool) NewPage() (page *pages.RawPage, err error) {
 		return p, nil
 	}
 
-	victimIdx, err := b.replacer.ChooseVictim()
+	victimIdx, err := b.Replacer.ChooseVictim()
 	log.Printf("victim is chosen %v\n", victimIdx)
 	if err != nil {
 		return nil, err

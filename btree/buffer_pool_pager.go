@@ -25,6 +25,7 @@ func (b *BufferPoolPager) UnpinByPointer(p Pointer, isDirty bool) {
 	b.pool.Unpin(int(p), isDirty)
 }
 
+// NewInternalNode Caller should call unpin with dirty is set
 func (b *BufferPoolPager) NewInternalNode(firstPointer Pointer) Node {
 	h := PersistentNodeHeader{
 		IsLeaf: 0,

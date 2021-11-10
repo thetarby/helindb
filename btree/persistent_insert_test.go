@@ -1,7 +1,6 @@
 package btree
 
 import (
-	"fmt"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"helin/buffer"
@@ -63,8 +62,7 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
 	n := 1000
-	for idx, i := range rand.Perm(n) {
-		println(idx)
+	for _, i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
 			PageId:  int64(i),
 			SlotIdx: int16(i),
@@ -72,7 +70,6 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 	}
 
 	for i := 0; i < n; i++ {
-		println(i)
 		val := tree.Find(PersistentKey(i))
 		if val == nil {
 			//tree.Print()
@@ -83,8 +80,27 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 			SlotIdx: int16(i),
 		}, val.(SlotPointer))
 	}
-	fmt.Println(buffer.Victims)
-	fmt.Println(buffer.Accessed)
+	//fmt.Println(buffer.Victims)
+	//fmt.Println(buffer.Accessed)
+}
+
+func TestPersistent_Pin_Count_Should_Be_Zero_After_Inserts_Are_Complete(t *testing.T) {
+	id, _ := uuid.NewUUID()
+	dbName := id.String()
+	defer os.Remove(dbName)
+
+	pool := buffer.NewBufferPool(dbName, 4)
+	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	log.SetOutput(ioutil.Discard)
+	n := 1000
+	for _, i := range rand.Perm(n) {
+		tree.Insert(PersistentKey(i), SlotPointer{
+			PageId:  int64(i),
+			SlotIdx: int16(i),
+		})
+	}
+
+	assert.Equal(t, 0, pool.Replacer.NumPinnedPages())
 }
 
 func TestPersistentInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
@@ -115,8 +131,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 		v[i] = PersistentKey(rand.Intn(math.MaxInt32))
 	}
 
-	for idx, i := range v {
-		println(idx)
+	for _, i := range v {
 		tree.Insert(i, SlotPointer{
 			PageId:  int64(i),
 			SlotIdx: int16(i),
@@ -134,8 +149,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 		v[i] = v[j]
 		v[j] = t
 	})
-	for idx, i := range v {
-		println(idx)
+	for _, i := range v {
 		val := newTreeReference.Find(i)
 		assert.Equal(t, SlotPointer{
 			PageId:  int64(i),
