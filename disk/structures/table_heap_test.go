@@ -15,7 +15,7 @@ func TestTableHeap(t *testing.T) {
 	dbName := id.String()
 	defer os.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName)
+	pool := buffer.NewBufferPool(dbName, 2)
 	firstPage, _ := pool.NewPage()
 	pages.FormatAsSlottedPage(firstPage)
 	table := TableHeap{
@@ -38,8 +38,7 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 	dbName := id.String()
 	defer os.Remove(dbName)
 
-	// buffer pool size is 32
-	pool := buffer.NewBufferPool(dbName)
+	pool := buffer.NewBufferPool(dbName, 32)
 	firstPage, _ := pool.NewPage()
 	pages.FormatAsSlottedPage(firstPage)
 	table := TableHeap{
@@ -64,9 +63,6 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 		tuple := Tuple{}
 		table.ReadTuple(rid, &tuple, "")
 
-		x := assert.Equal(t, []byte(strconv.Itoa(i)), tuple.data)
-		if !x {
-			println("ho")
-		}
+		assert.Equal(t, []byte(strconv.Itoa(i)), tuple.data)
 	}
 }

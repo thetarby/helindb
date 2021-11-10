@@ -13,10 +13,10 @@ type RandomReplacer struct {
 	lock   sync.Mutex
 }
 
-func NewRandomReplacer() *RandomReplacer {
+func NewRandomReplacer(poolSize int) *RandomReplacer {
 	return &RandomReplacer{
 		pinned: make(map[int]int),
-		size:   PoolSize,
+		size:   poolSize,
 	}
 }
 
@@ -38,7 +38,7 @@ func (r *RandomReplacer) ChooseVictim() (frameId int, err error) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 
-	frames := make([]int, PoolSize, PoolSize)
+	frames := make([]int, r.size, r.size)
 	for i := 0; i < len(frames); i++ {
 		frames[i] = i
 	}

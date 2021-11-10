@@ -6,7 +6,8 @@ import (
 )
 
 func TestRandomReplacerShouldWork(t *testing.T) {
-	r := NewRandomReplacer()
+	PoolSize := 32
+	r := NewRandomReplacer(PoolSize)
 	r.Pin(1)
 	r.Pin(2)
 	v, _ := r.ChooseVictim()
@@ -14,7 +15,8 @@ func TestRandomReplacerShouldWork(t *testing.T) {
 }
 
 func TestRandomReplacerShouldReturnError_When_No_Possible_Victim_Is_Found(t *testing.T) {
-	r := NewRandomReplacer()
+	PoolSize := 32
+	r := NewRandomReplacer(PoolSize)
 	for i := 0; i < PoolSize; i++ {
 		r.Pin(i)
 	}
@@ -24,7 +26,8 @@ func TestRandomReplacerShouldReturnError_When_No_Possible_Victim_Is_Found(t *tes
 }
 
 func TestRandomReplacer_Should_Not_Choose_Pinned(t *testing.T) {
-	r := NewRandomReplacer()
+	PoolSize := 32
+	r := NewRandomReplacer(PoolSize)
 	for i := 0; i < PoolSize-1; i++ {
 		r.Pin(i)
 	}
@@ -34,7 +37,8 @@ func TestRandomReplacer_Should_Not_Choose_Pinned(t *testing.T) {
 }
 
 func TestRandomReplacer_Unpin_Should_Work(t *testing.T) {
-	r := NewRandomReplacer()
+	PoolSize := 32
+	r := NewRandomReplacer(PoolSize)
 	for i := 0; i < PoolSize; i++ {
 		r.Pin(i)
 	}

@@ -6,7 +6,8 @@ import (
 )
 
 func TestLruReplacerShouldReturnError_When_No_Possible_Victim_Is_Found(t *testing.T) {
-	r := NewLruReplacer()
+	PoolSize := 32
+	r := NewLruReplacer(PoolSize)
 	for i := 0; i < PoolSize; i++ {
 		r.Pin(i)
 	}
@@ -16,7 +17,8 @@ func TestLruReplacerShouldReturnError_When_No_Possible_Victim_Is_Found(t *testin
 }
 
 func TestLruReplacer_Should_Not_Choose_Pinned(t *testing.T) {
-	r := NewLruReplacer()
+	PoolSize := 32
+	r := NewLruReplacer(PoolSize)
 	for i := 0; i < PoolSize; i++ {
 		r.Pin(i)
 	}
