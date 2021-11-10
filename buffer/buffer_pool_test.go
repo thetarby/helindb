@@ -20,6 +20,7 @@ func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 	defer os.Remove("tmp.helin")
 
 	// write 50 pages with 2 sized buffer pool
+	pageIDs := make([]int, 0)
 	for i := 0; i < 50; i++ {
 		x := teststruct{Num: i, Val: "selam"}
 		json, _ := json.Marshal(x)
@@ -27,12 +28,10 @@ func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 
 		var data [4096]byte
 		copy(data[:], json)
-
 		p, err := b.NewPage()
-		println(p.GetPageId())
-		if err != nil {
-			println(err.Error())
-		}
+
+		assert.NoError(t, err)
+		pageIDs = append(pageIDs, p.GetPageId())
 
 		data[4095] = byte('\n')
 		p.Data = data[:]
@@ -41,8 +40,8 @@ func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 	}
 
 	// read each page and validate content
-	for i := 0; i < 50; i++ {
-		p, err := b.GetPage(i)
+	for i, pageID := range pageIDs {
+		p, err := b.GetPage(pageID)
 		assert.NoError(t, err)
 
 		x := teststruct{}
@@ -74,9 +73,10 @@ func TestBuffer_Pool_Should_Not_Corrupt_Pages(t *testing.T) {
 	}
 
 	// write random pages with 10 sized buffer pool
+	pageIDs := make([]int, 0)
 	for i := 0; i < numPagesToTest; i++ {
 		p, err := b.NewPage()
-		println(p.GetPageId())
+		pageIDs = append(pageIDs, p.GetPageId())
 		if err != nil {
 			println(err.Error())
 		}
@@ -88,7 +88,7 @@ func TestBuffer_Pool_Should_Not_Corrupt_Pages(t *testing.T) {
 
 	// read each page and validate content
 	for i := 0; i < numPagesToTest; i++ {
-		p, err := b.GetPage(i)
+		p, err := b.GetPage(pageIDs[i])
 		assert.NoError(t, err)
 
 		assert.ElementsMatch(t, randomPages[i], p.GetData())
