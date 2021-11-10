@@ -31,7 +31,7 @@ func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty(t *testing.T) {
 }
 
 func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_3(t *testing.T) {
-	tree := NewBtreeWithPager(4, NoopPersistentPager{})
+	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}})
 	for _, val := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10} {
 		tree.Insert(PersistentKey(val), SlotPointer{
 			PageId:  10,
@@ -86,10 +86,10 @@ func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 	dbFile := uuid.New().String() + ".helin"
 	pool := buffer.NewBufferPool(dbFile)
 	defer os.Remove(dbFile)
-	tree := NewBtreeWithPager(100, &BufferPoolPager{pool: pool})
+	tree := NewBtreeWithPager(100, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 
 	n := 100000
-	for num,i := range rand.Perm(n){
+	for num, i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
 			PageId:  int64(i),
 			SlotIdx: int16(i),
@@ -99,7 +99,7 @@ func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 
 	for i := 0; i < n; i++ {
 		val := tree.Find(PersistentKey(i))
-		if val == nil{
+		if val == nil {
 			tree.Find(PersistentKey(i))
 			tree.Print()
 		}
@@ -115,9 +115,9 @@ func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 	}
 }
 
-func TestDelete_Internals(t *testing.T){
-	tree := NewBtreeWithPager(4, NoopPersistentPager{})
-	p:= SlotPointer{
+func TestDelete_Internals(t *testing.T) {
+	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}})
+	p := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,
 	}
@@ -145,9 +145,9 @@ func TestDelete_Internals(t *testing.T){
 	tree.Print()
 }
 
-func TestDelete_Internals2(t *testing.T){
-	tree := NewBtreeWithPager(4, NoopPersistentPager{})
-	p:= SlotPointer{
+func TestDelete_Internals2(t *testing.T) {
+	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}})
+	p := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,
 	}

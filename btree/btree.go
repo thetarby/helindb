@@ -75,7 +75,6 @@ func (tree *BTree) Insert(key Key, value interface{}) {
 		stack = stack[:len(stack)-1]
 		i, _ := popped.findKey(key)
 		popped.InsertAt(i, rightKey, rightNod)
-		tree.pager.Unpin(popped, true)
 		//topOfStack.PrintNode()
 
 		if popped.IsOverFlow(tree.degree) {
@@ -92,7 +91,7 @@ func (tree *BTree) Insert(key Key, value interface{}) {
 				tree.pager.Unpin(newRoot, true)
 			}
 		} else {
-			tree.pager.Unpin(popped, false)
+			tree.pager.Unpin(popped, true)
 			break
 		}
 	}
@@ -143,7 +142,10 @@ func (tree *BTree) InsertOrReplace(key Key, value interface{}) (isInserted bool)
 }
 
 func (tree *BTree) Find(key Key) interface{} {
-	res, _ := tree.GetRoot().findAndGetStack(key, []NodeIndexPair{})
+	res, stack := tree.GetRoot().findAndGetStack(key, []NodeIndexPair{})
+	for _, pair := range stack {
+		tree.pager.UnpinByPointer(pair.Node, false)
+	}
 	return res
 }
 

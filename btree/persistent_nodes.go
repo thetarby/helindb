@@ -13,6 +13,16 @@ func (p PersistentKey) Less(than Key) bool {
 	return p < than.(PersistentKey)
 }
 
+type StringKey string
+
+func (p StringKey) String() string {
+	return string(p)
+}
+
+func (p StringKey) Less(than Key) bool {
+	return p < than.(StringKey)
+}
+
 type SlotPointer struct {
 	PageId  int64
 	SlotIdx int16
@@ -23,7 +33,7 @@ type SlotPointer struct {
 const (
 	SlotPointerSize          = 10
 	KeyPointerPairSize       = 16 // 8 bytes pointer 8 bytes PersistentKey
-	PersistentNodeHeaderSize = 3 + 2 *NodePointerSize
+	PersistentNodeHeaderSize = 3 + 2*NodePointerSize
 	KeySize                  = 8
 	NodePointerSize          = 8 // Pointer is int64 which is 8 bytes
 )
@@ -37,7 +47,8 @@ type PersistentNodeHeader struct {
 
 type PersistentLeafNode struct {
 	PersistentPage
-	pager Pager
+	pager      Pager
+	serializer KeySerializer
 }
 
 func ReadPersistentNodeHeader(data []byte) *PersistentNodeHeader {
@@ -101,16 +112,14 @@ func (p *PersistentLeafNode) shiftKeyValueToLeftAt(n int) {
 	data := p.GetData()
 	offset := n * (KeySize + SlotPointerSize)
 	destOffset := (n - 1) * (KeySize + SlotPointerSize)
-	copy(data[PersistentNodeHeaderSize+ destOffset:], data[PersistentNodeHeaderSize+offset:])
+	copy(data[PersistentNodeHeaderSize+destOffset:], data[PersistentNodeHeaderSize+offset:])
 }
 
 func (p *PersistentLeafNode) setKeyAt(idx int, key Key) { // TODO use persistentKey
 	data := p.GetData()
 	offset := idx * (KeySize + SlotPointerSize)
-	buf := bytes.Buffer{}
-	err := binary.Write(&buf, binary.BigEndian, key.(PersistentKey))
+	asByte, err := p.serializer.Serialize(key)
 	CheckErr(err)
-	asByte := buf.Bytes()
 	copy(data[PersistentNodeHeaderSize+offset:], asByte)
 }
 
@@ -127,9 +136,7 @@ func (p *PersistentLeafNode) setValueAt(idx int, val interface{}) {
 func (p *PersistentLeafNode) GetKeyAt(idx int) Key {
 	data := p.GetData()
 	offset := idx * (KeySize + SlotPointerSize)
-	reader := bytes.NewReader(data[PersistentNodeHeaderSize+offset:])
-	var key PersistentKey
-	err := binary.Read(reader, binary.BigEndian, &key)
+	key, err := p.serializer.Deserialize(data[PersistentNodeHeaderSize+offset:])
 	CheckErr(err)
 
 	return key
@@ -186,7 +193,7 @@ func (p *PersistentLeafNode) PrintNode() {
 	fmt.Printf("Node( ")
 	h := ReadPersistentNodeHeader(p.GetData())
 	for i := 0; i < int(h.KeyLen); i++ {
-		fmt.Printf("%d | ", p.GetKeyAt(i))
+		fmt.Printf("%v | ", p.GetKeyAt(i))
 	}
 	fmt.Printf(")    ")
 }
@@ -218,7 +225,7 @@ func (p *PersistentLeafNode) DeleteAt(index int) {
 	h.KeyLen--
 	WritePersistentNodeHeader(h, p.GetData())
 
-	p.shiftKeyValueToLeftAt(index+1) // TODO: handle overflow. overlflow pages maybe?
+	p.shiftKeyValueToLeftAt(index + 1) // TODO: handle overflow. overlflow pages maybe?
 }
 
 func (p *PersistentLeafNode) Keylen() int {
@@ -237,7 +244,7 @@ func (p *PersistentLeafNode) GetLeft() Pointer {
 }
 
 func (p *PersistentLeafNode) MergeNodes(rightNode Node, parent Node) {
-	if parent.IsLeaf(){
+	if parent.IsLeaf() {
 		panic("parent node cannot be leaf")
 	}
 	var i int
@@ -261,7 +268,8 @@ func (p *PersistentLeafNode) MergeNodes(rightNode Node, parent Node) {
 
 func (p *PersistentLeafNode) Redistribute(rightNode Node, parent Node) {
 	var i int
-	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {}
+	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {
+	}
 
 	totalKeys := p.Keylen() + rightNode.Keylen()
 	totalKeysInLeftAfterRedistribute := totalKeys / 2
@@ -278,7 +286,7 @@ func (p *PersistentLeafNode) Redistribute(rightNode Node, parent Node) {
 		diff := totalKeysInRightAfterRedistribute - rightNode.Keylen()
 		for i := 0; i < diff; i++ {
 			rightNode.InsertAt(0, p.GetKeyAt(p.Keylen()-1), p.GetValueAt(p.Keylen()-1))
-			p.DeleteAt(p.Keylen()-1)
+			p.DeleteAt(p.Keylen() - 1)
 		}
 	}
 
@@ -292,7 +300,8 @@ func (p *PersistentLeafNode) IsUnderFlow(degree int) bool {
 
 type PersistentInternalNode struct {
 	PersistentPage
-	pager Pager
+	pager      Pager
+	serializer KeySerializer
 }
 
 func NewPersistentInternalNode(firstPointer Pointer) *PersistentInternalNode {
@@ -376,7 +385,7 @@ func (p *PersistentInternalNode) shiftKeyValueToLeftAt(n int) {
 
 	data := p.GetData()
 	offset := n * (KeySize + NodePointerSize)
-	destOffset := (n -1) * (KeySize + NodePointerSize)
+	destOffset := (n - 1) * (KeySize + NodePointerSize)
 
 	// in leaf nodes since there is one more pointer than keys additional pointer is stored right after the header
 	// after that layout is same as leaf node. Rest of the page is like an array of key value pairs. In internal nodes
@@ -388,12 +397,11 @@ func (p *PersistentInternalNode) shiftKeyValueToLeftAt(n int) {
 func (p *PersistentInternalNode) setKeyAt(idx int, key Key) {
 	data := p.GetData()
 	offset := idx * (KeySize + NodePointerSize)
-	buf := bytes.Buffer{}
-	err := binary.Write(&buf, binary.BigEndian, key.(PersistentKey))
+	pairBeginningOffset := PersistentNodeHeaderSize + NodePointerSize
+
+	asByte, err := p.serializer.Serialize(key)
 	CheckErr(err)
-	asByte := buf.Bytes()
-	pairBeginnigOffset := PersistentNodeHeaderSize + NodePointerSize
-	copy(data[pairBeginnigOffset+offset:], asByte)
+	copy(data[pairBeginningOffset+offset:], asByte)
 }
 
 func (p *PersistentInternalNode) setValueAt(idx int, val interface{}) {
@@ -417,9 +425,7 @@ func (p *PersistentInternalNode) GetKeyAt(idx int) Key {
 	data := p.GetData()
 	offset := idx * (KeySize + NodePointerSize)
 	pairBeginningOffset := PersistentNodeHeaderSize + NodePointerSize
-	reader := bytes.NewReader(data[pairBeginningOffset+offset:])
-	var key PersistentKey
-	err := binary.Read(reader, binary.BigEndian, &key)
+	key, err := p.serializer.Deserialize(data[pairBeginningOffset+offset:])
 	CheckErr(err)
 
 	return key
@@ -488,7 +494,7 @@ func (p *PersistentInternalNode) PrintNode() {
 	fmt.Printf("Node( ")
 	h := ReadPersistentNodeHeader(p.GetData())
 	for i := 0; i < int(h.KeyLen); i++ {
-		fmt.Printf("%d | ", p.GetKeyAt(i))
+		fmt.Printf("%v | ", p.GetKeyAt(i))
 	}
 	fmt.Printf(")    ")
 }
@@ -517,7 +523,7 @@ func (p *PersistentInternalNode) DeleteAt(index int) {
 	h.KeyLen--
 	WritePersistentNodeHeader(h, p.GetData())
 
-	p.shiftKeyValueToLeftAt(index+1)
+	p.shiftKeyValueToLeftAt(index + 1)
 }
 
 func (p *PersistentInternalNode) Keylen() int {
@@ -566,11 +572,16 @@ func (p *PersistentInternalNode) MergeNodes(rightNode Node, parent Node) {
 	//WritePersistentNodeHeader(leftHeader, leftData)
 
 	var i int
-	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {}
+	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {
+	}
 
 	for ii := 0; ii < rightNode.Keylen()+1; ii++ {
 		var k Key
-		if ii == 0{ k = parent.GetKeyAt(i)} else { k = rightNode.GetKeyAt(ii-1) }
+		if ii == 0 {
+			k = parent.GetKeyAt(i)
+		} else {
+			k = rightNode.GetKeyAt(ii - 1)
+		}
 		v := rightNode.GetValueAt(ii)
 		p.InsertAt(p.Keylen(), k, v)
 	}
@@ -604,13 +615,18 @@ func (p *PersistentInternalNode) Redistribute(rightNode Node, parent Node) {
 	//WritePersistentNodeHeader(rightHeader, rightData)
 
 	var i int
-	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {}
+	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {
+	}
 	numKeysAtLeft := (p.Keylen() + rightNode.Keylen()) / 2
 	numKeysAtRight := (p.Keylen() + rightNode.Keylen()) - numKeysAtLeft
 
 	for ii := 0; ii < rightNode.Keylen()+1; ii++ {
 		var k Key
-		if ii == 0{ k = parent.GetKeyAt(i)} else { k = rightNode.GetKeyAt(ii-1) }
+		if ii == 0 {
+			k = parent.GetKeyAt(i)
+		} else {
+			k = rightNode.GetKeyAt(ii - 1)
+		}
 		v := rightNode.GetValueAt(ii)
 		p.InsertAt(p.Keylen(), k, v)
 	}
@@ -620,9 +636,9 @@ func (p *PersistentInternalNode) Redistribute(rightNode Node, parent Node) {
 	WritePersistentNodeHeader(rightHeader, rightData)
 
 	rightNode.setValueAt(0, p.GetValueAt(numKeysAtLeft+1))
-	for i := numKeysAtLeft+1; i < numKeysAtLeft+1+numKeysAtRight; i++ {
-		k:=p.GetKeyAt(i)
-		v:=p.GetValueAt(i+1)
+	for i := numKeysAtLeft + 1; i < numKeysAtLeft+1+numKeysAtRight; i++ {
+		k := p.GetKeyAt(i)
+		v := p.GetValueAt(i + 1)
 		rightNode.InsertAt(rightNode.Keylen(), k, v)
 	}
 	keyToParent := p.GetKeyAt(numKeysAtLeft)

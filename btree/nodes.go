@@ -246,7 +246,7 @@ func (n *InternalNode) findAndGetStack(key Key, stackIn []NodeIndexPair) (value 
 func (n *LeafNode) PrintNode() {
 	fmt.Printf("Node( ")
 	for i := 0; i < len(n.Keys); i++ {
-		fmt.Printf("%d | ", n.Keys[i])
+		fmt.Printf("%v | ", n.Keys[i])
 	}
 	fmt.Printf(")    ")
 }
@@ -254,7 +254,7 @@ func (n *LeafNode) PrintNode() {
 func (n *InternalNode) PrintNode() {
 	fmt.Printf("Node( ")
 	for i := 0; i < len(n.Keys); i++ {
-		fmt.Printf("%d | ", n.Keys[i])
+		fmt.Printf("%v | ", n.Keys[i])
 	}
 	fmt.Printf(")    ")
 }
