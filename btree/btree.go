@@ -61,7 +61,7 @@ func ConstructBtreeFromRootPointer(rootPage Pointer, degree int, pager Pager) *B
 
 func (tree *BTree) Insert(key Key, value interface{}) {
 	pager := tree.pager
-	var stack = make([]NodeIndexPair, 0, 0)
+	var stack = make([]NodeIndexPair, 0)
 	var i interface{}
 	root := tree.GetRoot()
 	i, stack = root.findAndGetStack(key, stack)
@@ -106,7 +106,7 @@ func (tree *BTree) Insert(key Key, value interface{}) {
 
 func (tree *BTree) InsertOrReplace(key Key, value interface{}) (isInserted bool) {
 	pager := tree.pager
-	var stack = make([]NodeIndexPair, 0, 0)
+	var stack = make([]NodeIndexPair, 0)
 	var i interface{}
 	i, stack = tree.GetRoot().findAndGetStack(key, stack)
 	if i != nil {
@@ -222,7 +222,7 @@ func (tree BTree) Print() {
 }
 
 func (tree *BTree) DeleteOld(key Key) bool {
-	var stack = make([]NodeIndexPair, 0, 0)
+	var stack = make([]NodeIndexPair, 0)
 	var i interface{}
 	i, stack = tree.GetRoot().findAndGetStack(key, stack)
 	if i == nil {
@@ -346,7 +346,7 @@ func (tree *BTree) DeleteOld(key Key) bool {
 }
 
 func (tree *BTree) Delete(key Key) bool {
-	var stack = make([]NodeIndexPair, 0, 0)
+	var stack = make([]NodeIndexPair, 0)
 	var i interface{}
 	root := tree.GetRoot()
 	defer tree.pager.Unpin(root, false)

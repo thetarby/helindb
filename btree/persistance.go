@@ -136,7 +136,7 @@ func (n NoopPersistentPager) NewInternalNode(firstPointer Pointer) Node {
 	asByte := buf.Bytes()
 	copy(data[PersistentNodeHeaderSize:], asByte)
 
-	mapping[lastPageId] = &node
+	mapping2[lastPageId] = &node
 	return &node
 }
 
@@ -155,12 +155,12 @@ func (n NoopPersistentPager) NewLeafNode() Node {
 	data := node.GetData()
 	WritePersistentNodeHeader(&h, data)
 
-	mapping[lastPageId] = &node
+	mapping2[lastPageId] = &node
 	return &node
 }
 
 var mapping2 = make(map[Pointer]Node)
 
 func (n NoopPersistentPager) GetNode(p Pointer) Node {
-	return mapping[p]
+	return mapping2[p]
 }

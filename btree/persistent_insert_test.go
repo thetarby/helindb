@@ -158,3 +158,24 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 	}
 
 }
+
+func TestPersistent_Find_Should_Unpin_All_Nodes_It_Pinned(t *testing.T) {
+	id, _ := uuid.NewUUID()
+	dbName := id.String()
+	defer os.Remove(dbName)
+
+	pool := buffer.NewBufferPool(dbName, 4)
+	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}, 8))
+	log.SetOutput(ioutil.Discard)
+	n := 1000
+	for _, i := range rand.Perm(n) {
+		tree.Insert(PersistentKey(i), SlotPointer{
+			PageId:  int64(i),
+			SlotIdx: int16(i),
+		})
+	}
+
+	val := tree.Find(PersistentKey(999))
+	assert.NotNil(t, val)
+	assert.Zero(t, pool.Replacer.NumPinnedPages())
+}
