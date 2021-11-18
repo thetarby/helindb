@@ -8,7 +8,7 @@ import (
 )
 
 func TestPersistentLeafNode_SetKeyAt(t *testing.T) {
-	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1), serializer: &PersistentKeySerializer{}, keySize: 8}
+	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1), keySerializer: &PersistentKeySerializer{}, valSerializer: &SlotPointerValueSerializer{}}
 	node.setKeyAt(0, PersistentKey(1))
 	p := SlotPointer{
 		PageId:  10,
@@ -24,7 +24,7 @@ func TestPersistentLeafNode_SetKeyAt(t *testing.T) {
 }
 
 func TestPersistentLeafNode_SetKeyAt_String_Key(t *testing.T) {
-	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1), serializer: &StringKeySerializer{Len: 5}, keySize: 8}
+	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1), keySerializer: &StringKeySerializer{Len: 5}, valSerializer: &SlotPointerValueSerializer{}}
 	node.setKeyAt(0, StringKey("selam"))
 	p := SlotPointer{
 		PageId:  10,
@@ -40,7 +40,7 @@ func TestPersistentLeafNode_SetKeyAt_String_Key(t *testing.T) {
 }
 
 func TestPersistentLeafNode_Should_Insert_To_Correct_Locations(t *testing.T) {
-	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1), serializer: &PersistentKeySerializer{}, keySize: 8}
+	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1), keySerializer: &PersistentKeySerializer{}, valSerializer: &SlotPointerValueSerializer{}}
 	slotP := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,
@@ -61,7 +61,7 @@ func TestPersistentLeafNode_Should_Insert_To_Correct_Locations(t *testing.T) {
 }
 
 func TestPersistentLeafNode_FindKey_Should_Find_Correct_Locations_When_Keys_Are_Inserted_Randomly(t *testing.T) {
-	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1), serializer: &PersistentKeySerializer{}, keySize: 8}
+	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1), keySerializer: &PersistentKeySerializer{}, valSerializer: &SlotPointerValueSerializer{}}
 	slotP := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,
@@ -86,7 +86,7 @@ func TestPersistentLeafNode_FindKey_Should_Find_Correct_Locations_When_Keys_Are_
 }
 
 func TestPersistentInternalNode_SetKeyAt_0_Should_Handle_First_Pointer(t *testing.T) {
-	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1), serializer: &PersistentKeySerializer{}, keySize: 8}
+	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1), keySerializer: &PersistentKeySerializer{}}
 	node.setKeyAt(0, PersistentKey(15))
 	p := Pointer(54)
 	node.setValueAt(0, p)
@@ -99,7 +99,7 @@ func TestPersistentInternalNode_SetKeyAt_0_Should_Handle_First_Pointer(t *testin
 }
 
 func TestPersistentInternalNode_Should_Insert_To_Correct_Locations_2(t *testing.T) {
-	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1), serializer: &PersistentKeySerializer{}, keySize: 8}
+	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1), keySerializer: &PersistentKeySerializer{}}
 	node.setKeyAt(0, PersistentKey(15))
 	p := Pointer(54)
 	node.setValueAt(0, p)
@@ -121,7 +121,7 @@ func TestPersistentInternalNode_Should_Insert_To_Correct_Locations_2(t *testing.
 }
 
 func TestPersistentInternalNode_Should_Insert_To_Correct_Locations(t *testing.T) {
-	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1), serializer: &PersistentKeySerializer{}, keySize: 8}
+	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1), keySerializer: &PersistentKeySerializer{}}
 
 	for i := 1; i < 10; i++ {
 		idx, found := node.findKey(PersistentKey(i))
@@ -140,7 +140,7 @@ func TestPersistentInternalNode_Should_Insert_To_Correct_Locations(t *testing.T)
 
 func TestPersistentInternalNode_FindKey_Should_Find_Correct_Locations_When_Keys_Are_Inserted_Randomly(t *testing.T) {
 	node := NewPersistentInternalNode(1)
-	node.serializer = &PersistentKeySerializer{}
+	node.keySerializer = &PersistentKeySerializer{}
 	a := []int{2, 3, 4, 5, 6, 7, 8, 9, 10} // 1 is inserted when creating
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(a), func(i, j int) { a[i], a[j] = a[j], a[i] })

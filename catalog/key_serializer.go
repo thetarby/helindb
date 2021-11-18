@@ -1,14 +1,14 @@
 package catalog
 
 import (
-	"fmt"
 	"helin/btree"
 	"helin/catalog/db_types"
 	"helin/disk/structures"
-	strings2 "strings"
 )
 
-type CharTypeKeySerializer struct{}
+type CharTypeKeySerializer struct{
+	KeySize int
+}
 
 func (p *CharTypeKeySerializer) Serialize(key btree.Key) ([]byte, error) {
 	val := key.(*db_types.Value)
@@ -25,43 +25,13 @@ func (p *CharTypeKeySerializer) Deserialize(data []byte) (btree.Key, error) {
 	return val, nil
 }
 
-type TupleKey struct {
-	Schema Schema
-	Tuple
+func (p *CharTypeKeySerializer) Size() int {
+	return p.KeySize
 }
 
-func (t *TupleKey) String() string {
-	strings := make([]string, 0)
-	for idx, _ := range t.Schema.GetColumns() {
-		val := t.GetValue(t.Schema, idx)
-		strings = append(strings, fmt.Sprintf("%v", val.GetAsInterface()))
-	}
-	return strings2.Join(strings, "-")
-}
-func (t *TupleKey) Less(than btree.Key) bool {
-	thanAsTupleKey := than.(*TupleKey)
-	for idx, _ := range t.Schema.GetColumns(){
-		val1 := t.GetValue(t.Schema, idx)
-		if val1 == nil{
-			break
-		}
-
-		val2 := thanAsTupleKey.GetValue(t.Schema, idx)
-		if val2 == nil{
-			break
-		}
-
-		if val1.Less(val2){
-			return true
-		}else if val2.Less(val1){
-			return false
-		}
-	}
-
-	return false
-}
-
-
+// TupleKeySerializer serializes a TupleKey with a schema. Since each db value can be 
+// serialized to binary all TupleKeySerializer has to do is to get each column from tuple
+// and serialize in order 
 type TupleKeySerializer struct{
 	schema Schema
 	keySize int
@@ -94,4 +64,8 @@ func (p *TupleKeySerializer) Deserialize(data []byte) (btree.Key, error) {
 		Schema: p.schema,
 		Tuple:  *tuple,
 	}, nil
+}
+
+func (p *TupleKeySerializer) Size() int {
+	return p.keySize
 }

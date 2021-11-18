@@ -25,7 +25,7 @@ func TestPersistent_Insert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 
 	var stack []NodeIndexPair
 
-	res, stack := tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(5), stack)
+	res, stack := tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(5), stack, Insert)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, p, res.(SlotPointer))
@@ -104,15 +104,15 @@ func TestPersistent_Pin_Count_Should_Be_Zero_After_Inserts_Are_Complete(t *testi
 }
 
 func TestPersistentInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
-	tree := NewBtree(3)
+	tree := NewBtreeWithPager(3, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}, KeySize: 8, ValSize: 10, ValueSerializer: &StringValueSerializer{Len: 10}})
 	for i := 0; i < 1000; i++ {
-		tree.Insert(MyInt(i), strconv.Itoa(i))
+		tree.Insert(PersistentKey(i), strconv.Itoa(i))
 	}
 
-	tree.InsertOrReplace(MyInt(500), "new_500")
-	val := tree.Find(MyInt(500))
+	tree.InsertOrReplace(PersistentKey(500), "new_500")
+	val := tree.Find(PersistentKey(500))
 
-	assert.Equal(t, "new_500", val.(string))
+	assert.Contains(t, val.(string), "new_500")
 }
 
 func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopened(t *testing.T) {

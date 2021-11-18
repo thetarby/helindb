@@ -7,50 +7,49 @@ import (
 )
 
 func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty(t *testing.T) {
-	tree := NewBtree(4)
+	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}, KeySize: 8, ValueSerializer: &StringValueSerializer{Len: 5}})
 	for _, val := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10} {
-		tree.Insert(MyInt(val), "selam")
+		tree.Insert(PersistentKey(val), "selam")
 	}
 	var stack []NodeIndexPair
-	res, stack := tree.pager.GetNode(tree.Root).findAndGetStack(MyInt(1), stack)
+	res, stack := tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(1), stack, Insert)
 	assert.Len(t, stack, 3)
 	assert.Equal(t, "selam", res.(string))
 
-	tree.Delete(MyInt(1))
+	tree.Delete(PersistentKey(1))
 	stack = []NodeIndexPair{}
-	_, stack = tree.pager.GetNode(tree.Root).findAndGetStack(MyInt(1), stack)
+	_, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(1), stack, Insert)
 
 	assert.Len(t, stack, 2)
 }
 
 func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_2(t *testing.T) {
-	tree := NewBtree(3)
-
+	tree := NewBtreeWithPager(3, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}, KeySize: 8, ValueSerializer: &StringValueSerializer{Len: 5}})
 	for _, val := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10} {
-		tree.Insert(MyInt(val), "selam")
+		tree.Insert(PersistentKey(val), "selam")
 	}
 
 	var stack []NodeIndexPair
-	res, stack := tree.pager.GetNode(tree.Root).findAndGetStack(MyInt(1), stack)
+	res, stack := tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(1), stack, Insert)
 	assert.Len(t, stack, 4)
 	assert.Equal(t, "selam", res.(string))
 
 	for _, i := range []int{1, 2, 3, 4, 5} {
 		var stack []NodeIndexPair
-		tree.Delete(MyInt(i))
-		res, stack := tree.pager.GetNode(tree.Root).findAndGetStack(MyInt(10), stack)
+		tree.Delete(PersistentKey(i))
+		res, stack := tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(10), stack, Insert)
 		assert.Len(t, stack, 3)
 		assert.Equal(t, "selam", res.(string))
 	}
 
-	tree.Delete(MyInt(6))
+	tree.Delete(PersistentKey(6))
 	stack = []NodeIndexPair{}
-	_, stack = tree.pager.GetNode(tree.Root).findAndGetStack(MyInt(10), stack)
+	_, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(10), stack, Insert)
 	assert.Len(t, stack, 2)
 }
 
 func TestDelete_Internals(t *testing.T) {
-	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}, KeySize: 8})
+	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}, KeySize: 8, ValueSerializer: &SlotPointerValueSerializer{}})
 	p := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,
@@ -80,7 +79,8 @@ func TestDelete_Internals(t *testing.T) {
 }
 
 func TestDelete_Internals2(t *testing.T) {
-	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}, KeySize: 8})
+	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}, KeySize: 8, ValueSerializer: &SlotPointerValueSerializer{}})
+
 	p := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,

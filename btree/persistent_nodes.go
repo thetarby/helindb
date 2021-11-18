@@ -31,7 +31,6 @@ type SlotPointer struct {
 // type Pointer int64
 
 const (
-	SlotPointerSize          = 10
 	PersistentNodeHeaderSize = 3 + 2*NodePointerSize
 	NodePointerSize          = 8 // Pointer is int64 which is 8 bytes
 )
@@ -45,9 +44,9 @@ type PersistentNodeHeader struct {
 
 type PersistentLeafNode struct {
 	PersistentPage
-	pager      Pager
-	serializer KeySerializer
-	keySize    int
+	pager         Pager
+	keySerializer KeySerializer
+	valSerializer ValueSerializer
 }
 
 func ReadPersistentNodeHeader(data []byte) *PersistentNodeHeader {
@@ -64,7 +63,7 @@ func WritePersistentNodeHeader(header *PersistentNodeHeader, dest []byte) {
 	copy(dest, buf.Bytes())
 }
 
-func (p *PersistentLeafNode) findAndGetStack(key Key, stackIn []NodeIndexPair) (value interface{}, stackOut []NodeIndexPair) {
+func (p *PersistentLeafNode) findAndGetStack(key Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
 	i, found := p.findKey(key)
 	stackOut = append(stackIn, NodeIndexPair{p.GetPageId(), i})
 	if !found {
@@ -99,8 +98,8 @@ func (p *PersistentLeafNode) findKey(key Key) (index int, found bool) {
 
 func (p *PersistentLeafNode) shiftKeyValueToRightAt(n int) {
 	data := p.GetData()
-	offset := n * (p.keySize + SlotPointerSize)
-	copy(data[PersistentNodeHeaderSize+offset+p.keySize+SlotPointerSize:], data[PersistentNodeHeaderSize+offset:])
+	offset := n * (p.keySerializer.Size() + p.valSerializer.Size())
+	copy(data[PersistentNodeHeaderSize+offset+p.keySerializer.Size()+p.valSerializer.Size():], data[PersistentNodeHeaderSize+offset:])
 }
 
 func (p *PersistentLeafNode) shiftKeyValueToLeftAt(n int) {
@@ -109,33 +108,31 @@ func (p *PersistentLeafNode) shiftKeyValueToLeftAt(n int) {
 		panic(fmt.Sprintf("index: %v cannot be shifted to left, it should be greater than 0", n))
 	}
 	data := p.GetData()
-	offset := n * (p.keySize + SlotPointerSize)
-	destOffset := (n - 1) * (p.keySize + SlotPointerSize)
+	offset := n * (p.keySerializer.Size() + p.valSerializer.Size())
+	destOffset := (n - 1) * (p.keySerializer.Size() + p.valSerializer.Size())
 	copy(data[PersistentNodeHeaderSize+destOffset:], data[PersistentNodeHeaderSize+offset:])
 }
 
 func (p *PersistentLeafNode) setKeyAt(idx int, key Key) { // TODO use persistentKey
 	data := p.GetData()
-	offset := idx * (p.keySize + SlotPointerSize)
-	asByte, err := p.serializer.Serialize(key)
+	offset := idx * (p.keySerializer.Size() + p.valSerializer.Size())
+	asByte, err := p.keySerializer.Serialize(key)
 	CheckErr(err)
 	copy(data[PersistentNodeHeaderSize+offset:], asByte)
 }
 
 func (p *PersistentLeafNode) setValueAt(idx int, val interface{}) {
 	data := p.GetData()
-	offset := (idx * (p.keySize + SlotPointerSize)) + p.keySize
-	buf := bytes.Buffer{}
-	err := binary.Write(&buf, binary.BigEndian, val)
+	offset := (idx * (p.keySerializer.Size() + p.valSerializer.Size())) + p.keySerializer.Size()
+	asByte, err := p.valSerializer.Serialize(val)
 	CheckErr(err)
-	asByte := buf.Bytes()
 	copy(data[PersistentNodeHeaderSize+offset:], asByte)
 }
 
 func (p *PersistentLeafNode) GetKeyAt(idx int) Key {
 	data := p.GetData()
-	offset := idx * (p.keySize + SlotPointerSize)
-	key, err := p.serializer.Deserialize(data[PersistentNodeHeaderSize+offset:])
+	offset := idx * (p.keySerializer.Size() + p.valSerializer.Size())
+	key, err := p.keySerializer.Deserialize(data[PersistentNodeHeaderSize+offset:])
 	CheckErr(err)
 
 	return key
@@ -143,10 +140,10 @@ func (p *PersistentLeafNode) GetKeyAt(idx int) Key {
 
 func (p *PersistentLeafNode) GetValueAt(idx int) interface{} {
 	data := p.GetData()
-	offset := idx*(p.keySize+SlotPointerSize) + p.keySize
-	reader := bytes.NewReader(data[PersistentNodeHeaderSize+offset:])
-	var val SlotPointer
-	err := binary.Read(reader, binary.BigEndian, &val)
+	offset := idx*(p.keySerializer.Size()+p.valSerializer.Size()) + p.keySerializer.Size()
+	// TODO: direct byte array can be returned here since this method mostly called internally by methods that does not care about its content
+	// return data[PersistentNodeHeaderSize+offset:PersistentNodeHeaderSize+offset:PersistentNodeHeaderSize+offset:PersistentNodeHeaderSize+offset+p.ValueSize]
+	val, err := p.valSerializer.Deserialize(data[PersistentNodeHeaderSize+offset:])
 	CheckErr(err)
 
 	return val
@@ -171,7 +168,7 @@ func (p *PersistentLeafNode) SplitNode(idx int) (right Pointer, keyAtLeft Key, k
 	rightKeyLen := leftHeader.KeyLen - int16(idx)
 	leftHeader.KeyLen = int16(idx)
 	WritePersistentNodeHeader(leftHeader, leftData)
-	offset := idx * (p.keySize + SlotPointerSize)
+	offset := idx * (p.keySerializer.Size() + p.valSerializer.Size())
 
 	rightNode := pager.NewLeafNode().(*PersistentLeafNode)
 	defer pager.Unpin(rightNode, true)
@@ -237,11 +234,6 @@ func (p *PersistentLeafNode) GetRight() Pointer {
 	return h.Right
 }
 
-func (p *PersistentLeafNode) GetLeft() Pointer {
-	h := ReadPersistentNodeHeader(p.GetData())
-	return h.Left
-}
-
 func (p *PersistentLeafNode) MergeNodes(rightNode Node, parent Node) {
 	if parent.IsLeaf() {
 		panic("parent node cannot be leaf")
@@ -255,7 +247,7 @@ func (p *PersistentLeafNode) MergeNodes(rightNode Node, parent Node) {
 	leftHeader := ReadPersistentNodeHeader(leftData)
 	rightHeader := ReadPersistentNodeHeader(rightData)
 
-	endOfLeft := PersistentNodeHeaderSize + (int(leftHeader.KeyLen) * (SlotPointerSize + p.keySize))
+	endOfLeft := PersistentNodeHeaderSize + (int(leftHeader.KeyLen) * (p.valSerializer.Size() + p.keySerializer.Size()))
 	copy(leftData[endOfLeft:], rightData[PersistentNodeHeaderSize:])
 
 	// TODO: destroy rightNode
@@ -299,9 +291,8 @@ func (p *PersistentLeafNode) IsUnderFlow(degree int) bool {
 
 type PersistentInternalNode struct {
 	PersistentPage
-	pager      Pager
-	serializer KeySerializer
-	keySize    int
+	pager         Pager
+	keySerializer KeySerializer
 }
 
 func NewPersistentInternalNode(firstPointer Pointer) *PersistentInternalNode {
@@ -329,17 +320,19 @@ func NewPersistentInternalNode(firstPointer Pointer) *PersistentInternalNode {
 
 }
 
-func (p *PersistentInternalNode) findAndGetStack(key Key, stackIn []NodeIndexPair) (value interface{}, stackOut []NodeIndexPair) {
+func (p *PersistentInternalNode) findAndGetStack(key Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
 	pager := p.pager
 	i, found := p.findKey(key)
 	if found {
 		i++
 	}
+
 	stackOut = append(stackIn, NodeIndexPair{p.GetPageId(), i})
 	pointer := p.GetValueAt(i).(Pointer)
 	node := pager.GetNode(pointer)
+
 	defer pager.Unpin(node, false)
-	res, stackOut := node.findAndGetStack(key, stackOut)
+	res, stackOut := node.findAndGetStack(key, stackOut, mode)
 	return res, stackOut
 }
 
@@ -369,13 +362,13 @@ func (p *PersistentInternalNode) findKey(key Key) (index int, found bool) {
 
 func (p *PersistentInternalNode) shiftKeyValueToRightAt(n int) {
 	data := p.GetData()
-	offset := n * (p.keySize + NodePointerSize)
+	offset := n * (p.keySerializer.Size() + NodePointerSize)
 
 	// in leaf nodes since there is one more pointer than keys additional pointer is stored right after the header
 	// after that layout is same as leaf node. Rest of the page is like an array of key value pairs. In internal nodes
 	// values are node pointers( Pointer )
 	pairBeginningOffset := NodePointerSize + PersistentNodeHeaderSize
-	copy(data[pairBeginningOffset+offset+p.keySize+NodePointerSize:], data[pairBeginningOffset+offset:])
+	copy(data[pairBeginningOffset+offset+p.keySerializer.Size()+NodePointerSize:], data[pairBeginningOffset+offset:])
 }
 
 func (p *PersistentInternalNode) shiftKeyValueToLeftAt(n int) {
@@ -384,8 +377,8 @@ func (p *PersistentInternalNode) shiftKeyValueToLeftAt(n int) {
 	}
 
 	data := p.GetData()
-	offset := n * (p.keySize + NodePointerSize)
-	destOffset := (n - 1) * (p.keySize + NodePointerSize)
+	offset := n * (p.keySerializer.Size() + NodePointerSize)
+	destOffset := (n - 1) * (p.keySerializer.Size() + NodePointerSize)
 
 	// in leaf nodes since there is one more pointer than keys additional pointer is stored right after the header
 	// after that layout is same as leaf node. Rest of the page is like an array of key value pairs. In internal nodes
@@ -396,10 +389,10 @@ func (p *PersistentInternalNode) shiftKeyValueToLeftAt(n int) {
 
 func (p *PersistentInternalNode) setKeyAt(idx int, key Key) {
 	data := p.GetData()
-	offset := idx * (p.keySize + NodePointerSize)
+	offset := idx * (p.keySerializer.Size() + NodePointerSize)
 	pairBeginningOffset := PersistentNodeHeaderSize + NodePointerSize
 
-	asByte, err := p.serializer.Serialize(key)
+	asByte, err := p.keySerializer.Serialize(key)
 	CheckErr(err)
 	copy(data[pairBeginningOffset+offset:], asByte)
 }
@@ -416,16 +409,16 @@ func (p *PersistentInternalNode) setValueAt(idx int, val interface{}) {
 		copy(data[PersistentNodeHeaderSize:], asByte)
 		return
 	}
-	offset := (idx-1)*(p.keySize+NodePointerSize) + p.keySize
+	offset := (idx-1)*(p.keySerializer.Size()+NodePointerSize) + p.keySerializer.Size()
 	pairBeginningOffset := PersistentNodeHeaderSize + NodePointerSize
 	copy(data[pairBeginningOffset+offset:], asByte)
 }
 
 func (p *PersistentInternalNode) GetKeyAt(idx int) Key {
 	data := p.GetData()
-	offset := idx * (p.keySize + NodePointerSize)
+	offset := idx * (p.keySerializer.Size() + NodePointerSize)
 	pairBeginningOffset := PersistentNodeHeaderSize + NodePointerSize
-	key, err := p.serializer.Deserialize(data[pairBeginningOffset+offset:])
+	key, err := p.keySerializer.Deserialize(data[pairBeginningOffset+offset:])
 	CheckErr(err)
 
 	return key
@@ -440,7 +433,7 @@ func (p *PersistentInternalNode) GetValueAt(idx int) interface{} {
 	} else {
 		// first pointer is in a special position so, this offset is the offset after the pairs started
 		// since first pointer is before pairs started in layout, it should not be calculated here. so idx - 1
-		offset := (idx-1)*(p.keySize+NodePointerSize) + p.keySize
+		offset := (idx-1)*(p.keySerializer.Size()+NodePointerSize) + p.keySerializer.Size()
 		pairBeginningOffset := PersistentNodeHeaderSize + NodePointerSize
 		reader = bytes.NewReader(data[pairBeginningOffset+offset:])
 	}
@@ -475,7 +468,7 @@ func (p *PersistentInternalNode) SplitNode(idx int) (right Pointer, keyAtLeft Ke
 	rightKeyLen := leftHeader.KeyLen - int16(idx) - 1
 	leftHeader.KeyLen = int16(idx)
 	WritePersistentNodeHeader(leftHeader, leftData)
-	offset := (idx + 1) * (p.keySize + NodePointerSize)
+	offset := (idx + 1) * (p.keySerializer.Size() + NodePointerSize)
 	pairBeginningOffset := PersistentNodeHeaderSize + NodePointerSize
 
 	// corresponding pointer is in the next index that is why +1
@@ -533,10 +526,6 @@ func (p *PersistentInternalNode) Keylen() int {
 
 func (p *PersistentInternalNode) GetRight() Pointer {
 	panic("no right pointer for internal nodes for now")
-}
-
-func (p *PersistentInternalNode) GetLeft() Pointer {
-	panic("no left pointer for internal nodes for now")
 }
 
 func (p *PersistentInternalNode) MergeNodes(rightNode Node, parent Node) {
@@ -651,4 +640,24 @@ func (p *PersistentInternalNode) Redistribute(rightNode Node, parent Node) {
 
 func (p *PersistentInternalNode) IsUnderFlow(degree int) bool {
 	return p.Keylen() < degree/2
+}
+
+func (n *PersistentLeafNode) IsSafeForMerge(degree int) bool {
+	h := ReadPersistentNodeHeader(n.GetData())
+	return int(h.KeyLen) > (degree+1)/2
+}
+
+func (n *PersistentInternalNode) IsSafeForMerge(degree int) bool {
+	h := ReadPersistentNodeHeader(n.GetData())
+	return int(h.KeyLen) > (degree+1)/2
+}
+
+func (n *PersistentLeafNode) IsSafeForSplit(degree int) bool {
+	h := ReadPersistentNodeHeader(n.GetData())
+	return int(h.KeyLen) < degree-1
+}
+
+func (n *PersistentInternalNode) IsSafeForSplit(degree int) bool {
+	h := ReadPersistentNodeHeader(n.GetData())
+	return int(h.KeyLen) < degree-1
 }

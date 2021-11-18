@@ -17,9 +17,11 @@ func (p RealPersistentPage) GetPageId() Pointer {
 }
 
 type BufferPoolPager struct {
-	pool          *buffer.BufferPool
-	keySerializer KeySerializer
-	keySize       int
+	pool            *buffer.BufferPool
+	keySerializer   KeySerializer
+	keySize         int
+	valueSerializer ValueSerializer
+	valueSize       int
 }
 
 func (b *BufferPoolPager) UnpinByPointer(p Pointer, isDirty bool) {
@@ -35,7 +37,7 @@ func (b *BufferPoolPager) NewInternalNode(firstPointer Pointer) Node {
 
 	p, err := b.pool.NewPage()
 	common.PanicIfErr(err)
-	node := PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, serializer: b.keySerializer, keySize: b.keySize}
+	node := PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer}
 
 	// write header
 	data := node.GetData()
@@ -59,7 +61,7 @@ func (b *BufferPoolPager) NewLeafNode() Node {
 
 	p, err := b.pool.NewPage() // TODO: handle error
 	common.PanicIfErr(err)
-	node := PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, serializer: b.keySerializer, keySize: b.keySize}
+	node := PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
 
 	// write header
 	data := node.GetData()
@@ -76,9 +78,9 @@ func (b *BufferPoolPager) GetNode(p Pointer) Node {
 	common.PanicIfErr(err)
 	h := ReadPersistentNodeHeader(page.GetData())
 	if h.IsLeaf == 1 {
-		return &PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, serializer: b.keySerializer, keySize: b.keySize}
+		return &PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
 	}
-	return &PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, serializer: b.keySerializer, keySize: b.keySize}
+	return &PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer}
 }
 
 func (b *BufferPoolPager) Unpin(n Node, isDirty bool) {
@@ -87,8 +89,20 @@ func (b *BufferPoolPager) Unpin(n Node, isDirty bool) {
 
 func NewBufferPoolPager(pool *buffer.BufferPool, serializer KeySerializer, keySize int) *BufferPoolPager {
 	return &BufferPoolPager{
-		pool:          pool,
-		keySerializer: serializer,
-		keySize:       keySize,
+		pool:            pool,
+		keySerializer:   serializer,
+		keySize:         keySize,
+		valueSize:       10,
+		valueSerializer: &SlotPointerValueSerializer{},
+	}
+}
+
+func NewBufferPoolPagerWithValueSize(pool *buffer.BufferPool, serializer KeySerializer, keySize int, valSerializer ValueSerializer, valueSize int) *BufferPoolPager {
+	return &BufferPoolPager{
+		pool:            pool,
+		keySerializer:   serializer,
+		keySize:         keySize,
+		valueSize:       valueSize,
+		valueSerializer: valSerializer,
 	}
 }

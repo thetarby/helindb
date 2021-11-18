@@ -15,3 +15,12 @@ func Contains(arr []int, x int) bool {
 	}
 	return false
 }
+
+func IndexOfInt(element int, data []int) (int) {
+	for k, v := range data {
+		if element == v {
+			return k
+		}
+	}
+	return -1    //not found.
+ }
