@@ -32,7 +32,7 @@ func TestCatalog_Create_Index_On_Unpopulated_Table_2_Nonunique_Index(t *testing.
 	}
 	keySchema := NewSchema(keyColumns)
 	serializer := TupleKeySerializer{schema: keySchema, keySize: 8}
-	index := btree.NewBtreeWithPager(50, btree.NewBufferPoolPager(pool, &serializer, 8))
+	index := btree.NewBtreeWithPager(50, btree.NewBufferPoolPager(pool, &serializer))
 
 	ageToFind := 16
 	toFind := make([]int, 0)

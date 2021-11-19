@@ -14,7 +14,7 @@ import (
 
 func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_3(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
-	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}, KeySize: 8})
+	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}})
 	for _, val := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10} {
 		tree.Insert(PersistentKey(val), SlotPointer{
 			PageId:  10,
@@ -41,7 +41,7 @@ func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 	dbFile := uuid.New().String() + ".helin"
 	pool := buffer.NewBufferPool(dbFile, 64)
 	defer os.Remove(dbFile)
-	tree := NewBtreeWithPager(100, NewBufferPoolPager(pool, &PersistentKeySerializer{}, 8))
+	tree := NewBtreeWithPager(100, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 
 	n := 10000
 	for _, i := range rand.Perm(n) {
@@ -75,7 +75,7 @@ func TestPersistentPin_Count_Should_Be_Zero_After_Deletes_Succeeds(t *testing.T)
 	dbFile := uuid.New().String() + ".helin"
 	pool := buffer.NewBufferPool(dbFile, 16)
 	defer os.Remove(dbFile)
-	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}, 8))
+	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 
 	n := 1000
 	for _, i := range rand.Perm(n) {
