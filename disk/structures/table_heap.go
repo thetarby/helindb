@@ -51,6 +51,10 @@ func (t *TableHeap) HardDeleteTuple(rid Rid, txn concurrency.Transaction) error 
 	}
 
 	slottedPage := pages.SlottedPageInstanceFromRawPage(page)
+	slottedPage.WLatch()
+	defer slottedPage.WUnlatch()
+	defer t.Pool.Unpin(slottedPage.GetPageId(), true)
+	
 	if err := slottedPage.HardDelete(int(rid.SlotIdx)); err != nil {
 		return err
 	}
@@ -67,12 +71,16 @@ func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, er
 	}
 
 	for {
+		currPage.WLatch()
 		// if there is enough space in the current page insert tuple and return Rid
 		if currPage.GetFreeSpace() >= (tuple.Length())+pages.SLOT_ARRAY_ENTRY_SIZE {
 			idx, err := currPage.InsertTuple(tuple.GetData())
 			if err != nil {
+				currPage.WUnlatch()
 				return Rid{}, err
 			}
+
+			currPage.WUnlatch()
 			t.Pool.Unpin(currPage.GetPageId(), true)
 			return NewRid(currPage.GetPageId(), idx), nil
 		}
@@ -84,17 +92,17 @@ func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, er
 				return Rid{}, err
 			}
 
-			currPage.WLatch()
 			h := currPage.GetHeader()
 			h.NextPageID = int64(page.GetPageId())
 			currPage.SetHeader(h)
-			currPage.WUnlatch()
 
+			currPage.WUnlatch()
 			t.Pool.Unpin(currPage.GetPageId(), true)
 			currPage = pages.FormatAsSlottedPage(page)
 			continue
 		}
 
+		currPage.WUnlatch()
 		// if next page id is set move on to that page
 		t.Pool.Unpin(currPage.GetPageId(), false)
 		raw, err := t.Pool.GetPage(int(currPage.GetHeader().NextPageID))
@@ -112,6 +120,9 @@ func (t *TableHeap) UpdateTuple(tuple Row, rid Rid, txn concurrency.Transaction)
 	}
 
 	slottedPage := pages.SlottedPageInstanceFromRawPage(page)
+	page.WLatch()
+	defer page.WUnlatch()
+	defer t.Pool.Unpin(page.GetPageId(), true)
 	if err := slottedPage.UpdateTuple(int(rid.SlotIdx), tuple.GetData()); err != nil {
 		// if error is because of tuple does not have enough space then update should do delete-insert
 		return err
@@ -127,6 +138,10 @@ func (t *TableHeap) ReadTuple(rid Rid, dest *Row, txn concurrency.Transaction) e
 	}
 
 	slottedPage := pages.SlottedPageInstanceFromRawPage(p)
+
+	slottedPage.RLatch()
+	defer slottedPage.RUnLatch()
+	defer t.Pool.Unpin(slottedPage.GetPageId(), false)
 	data := slottedPage.GetTuple(int(rid.SlotIdx))
 	dest.Data = data
 	dest.Rid = rid

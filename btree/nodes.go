@@ -54,6 +54,7 @@ type Node interface {
 	DeleteAt(index int)
 	GetPageId() Pointer
 	IsLeaf() bool
+	GetHeader() *PersistentNodeHeader
 	
 	// IsSafeForSplit returns true if there is at least one empty place in the node meaning it 
 	// won't split even one key is inserted
