@@ -53,7 +53,7 @@ func (r *RandomReplacer) ChooseVictim() (frameId int, err error) {
 		return frameIdx, nil
 	}
 
-	return 0, errors.New("all frames are pinned")
+	return 0, errors.New("all frames are unpinned")
 }
 
 func (r *RandomReplacer) GetSize() int {
