@@ -4,22 +4,23 @@ import (
 	"errors"
 	"fmt"
 	"helin/disk"
+	"helin/disk/pages"
 	"log"
 	"sync"
 )
 
 type IBufferPool interface {
-	GetPage(pageId int) (*disk.IPage, error)
+	GetPage(pageId int) (*pages.IPage, error)
 	Pin(pageId int) error
 	Unpin(pageId int, isDirty bool) bool
 	Flush(pageId int) error
 	FlushAll() error
-	NewPage() (page disk.IPage, err error)
+	NewPage() (page pages.IPage, err error)
 }
 
 type BufferPool struct {
 	poolSize    int
-	frames      []disk.IPage
+	frames      []pages.IPage
 	pageMap     map[int]int // physical page_id => frame index which keeps that page
 	emptyFrames []int       // list of indexes that points to empty frames in the pool
 	replacer    IReplacer
@@ -37,7 +38,7 @@ func NewBufferPool(dbFile string, poolsize int) *BufferPool {
 	d, _ := disk.NewDiskManager(dbFile)
 	return &BufferPool{
 		poolSize:    poolsize,
-		frames:      make([]disk.IPage, PoolSize, PoolSize),
+		frames:      make([]pages.IPage, PoolSize, PoolSize),
 		pageMap:     map[int]int{},
 		emptyFrames: emptyFrames,
 		diskManager: d,
@@ -46,7 +47,7 @@ func NewBufferPool(dbFile string, poolsize int) *BufferPool {
 	}
 }
 
-func (b *BufferPool) GetPage(pageId int) (disk.IPage, error) {
+func (b *BufferPool) GetPage(pageId int) (pages.IPage, error) {
 	// if page is already in a frame pin and return it
 	frameId, ok := b.pageMap[pageId]
 	if ok {
@@ -67,7 +68,7 @@ func (b *BufferPool) GetPage(pageId int) (disk.IPage, error) {
 			return nil, err
 		}
 
-		p := disk.NewRawPage(pageId)
+		p := pages.NewRawPage(pageId)
 		p.Data = pageData
 
 		b.pageMap[pageId] = emptyFrameIdx
@@ -99,7 +100,7 @@ func (b *BufferPool) GetPage(pageId int) (disk.IPage, error) {
 		return nil, err
 	}
 
-	p := disk.NewRawPage(pageId)
+	p := pages.NewRawPage(pageId)
 	p.Data = pageData
 
 	b.pageMap[pageId] = victimIdx
@@ -189,7 +190,7 @@ func (b *BufferPool) FlushAll() error {
 	return nil
 }
 
-func (b *BufferPool) NewPage() (page disk.IPage, err error) {
+func (b *BufferPool) NewPage() (page pages.IPage, err error) {
 	// TODO: too many duplicate code with GetPage
 	b.lock.Lock()
 	defer b.lock.Unlock()
@@ -200,7 +201,7 @@ func (b *BufferPool) NewPage() (page disk.IPage, err error) {
 		emptyFrameIdx := b.emptyFrames[0]
 		b.emptyFrames = b.emptyFrames[1:]
 
-		p := disk.NewRawPage(newPageId)
+		p := pages.NewRawPage(newPageId)
 
 		b.pageMap[newPageId] = emptyFrameIdx
 		b.frames[emptyFrameIdx] = p
@@ -225,7 +226,7 @@ func (b *BufferPool) NewPage() (page disk.IPage, err error) {
 		b.diskManager.WritePage(data, victimPageId)
 	}
 
-	p := disk.NewRawPage(newPageId)
+	p := pages.NewRawPage(newPageId)
 	b.pageMap[newPageId] = victimIdx
 	delete(b.pageMap, victimPageId)
 	b.frames[victimIdx] = p

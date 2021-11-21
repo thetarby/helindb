@@ -3,7 +3,7 @@ package buffer
 import (
 	"encoding/json"
 	"github.com/stretchr/testify/assert"
-	"helin/disk"
+	"helin/disk/pages"
 	"os"
 	"testing"
 )
@@ -34,7 +34,7 @@ func TestBufferPoolShouldWritePagesToDisk(t *testing.T) {
 		}
 
 		data[4095] = byte('\n')
-		p.(*disk.RawPage).Data = data[:]
+		p.(*pages.RawPage).Data = data[:]
 
 		b.Unpin(p.GetPageId(), true)
 	}

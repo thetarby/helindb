@@ -1,6 +1,9 @@
-package disk
+package pages
 
-import "sync"
+import (
+	"helin/disk"
+	"sync"
+)
 
 // IPage is a wrapper for actual physical pages in the file system. It can provide the actual content of the
 // physical page as a byte array. It also keeps some useful information about the page for buffer pool.
@@ -35,7 +38,7 @@ func NewRawPage(pageId int) *RawPage {
 		isDirty:  false,
 		rwLatch:  sync.RWMutex{},
 		PinCount: 0,
-		Data:     make([]byte, PageSize, PageSize),
+		Data:     make([]byte, disk.PageSize, disk.PageSize),
 	}
 }
 

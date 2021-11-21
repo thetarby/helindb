@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"helin/buffer"
-	"helin/disk"
+	"helin/disk/pages"
 )
 
 type demostruct struct {
@@ -43,7 +43,7 @@ func main() {
 		}
 
 		data[4095] = byte('\n')
-		p.(*disk.RawPage).Data = data[:]
+		p.(*pages.RawPage).Data = data[:]
 
 		buff.Unpin(p.GetPageId(), true)
 	}
