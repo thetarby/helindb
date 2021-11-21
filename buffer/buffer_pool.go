@@ -30,7 +30,7 @@ type BufferPool struct {
 	lock        sync.Mutex
 }
 
-const PoolSize = 32 // TODO: no need to be a constant, instead pass this to buffer pool ctor and replacer ctor
+const PoolSize = 128 // TODO: no need to be a constant, instead pass this to buffer pool ctor and replacer ctor
 
 func NewBufferPool(dbFile string) *BufferPool {
 	emptyFrames := make([]int, PoolSize, PoolSize)
@@ -51,16 +51,21 @@ func NewBufferPool(dbFile string) *BufferPool {
 
 func (b *BufferPool) GetPage(pageId int) (*pages.RawPage, error) {
 	// if page is already in a frame pin and return it
+	//val, ok := Accessed[pageId]
+	//if !ok{
+	//	Accessed[pageId]=1
+	//}else{
+	//	Accessed[pageId] = val+1
+	//}
+	//fmt.Println(b.pageMap)
 	frameId, ok := b.pageMap[pageId]
 	if ok {
-		log.Println("page is already in pool, no io required")
 		b.pin(pageId)
 		return b.frames[frameId], nil
 	}
 
 	// if page not found in frames and there is an empty frame. read page to frame and pin it.
 	if len(b.emptyFrames) > 0 {
-		log.Println("page will be read in an empty frame")
 		emptyFrameIdx := b.emptyFrames[0]
 		b.emptyFrames = b.emptyFrames[1:]
 
