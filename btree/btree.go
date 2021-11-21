@@ -60,10 +60,9 @@ func ConstructBtreeFromRootPointer(rootPage Pointer, degree int, pager Pager) *B
 
 func (tree *BTree) Insert(key Key, value interface{}) {
 	pager := tree.pager
-	root := pager.GetNode(tree.Root)
 	var stack = make([]NodeIndexPair, 0, 0)
 	var i interface{}
-	i, stack = root.findAndGetStack(key, stack)
+	i, stack = tree.GetRoot().findAndGetStack(key, stack)
 	if i != nil {
 		panic("key already exists")
 	}
@@ -72,13 +71,13 @@ func (tree *BTree) Insert(key Key, value interface{}) {
 	var rightKey = key
 
 	for len(stack) > 0 {
-		topOfStack := tree.pager.GetNode(stack[len(stack)-1].Node)
-		i, _ := topOfStack.findKey(key)
-		topOfStack.InsertAt(i, rightKey, rightNod)
-		tree.pager.Unpin(topOfStack, true)
-
 		popped := tree.pager.GetNode(stack[len(stack)-1].Node)
 		stack = stack[:len(stack)-1]
+		i, _ := popped.findKey(key)
+		popped.InsertAt(i, rightKey, rightNod)
+		tree.pager.Unpin(popped, true)
+		//topOfStack.PrintNode()
+
 		if popped.IsOverFlow(tree.degree) {
 			rightNod, _, rightKey = popped.SplitNode((tree.degree) / 2)
 			tree.pager.Unpin(popped, true)
@@ -86,7 +85,7 @@ func (tree *BTree) Insert(key Key, value interface{}) {
 			tree.pager.Unpin(popped, true)
 			if popped.GetPageId() == tree.Root {
 				leftNode := popped
-				// TODO: a method should be called here
+
 				newRoot := pager.NewInternalNode(leftNode.GetPageId())
 				newRoot.InsertAt(0, rightKey, rightNod.(Pointer))
 				tree.Root = newRoot.GetPageId()
@@ -97,14 +96,17 @@ func (tree *BTree) Insert(key Key, value interface{}) {
 			break
 		}
 	}
+
+	for _, pair := range stack {
+		tree.pager.Unpin(tree.pager.GetNode(pair.Node), false)
+	}
 }
 
 func (tree *BTree) InsertOrReplace(key Key, value interface{}) (isInserted bool) {
 	pager := tree.pager
-	root := pager.GetNode(tree.Root)
 	var stack = make([]NodeIndexPair, 0, 0)
 	var i interface{}
-	i, stack = root.findAndGetStack(key, stack)
+	i, stack = tree.GetRoot().findAndGetStack(key, stack)
 	if i != nil {
 		// top of stack is the leaf Node
 		topOfStack := stack[len(stack)-1]
@@ -120,6 +122,7 @@ func (tree *BTree) InsertOrReplace(key Key, value interface{}) (isInserted bool)
 		topOfStack := tree.pager.GetNode(stack[len(stack)-1].Node)
 		i, _ := topOfStack.findKey(key)
 		topOfStack.InsertAt(i, rightKey, rightNod)
+
 		popped := tree.pager.GetNode(stack[len(stack)-1].Node)
 		stack = stack[:len(stack)-1]
 		if popped.IsOverFlow(tree.degree) {
@@ -140,8 +143,7 @@ func (tree *BTree) InsertOrReplace(key Key, value interface{}) (isInserted bool)
 }
 
 func (tree *BTree) Find(key Key) interface{} {
-	root := tree.pager.GetNode(tree.Root)
-	res, _ := root.findAndGetStack(key, []NodeIndexPair{})
+	res, _ := tree.GetRoot().findAndGetStack(key, []NodeIndexPair{})
 	return res
 }
 
@@ -191,10 +193,10 @@ func (tree BTree) Print() {
 	}
 }
 
-func (tree *BTree) Delete(key Key) bool {
+func (tree *BTree) DeleteOld(key Key) bool {
 	var stack = make([]NodeIndexPair, 0, 0)
 	var i interface{}
-	i, stack = tree.pager.GetNode(tree.Root).findAndGetStack(key, stack)
+	i, stack = tree.GetRoot().findAndGetStack(key, stack)
 	if i == nil {
 		return false
 	}
@@ -203,40 +205,41 @@ func (tree *BTree) Delete(key Key) bool {
 	index, _ := leafNode.findKey(key)
 	leafNode.DeleteAt(index)
 	stack = stack[:len(stack)-1]
-	top := stack[len(stack)-1].Node
 
 	if leafNode.IsUnderFlow(tree.degree) { //len(leafNode.Values) < (tree.degree)/2 {
 		// should merge or redistribute
+		parent := tree.pager.GetNode(stack[len(stack)-1].Node)
 		rightOfLeaf := tree.pager.GetNode(leafNode.GetRight())
 		leftOfLeaf := tree.pager.GetNode(leafNode.GetLeft())
 		if rightOfLeaf != nil && rightOfLeaf.Keylen() >= ((tree.degree)/2)+1 {
-			parent := tree.pager.GetNode(top)
 			leafNode.Redistribute(rightOfLeaf, parent)
+
 			tree.pager.Unpin(leafNode, true)
 			tree.pager.Unpin(rightOfLeaf, true)
 			tree.pager.Unpin(parent, true)
 			return true
 		} else if leftOfLeaf != nil && leftOfLeaf.Keylen() >= ((tree.degree)/2)+1 {
-			parent := tree.pager.GetNode(top)
 			leftOfLeaf.Redistribute(leafNode, parent)
+
 			tree.pager.Unpin(leftOfLeaf, true)
 			tree.pager.Unpin(leafNode, true)
 			tree.pager.Unpin(parent, true)
 			return true
 		} else {
 			if rightOfLeaf != nil {
-				parent := tree.pager.GetNode(top)
 				leafNode.MergeNodes(rightOfLeaf, parent)
+
 				tree.pager.Unpin(leafNode, true)
 				tree.pager.Unpin(rightOfLeaf, true)
 				tree.pager.Unpin(parent, true)
 			} else if leftOfLeaf != nil {
-				parent := tree.pager.GetNode(top)
 				leftOfLeaf.MergeNodes(leafNode, parent)
+
 				tree.pager.Unpin(leftOfLeaf, true)
 				tree.pager.Unpin(leafNode, true)
 				tree.pager.Unpin(parent, true)
 			} else {
+				// TODO: maybe log here
 				return true
 			}
 		}
@@ -266,12 +269,14 @@ func (tree *BTree) Delete(key Key) bool {
 				//try redistribute
 				if rightSibling != nil && (rightSibling.Keylen()+1) > (tree.degree+1)/2 {
 					top.Redistribute(rightSibling, parent)
+
 					tree.pager.Unpin(top, true)
 					tree.pager.Unpin(rightSibling, true)
 					tree.pager.Unpin(parent, true)
 					return true
 				} else if leftSibling != nil && (leftSibling.Keylen()+1) > (tree.degree+1)/2 {
 					leftSibling.Redistribute(top, parent)
+
 					tree.pager.Unpin(top, true)
 					tree.pager.Unpin(leftSibling, true)
 					tree.pager.Unpin(parent, true)
@@ -281,6 +286,7 @@ func (tree *BTree) Delete(key Key) bool {
 				// if redistribution is not valid merge
 				if rightSibling != nil {
 					top.MergeNodes(rightSibling, parent)
+
 					tree.pager.Unpin(top, true)
 					tree.pager.Unpin(rightSibling, true)
 					tree.pager.Unpin(parent, true)
@@ -290,6 +296,7 @@ func (tree *BTree) Delete(key Key) bool {
 						panic("Both siblings are null for an internal Node! This should not be possible.")
 					}
 					leftSibling.MergeNodes(top, parent)
+
 					tree.pager.Unpin(top, true)
 					tree.pager.Unpin(leftSibling, true)
 					tree.pager.Unpin(parent, true)
@@ -307,5 +314,99 @@ func (tree *BTree) Delete(key Key) bool {
 	for _, pair := range stack {
 		tree.pager.Unpin(tree.pager.GetNode(pair.Node), false)
 	}
+	return true
+}
+
+func (tree *BTree) Delete(key Key) bool {
+	var stack = make([]NodeIndexPair, 0, 0)
+	var i interface{}
+	i, stack = tree.GetRoot().findAndGetStack(key, stack)
+	if i == nil {
+		return false
+	}
+
+	for len(stack) > 0 {
+		popped := tree.pager.GetNode(stack[len(stack)-1].Node)
+		stack = stack[:len(stack)-1]
+		if popped.IsLeaf() {
+			index, _ := popped.findKey(key)
+			popped.DeleteAt(index)
+		}
+
+		if len(stack) == 0 {
+			// if no parent left in stack it is done
+			tree.pager.Unpin(popped, false) // NOTE: this one is tricky. But if root is dirty then previous turn in the loop should have already set it dirty
+			return true
+		}
+		indexAtParent := stack[len(stack)-1].Index
+		parent := tree.pager.GetNode(stack[len(stack)-1].Node)
+
+		if popped.IsUnderFlow(tree.degree) {
+			// get siblings
+			var rightSibling, leftSibling, merged Node
+			if indexAtParent > 0 {
+				leftSibling = tree.pager.GetNode(parent.GetValueAt(indexAtParent - 1).(Pointer)) //leftSibling = parent.Pointers[indexAtParent-1].(*InternalNode)
+			}
+			if indexAtParent+1 < (parent.Keylen() + 1) { // +1 is the length of pointers
+				rightSibling = tree.pager.GetNode(parent.GetValueAt(indexAtParent + 1).(Pointer)) //rightSibling = parent.Pointers[indexAtParent+1].(*InternalNode)
+			}
+
+			//try redistribute
+			if rightSibling != nil &&
+				((popped.IsLeaf() && rightSibling.Keylen() >= (tree.degree/2)+1) ||
+					(!popped.IsLeaf() && rightSibling.Keylen()+1 > (tree.degree+1)/2)) { // TODO: second check is actually different for internal and leaf nodes since internal nodes have one more value than they have keys
+				popped.Redistribute(rightSibling, parent)
+
+				tree.pager.Unpin(popped, true)
+				tree.pager.Unpin(rightSibling, true)
+				tree.pager.Unpin(parent, true)
+				return true
+			} else if leftSibling != nil &&
+				((popped.IsLeaf() && leftSibling.Keylen() >= (tree.degree/2)+1) ||
+					(!popped.IsLeaf() && leftSibling.Keylen()+1 > (tree.degree+1)/2)) {
+				leftSibling.Redistribute(popped, parent)
+
+				tree.pager.Unpin(popped, true)
+				tree.pager.Unpin(leftSibling, true)
+				tree.pager.Unpin(parent, true)
+				return true
+			}
+
+			// if redistribution is not valid merge
+			if rightSibling != nil {
+				popped.MergeNodes(rightSibling, parent)
+				merged = popped
+
+				tree.pager.Unpin(popped, true)
+				tree.pager.Unpin(rightSibling, true)
+				tree.pager.Unpin(parent, true)
+			} else {
+				if leftSibling == nil {
+					if !popped.IsLeaf() {
+						panic("Both siblings are null for an internal Node! This should not be possible except for root")
+					}
+
+					// TODO: may be log here? if it is a leaf node its both left and right nodes can be nil
+					return true
+				}
+				leftSibling.MergeNodes(popped, parent)
+				merged = leftSibling
+
+				tree.pager.Unpin(popped, true)
+				tree.pager.Unpin(leftSibling, true)
+				tree.pager.Unpin(parent, true)
+			}
+			if parent.GetPageId() == tree.Root && parent.Keylen() == 0 {
+				tree.Root = merged.GetPageId()
+			}
+		} else {
+			break
+		}
+	}
+
+	for _, pair := range stack {
+		tree.pager.Unpin(tree.pager.GetNode(pair.Node), false)
+	}
+
 	return true
 }
