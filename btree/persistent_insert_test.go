@@ -37,7 +37,7 @@ func TestPersistentInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *test
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
 	defer os.Remove(dbName)
-	pool := buffer.NewBufferPool(dbName, 4)
+	pool := buffer.NewBufferPool(dbName, 8)
 	tree := NewBtreeWithPager(80, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), SlotPointer{

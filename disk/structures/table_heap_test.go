@@ -3,8 +3,12 @@ package structures
 import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"helin/buffer"
+	"helin/common"
 	"helin/disk/pages"
+	"io"
+	"log"
 	"os"
 	"strconv"
 	"testing"
@@ -64,5 +68,185 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 		table.ReadTuple(rid, &tuple, "")
 
 		assert.Equal(t, []byte(strconv.Itoa(i)), tuple.data)
+	}
+}
+
+func TestTableHeap_Delete(t *testing.T) {
+	id, _ := uuid.NewUUID()
+	dbName := id.String()
+	defer os.Remove(dbName)
+	log.SetOutput(io.Discard)
+
+	pool := buffer.NewBufferPool(dbName, 32)
+	firstPage, _ := pool.NewPage()
+	pages.FormatAsSlottedPage(firstPage)
+	table := TableHeap{
+		pool:        pool,
+		firstPageID: firstPage.GetPageId(),
+		lastPageID:  0,
+	}
+
+	inserted := make([]Rid, 0)
+	for i := 0; i < 10_000; i++ {
+		rid, err := table.InsertTuple(Tuple{
+			data: []byte(strconv.Itoa(i)),
+			rid:  Rid{},
+		}, "")
+
+		assert.NoError(t, err)
+		inserted = append(inserted, rid)
+	}
+
+	toDelete := []int{5, 8, 9}
+	for _, i := range toDelete {
+		err := table.HardDeleteTuple(inserted[i], "")
+		assert.NoError(t, err)
+	}
+
+	for i := 0; i < 10_000; i++ {
+		rid := inserted[i]
+		tuple := Tuple{}
+		if common.Contains(toDelete, i) {
+			table.ReadTuple(rid, &tuple, "")
+			require.Nil(t, tuple.GetData())
+			continue
+		}
+		table.ReadTuple(rid, &tuple, "")
+
+		require.Equal(t, []byte(strconv.Itoa(i)), tuple.data)
+	}
+}
+
+func TestTableHeap_Delete_Last_Inserted_Item(t *testing.T) {
+	id, _ := uuid.NewUUID()
+	dbName := id.String()
+	defer os.Remove(dbName)
+
+	pool := buffer.NewBufferPool(dbName, 32)
+	firstPage, _ := pool.NewPage()
+	pages.FormatAsSlottedPage(firstPage)
+	table := TableHeap{
+		pool:        pool,
+		firstPageID: firstPage.GetPageId(),
+		lastPageID:  0,
+	}
+
+	inserted := make([]Rid, 0)
+	for i := 0; i < 10; i++ {
+		rid, err := table.InsertTuple(Tuple{
+			data: []byte(strconv.Itoa(i)),
+			rid:  Rid{},
+		}, "")
+
+		assert.NoError(t, err)
+		inserted = append(inserted, rid)
+	}
+
+	toDelete := []int{9}
+	for _, i := range toDelete {
+		err := table.HardDeleteTuple(inserted[i], "")
+		assert.NoError(t, err)
+	}
+
+	for i := 0; i < 10; i++ {
+		if common.Contains(toDelete, i) {
+			continue
+		}
+
+		rid := inserted[i]
+		tuple := Tuple{}
+		table.ReadTuple(rid, &tuple, "")
+
+		require.Equal(t, []byte(strconv.Itoa(i)), tuple.data)
+	}
+}
+
+func TestTableHeap_Delete_First_Inserted_Item(t *testing.T) {
+	id, _ := uuid.NewUUID()
+	dbName := id.String()
+	defer os.Remove(dbName)
+
+	pool := buffer.NewBufferPool(dbName, 32)
+	firstPage, _ := pool.NewPage()
+	pages.FormatAsSlottedPage(firstPage)
+	table := TableHeap{
+		pool:        pool,
+		firstPageID: firstPage.GetPageId(),
+		lastPageID:  0,
+	}
+
+	inserted := make([]Rid, 0)
+	for i := 0; i < 10; i++ {
+		rid, err := table.InsertTuple(Tuple{
+			data: []byte(strconv.Itoa(i)),
+			rid:  Rid{},
+		}, "")
+
+		assert.NoError(t, err)
+		inserted = append(inserted, rid)
+	}
+
+	toDelete := []int{0}
+	for _, i := range toDelete {
+		err := table.HardDeleteTuple(inserted[i], "")
+		assert.NoError(t, err)
+	}
+
+	for i := 0; i < 10; i++ {
+		if common.Contains(toDelete, i) {
+			continue
+		}
+
+		rid := inserted[i]
+		tuple := Tuple{}
+		table.ReadTuple(rid, &tuple, "")
+
+		require.Equal(t, []byte(strconv.Itoa(i)), tuple.data)
+	}
+}
+
+func TestTableHeap_Update(t *testing.T) {
+	id, _ := uuid.NewUUID()
+	dbName := id.String()
+	defer os.Remove(dbName)
+	log.SetOutput(io.Discard)
+
+	pool := buffer.NewBufferPool(dbName, 32)
+	firstPage, _ := pool.NewPage()
+	pages.FormatAsSlottedPage(firstPage)
+	table := TableHeap{
+		pool:        pool,
+		firstPageID: firstPage.GetPageId(),
+		lastPageID:  0,
+	}
+
+	inserted := make([]Rid, 0)
+	for i := 0; i < 100; i++ {
+		rid, err := table.InsertTuple(Tuple{
+			data: []byte(strconv.Itoa(i)),
+			rid:  Rid{},
+		}, "")
+
+		assert.NoError(t, err)
+		inserted = append(inserted, rid)
+	}
+
+	toUpdate := []int{15, 25, 35}
+	for _, i := range toUpdate {
+		err := table.UpdateTuple(Tuple{data: []byte("updated")}, inserted[i], "")
+		assert.NoError(t, err)
+	}
+
+	for i := 0; i < 100; i++ {
+		rid := inserted[i]
+		tuple := Tuple{}
+		if common.Contains(toUpdate, i) {
+			table.ReadTuple(rid, &tuple, "")
+			require.Equal(t, []byte("updated"), tuple.GetData())
+			continue
+		}
+		table.ReadTuple(rid, &tuple, "")
+
+		require.Equal(t, []byte(strconv.Itoa(i)), tuple.data)
 	}
 }
