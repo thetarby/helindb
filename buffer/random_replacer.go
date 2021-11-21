@@ -13,6 +13,10 @@ type RandomReplacer struct {
 	lock   sync.Mutex
 }
 
+func (r *RandomReplacer) NumPinnedPages() int {
+	return len(r.pinned)
+}
+
 func NewRandomReplacer(poolSize int) *RandomReplacer {
 	return &RandomReplacer{
 		pinned: make(map[int]int),
@@ -53,7 +57,7 @@ func (r *RandomReplacer) ChooseVictim() (frameId int, err error) {
 		return frameIdx, nil
 	}
 
-	return 0, errors.New("all frames are unpinned")
+	return 0, errors.New("all frames are pinned")
 }
 
 func (r *RandomReplacer) GetSize() int {

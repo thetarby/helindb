@@ -9,26 +9,26 @@ type ITuple interface {
 }
 
 type Tuple struct {
-	data []byte
-	rid  Rid
+	Data []byte
+	Rid  Rid
 }
 
 func (t *Tuple) Serialize(dest []byte) {
-	copy(dest, t.data)
+	copy(dest, t.Data)
 }
 
 func (t *Tuple) Deserialize(from []byte) {
-	copy(t.data, from)
+	copy(t.Data, from)
 }
 
 func (t *Tuple) GetRid() Rid {
-	return t.rid
+	return t.Rid
 }
 
 func (t *Tuple) GetData() []byte {
-	return t.data
+	return t.Data
 }
 
 func (t *Tuple) Length() int {
-	return len(t.data)
+	return len(t.Data)
 }

@@ -12,6 +12,10 @@ type LruReplacer struct {
 	lock     sync.Mutex
 }
 
+func (l *LruReplacer) NumPinnedPages() int {
+	return len(l.pinned)
+}
+
 var Victims = make(map[int]int)
 var Accessed = make(map[int]int)
 

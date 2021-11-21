@@ -42,12 +42,12 @@ func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 	tree := NewBtreeWithPager(100, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 
 	n := 10000
-	for num, i := range rand.Perm(n) {
+	for _, i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
 			PageId:  int64(i),
 			SlotIdx: int16(i),
 		})
-		println("inserted %v", num, i, tree.Height(), tree.pager.(*BufferPoolPager).pool.EmptyFrameSize())
+		// println("inserted %v", num, i, tree.Height(), tree.pager.(*BufferPoolPager).pool.EmptyFrameSize())
 	}
 
 	for i := 0; i < n; i++ {
@@ -61,9 +61,33 @@ func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 			SlotIdx: int16(i),
 		}, val.(SlotPointer))
 		tree.Delete(PersistentKey(i))
-		println("deleted %v", i)
+		// println("deleted %v", i)
 
 		val = tree.Find(PersistentKey(i))
 		assert.Nil(t, val)
 	}
+}
+
+func TestPersistentPin_Count_Should_Be_Zero_After_Deletes_Succeeds(t *testing.T) {
+	log.SetOutput(ioutil.Discard)
+	dbFile := uuid.New().String() + ".helin"
+	pool := buffer.NewBufferPool(dbFile, 16)
+	defer os.Remove(dbFile)
+	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+
+	n := 1000
+	for _, i := range rand.Perm(n) {
+		tree.Insert(PersistentKey(i), SlotPointer{
+			PageId:  int64(i),
+			SlotIdx: int16(i),
+		})
+	}
+
+	assert.Equal(t, 0, pool.Replacer.NumPinnedPages())
+
+	for i := 0; i < n; i++ {
+		tree.Delete(PersistentKey(i))
+	}
+
+	assert.Equal(t, 0, pool.Replacer.NumPinnedPages())
 }

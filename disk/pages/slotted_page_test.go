@@ -147,7 +147,6 @@ func TestSlottedPage_HardDeleted_Slots_Should_Not_Be_Found(t *testing.T) {
 	}
 
 	for i, pair := range pairs {
-		println(i)
 		if common.Contains(toDeleteIndexes, i) {
 			entry := p.getFromSlotArr(pair.idx)
 			require.True(t, isDeleted(entry))
