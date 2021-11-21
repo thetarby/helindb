@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"sort"
 	"sync"
@@ -21,6 +22,12 @@ type IDiskManager interface {
 }
 
 const PageSize int = 4096
+
+// FlushInstantly should normally be set to true. If it is false then data might be lost even after a successful write
+// operation when power loss occurs before os flushes its io buffers. But when it is false, one thread tests runs faster
+// thanks to io scheduling of os, so for development it could be set to false. Setting it to false should not change
+// the validity of any tests unless a test is simulating a power loss.
+const FlushInstantly bool = false
 
 type DiskManager struct {
 	file       *os.File
@@ -48,7 +55,7 @@ func NewDiskManager(file string) (IDiskManager, error) {
 	stats, _ := f.Stat()
 
 	filesize := stats.Size()
-	fmt.Printf("file size is %d \n", filesize)
+	log.Printf("db is initalizing, file size is %d \n", filesize)
 
 	d.lastPageId = (int(filesize) / PageSize) - 1
 	if d.lastPageId == -1 {
@@ -72,9 +79,12 @@ func (d *DiskManager) WritePage(data []byte, pageId int) error {
 	if n != PageSize {
 		panic("written bytes are not equal to pagesize")
 	}
-	err = d.file.Sync()
-	if err != nil {
-		panic(err.Error())
+
+	if FlushInstantly {
+		err = d.file.Sync()
+		if err != nil {
+			panic(err.Error())
+		}
 	}
 
 	return nil

@@ -81,11 +81,11 @@ func (l *LruReplacer) findFrameId(frameId int) (int, bool) {
 	return 0, false
 }
 
-func NewLruReplacer() *LruReplacer {
+func NewLruReplacer(poolSize int) *LruReplacer {
 	return &LruReplacer{
 		unpinned: make([]int, 0),
 		pinned:   make(map[int]int),
-		size:     PoolSize, // TODO: is size really needed?
+		size:     poolSize, // TODO: is size really needed?
 		lock:     sync.Mutex{},
 	}
 }

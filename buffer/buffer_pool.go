@@ -3,7 +3,6 @@ package buffer
 import (
 	"errors"
 	"fmt"
-	"helin/common"
 	"helin/disk"
 	"helin/disk/pages"
 	"log"
@@ -31,23 +30,20 @@ type BufferPool struct {
 	lock        sync.Mutex
 }
 
-const PoolSize = 128 // TODO: no need to be a constant, instead pass this to buffer pool ctor and replacer ctor
-
-func NewBufferPool(dbFile string) *BufferPool {
-	emptyFrames := make([]int, PoolSize, PoolSize)
-	for i := 0; i < PoolSize; i++ {
+func NewBufferPool(dbFile string, poolSize int) *BufferPool {
+	emptyFrames := make([]int, poolSize, poolSize)
+	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i
 	}
-	d, err := disk.NewDiskManager(dbFile)
-	common.PanicIfErr(err)
+	d, _ := disk.NewDiskManager(dbFile)
 	return &BufferPool{
-		poolSize:    PoolSize,
-		frames:      make([]*pages.RawPage, PoolSize, PoolSize),
+		poolSize:    poolSize,
+		frames:      make([]*pages.RawPage, poolSize, poolSize),
 		pageMap:     map[int]int{},
 		emptyFrames: emptyFrames,
 		DiskManager: d,
 		lock:        sync.Mutex{},
-		replacer:    NewRandomReplacer(),
+		replacer:    NewRandomReplacer(poolSize),
 	}
 }
 

@@ -37,7 +37,7 @@ func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_3(t *testing.T) {
 func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
 	dbFile := uuid.New().String() + ".helin"
-	pool := buffer.NewBufferPool(dbFile)
+	pool := buffer.NewBufferPool(dbFile, 64)
 	defer os.Remove(dbFile)
 	tree := NewBtreeWithPager(100, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 

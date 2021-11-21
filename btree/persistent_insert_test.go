@@ -2,6 +2,7 @@ package btree
 
 import (
 	"fmt"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"helin/buffer"
 	"io/ioutil"
@@ -33,8 +34,10 @@ func TestPersistent_Insert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 }
 
 func TestPersistentInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {
-	os.Remove("db2.helin")
-	pool := buffer.NewBufferPool("db2.helin")
+	id, _ := uuid.NewUUID()
+	dbName := id.String()
+	defer os.Remove(dbName)
+	pool := buffer.NewBufferPool(dbName, 4)
 	tree := NewBtreeWithPager(80, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), SlotPointer{
@@ -52,8 +55,11 @@ func TestPersistentInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *test
 }
 
 func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
-	os.Remove("db2.helin")
-	pool := buffer.NewBufferPool("db2.helin")
+	id, _ := uuid.NewUUID()
+	dbName := id.String()
+	defer os.Remove(dbName)
+
+	pool := buffer.NewBufferPool(dbName, 32)
 	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
 	n := 1000
@@ -94,8 +100,12 @@ func TestPersistentInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *tes
 }
 
 func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopened(t *testing.T) {
-	os.Remove("db2.helin")
-	pool := buffer.NewBufferPool("db2.helin")
+	id, _ := uuid.NewUUID()
+	dbName := id.String()
+	defer os.Remove(dbName)
+
+	poolSize := 64
+	pool := buffer.NewBufferPool(dbName, poolSize)
 	tree := NewBtreeWithPager(80, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
 
@@ -116,7 +126,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 	tree.pager.(*BufferPoolPager).pool.FlushAll()
 	err := tree.pager.(*BufferPoolPager).pool.DiskManager.Close()
 	assert.NoError(t, err)
-	newPool := buffer.NewBufferPool("db2.helin")
+	newPool := buffer.NewBufferPool(dbName, poolSize)
 	newTreeReference := ConstructBtreeFromRootPointer(tree.Root, 80, NewBufferPoolPager(newPool, &PersistentKeySerializer{}))
 
 	rand.Shuffle(len(v), func(i, j int) {

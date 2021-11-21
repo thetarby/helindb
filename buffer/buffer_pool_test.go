@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"github.com/stretchr/testify/assert"
 	"helin/disk"
+	"io/ioutil"
+	"log"
 	"math/rand"
 	"os"
 	"testing"
@@ -16,8 +18,9 @@ type teststruct struct {
 
 func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 	os.Remove("tmp.helin")
-	b := NewBufferPool("tmp.helin")
+	b := NewBufferPool("tmp.helin", 2)
 	defer os.Remove("tmp.helin")
+	log.SetOutput(ioutil.Discard)
 
 	// write 50 pages with 2 sized buffer pool
 	pageIDs := make([]int, 0)
@@ -60,8 +63,10 @@ func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 
 func TestBuffer_Pool_Should_Not_Corrupt_Pages(t *testing.T) {
 	os.Remove("tmp2.helin")
-	b := NewBufferPool("tmp2.helin")
+	b := NewBufferPool("tmp2.helin", 2)
 	defer os.Remove("tmp2.helin")
+	log.SetOutput(ioutil.Discard)
+
 	numPagesToTest := 50
 
 	//generate 50 random page sized byte arrays
