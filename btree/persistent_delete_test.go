@@ -1,17 +1,19 @@
 package btree
 
 import (
-	"github.com/google/uuid"
-	"github.com/stretchr/testify/assert"
 	"helin/buffer"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
 	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_3(t *testing.T) {
+	log.SetOutput(ioutil.Discard)
 	tree := NewBtreeWithPager(4, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}, KeySize: 8})
 	for _, val := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10} {
 		tree.Insert(PersistentKey(val), SlotPointer{
