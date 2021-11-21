@@ -289,6 +289,11 @@ func (p *PersistentLeafNode) IsUnderFlow(degree int) bool {
 	return (p.Keylen()) < degree/2 // keylen + 1 is the values length
 }
 
+func (p *PersistentLeafNode) GetHeader() *PersistentNodeHeader {
+	d := p.GetData()
+	return ReadPersistentNodeHeader(d)
+}
+
 type PersistentInternalNode struct {
 	PersistentPage
 	pager         Pager
@@ -640,6 +645,11 @@ func (p *PersistentInternalNode) Redistribute(rightNode Node, parent Node) {
 
 func (p *PersistentInternalNode) IsUnderFlow(degree int) bool {
 	return p.Keylen() < degree/2
+}
+
+func (p *PersistentInternalNode) GetHeader() *PersistentNodeHeader {
+	d := p.GetData()
+	return ReadPersistentNodeHeader(d)
 }
 
 func (n *PersistentLeafNode) IsSafeForMerge(degree int) bool {
