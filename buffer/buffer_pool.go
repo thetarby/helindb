@@ -3,6 +3,7 @@ package buffer
 import (
 	"errors"
 	"fmt"
+	"helin/common"
 	"helin/disk"
 	"helin/disk/pages"
 	"log"
@@ -37,7 +38,8 @@ func NewBufferPool(dbFile string) *BufferPool {
 	for i := 0; i < PoolSize; i++ {
 		emptyFrames[i] = i
 	}
-	d, _ := disk.NewDiskManager(dbFile)
+	d, err := disk.NewDiskManager(dbFile)
+	common.PanicIfErr(err)
 	return &BufferPool{
 		poolSize:    PoolSize,
 		frames:      make([]*pages.RawPage, PoolSize, PoolSize),
