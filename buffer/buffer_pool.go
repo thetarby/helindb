@@ -26,11 +26,11 @@ type BufferPool struct {
 	pageMap     map[int]int // physical page_id => frame index which keeps that page
 	emptyFrames []int       // list of indexes that points to empty frames in the pool
 	replacer    IReplacer
-	diskManager disk.IDiskManager
+	DiskManager disk.IDiskManager
 	lock        sync.Mutex
 }
 
-const PoolSize = 10_000 // TODO: no need to be a constant, instead pass this to buffer pool ctor and replacer ctor
+const PoolSize = 32 // TODO: no need to be a constant, instead pass this to buffer pool ctor and replacer ctor
 
 func NewBufferPool(dbFile string) *BufferPool {
 	emptyFrames := make([]int, PoolSize, PoolSize)
@@ -43,7 +43,7 @@ func NewBufferPool(dbFile string) *BufferPool {
 		frames:      make([]*pages.RawPage, PoolSize, PoolSize),
 		pageMap:     map[int]int{},
 		emptyFrames: emptyFrames,
-		diskManager: d,
+		DiskManager: d,
 		lock:        sync.Mutex{},
 		replacer:    NewRandomReplacer(),
 	}
@@ -65,7 +65,7 @@ func (b *BufferPool) GetPage(pageId int) (*pages.RawPage, error) {
 		b.emptyFrames = b.emptyFrames[1:]
 
 		// read page and put it inside the frame
-		pageData, err := b.diskManager.ReadPage(pageId)
+		pageData, err := b.DiskManager.ReadPage(pageId)
 		if err != nil {
 			return nil, err
 		}
@@ -94,10 +94,10 @@ func (b *BufferPool) GetPage(pageId int) (*pages.RawPage, error) {
 	victimPageId := victim.GetPageId()
 	if victim.IsDirty() {
 		data := victim.GetData()
-		b.diskManager.WritePage(data, victimPageId)
+		b.DiskManager.WritePage(data, victimPageId)
 	}
 
-	pageData, err := b.diskManager.ReadPage(pageId)
+	pageData, err := b.DiskManager.ReadPage(pageId)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ func (b *BufferPool) Flush(pageId int) error {
 
 	page := b.frames[frameIdx]
 	page.WLatch()
-	if err := b.diskManager.WritePage(page.GetData(), page.GetPageId()); err != nil {
+	if err := b.DiskManager.WritePage(page.GetData(), page.GetPageId()); err != nil {
 		return err
 	}
 	page.SetClean() // TODO: should this happen ?
@@ -184,8 +184,8 @@ func (b *BufferPool) FlushAll() error {
 				break
 			}
 		}
-		if flag == 0 && frame.IsDirty() {
-			dirtyFrames = append(dirtyFrames)
+		if flag == 0 { //&& frame.IsDirty() { // TODO: do not forget to uncomment this
+			dirtyFrames = append(dirtyFrames, frame)
 		}
 	}
 
@@ -206,7 +206,7 @@ func (b *BufferPool) NewPage() (page *pages.RawPage, err error) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
-	newPageId := b.diskManager.NewPage()
+	newPageId := b.DiskManager.NewPage()
 	if len(b.emptyFrames) > 0 {
 		log.Println("page will be read in an empty frame")
 		emptyFrameIdx := b.emptyFrames[0]
@@ -234,7 +234,7 @@ func (b *BufferPool) NewPage() (page *pages.RawPage, err error) {
 	victimPageId := victim.GetPageId()
 	if victim.IsDirty() {
 		data := victim.GetData()
-		b.diskManager.WritePage(data, victimPageId)
+		b.DiskManager.WritePage(data, victimPageId)
 	}
 
 	p := pages.NewRawPage(newPageId)
