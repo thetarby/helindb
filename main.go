@@ -1,54 +1,55 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"encoding/json"
+	"helin/buffer"
+	"helin/disk"
 )
 
-type IHeaderSerializer interface {
-	encodePageHeader(pageHeader PageHeader) []byte
-	readPageHader(page []byte) PageHeader
+type demostruct struct {
+	Num int
+	Val string
 }
 
-// binary serializer implementation
-type binarySerializer struct{}
+//func main() {
+//	d, _ := NewDiskManager("sa")
+//	page := d.NewPage()
+//	fmt.Println("lalalla")
+//	fmt.Println(fmt.Sprintf("Writing to page %d", page))
+//	x := demostruct{Num: 45, Val: "selam"}
+//	json, _ := json.Marshal(x)
+//	var data [4096]byte
+//
+//	copy(data[:], json)
+//
+//	d.WritePage((data[:]), page)
+//	read, _ := d.ReadPage(page)
+//	fmt.Print(string(read[:]))
+//}
 
-func (r binarySerializer) readPageHader(page []byte) PageHeader {
-	header := page[:pageHeaderSize]
+func main() {
+	buff := buffer.NewBufferPool("sa", 32)
 
-	reader := bytes.NewReader(header)
+	for i := 0; i < 50; i++ {
+		x := demostruct{Num: i, Val: "selam"}
+		json, _ := json.Marshal(x)
+		var data [4096]byte
+		copy(data[:], json)
 
-	pageHeader := PageHeader{}
-	binary.Read(reader, binary.LittleEndian, &pageHeader)
+		p, err := buff.NewPage()
+		println(p.GetPageId())
+		if err != nil {
+			println(err.Error())
+		}
 
-	return pageHeader
-}
+		data[4095] = byte('\n')
+		p.(*disk.RawPage).Data = data[:]
 
-func (r binarySerializer) encodePageHeader(pageHeader PageHeader) []byte {
-	buf := bytes.Buffer{}
-	err := binary.Write(&buf, binary.LittleEndian, pageHeader)
-
-	if err != nil {
-		panic(err.Error())
+		buff.Unpin(p.GetPageId(), true)
 	}
 
-	b := buf.Bytes()
-	return b
-}
-
-// json serializer implementation
-type jsonSerializer struct{}
-
-func (r jsonSerializer) readPageHader(page []byte) PageHeader {
-	var res PageHeader
-	header := page[:pageHeaderSize]
-	json.Unmarshal(header, &res)
-	println(res.IsUsed)
-	return res
-}
-
-func (r jsonSerializer) encodePageHeader(pageHeader PageHeader) []byte {
-	b, _ := json.Marshal(pageHeader)
-	return b
+	buff.FlushAll()
+	//for _, frame := range buff.frames {
+	//	buff.Flush(frame.GetPageId())
+	//}
 }
