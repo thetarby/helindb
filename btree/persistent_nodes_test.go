@@ -8,7 +8,7 @@ import (
 )
 
 func TestPersistentLeafNode_SetKeyAt(t *testing.T) {
-	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1)}
+	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1), serializer: &PersistentKeySerializer{}}
 	node.setKeyAt(0, PersistentKey(1))
 	p := SlotPointer{
 		PageId:  10,
@@ -23,8 +23,24 @@ func TestPersistentLeafNode_SetKeyAt(t *testing.T) {
 	assert.Equal(t, p, val)
 }
 
+func TestPersistentLeafNode_SetKeyAt_String_Key(t *testing.T) {
+	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1), serializer: &StringKeySerializer{Len: 5}}
+	node.setKeyAt(0, StringKey("selam"))
+	p := SlotPointer{
+		PageId:  10,
+		SlotIdx: 10,
+	}
+	node.setValueAt(0, p)
+
+	key := node.GetKeyAt(0)
+	val := node.GetValueAt(0).(SlotPointer)
+
+	assert.Equal(t, StringKey("selam"), key)
+	assert.Equal(t, p, val)
+}
+
 func TestPersistentLeafNode_Should_Insert_To_Correct_Locations(t *testing.T) {
-	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1)}
+	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1), serializer: &PersistentKeySerializer{}}
 	slotP := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,
@@ -45,7 +61,7 @@ func TestPersistentLeafNode_Should_Insert_To_Correct_Locations(t *testing.T) {
 }
 
 func TestPersistentLeafNode_FindKey_Should_Find_Correct_Locations_When_Keys_Are_Inserted_Randomly(t *testing.T) {
-	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1)}
+	node := PersistentLeafNode{PersistentPage: NewNoopPersistentPage(1), serializer: &PersistentKeySerializer{}}
 	slotP := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,
@@ -70,7 +86,7 @@ func TestPersistentLeafNode_FindKey_Should_Find_Correct_Locations_When_Keys_Are_
 }
 
 func TestPersistentInternalNode_SetKeyAt_0_Should_Handle_First_Pointer(t *testing.T) {
-	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1)}
+	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1), serializer: &PersistentKeySerializer{}}
 	node.setKeyAt(0, PersistentKey(15))
 	p := Pointer(54)
 	node.setValueAt(0, p)
@@ -83,7 +99,7 @@ func TestPersistentInternalNode_SetKeyAt_0_Should_Handle_First_Pointer(t *testin
 }
 
 func TestPersistentInternalNode_Should_Insert_To_Correct_Locations_2(t *testing.T) {
-	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1)}
+	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1), serializer: &PersistentKeySerializer{}}
 	node.setKeyAt(0, PersistentKey(15))
 	p := Pointer(54)
 	node.setValueAt(0, p)
@@ -105,7 +121,7 @@ func TestPersistentInternalNode_Should_Insert_To_Correct_Locations_2(t *testing.
 }
 
 func TestPersistentInternalNode_Should_Insert_To_Correct_Locations(t *testing.T) {
-	node := NewPersistentInternalNode(0)
+	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1), serializer: &PersistentKeySerializer{}}
 
 	for i := 1; i < 10; i++ {
 		idx, found := node.findKey(PersistentKey(i))
@@ -115,7 +131,7 @@ func TestPersistentInternalNode_Should_Insert_To_Correct_Locations(t *testing.T)
 
 	for i := 0; i < 9; i++ {
 		key := node.GetKeyAt(i)
-		val := node.GetValueAt(i+1)
+		val := node.GetValueAt(i + 1)
 
 		assert.Equal(t, PersistentKey(i+1), key)
 		assert.Equal(t, Pointer(i+1), val.(Pointer))
@@ -124,7 +140,7 @@ func TestPersistentInternalNode_Should_Insert_To_Correct_Locations(t *testing.T)
 
 func TestPersistentInternalNode_FindKey_Should_Find_Correct_Locations_When_Keys_Are_Inserted_Randomly(t *testing.T) {
 	node := NewPersistentInternalNode(1)
-
+	node.serializer = &PersistentKeySerializer{}
 	a := []int{2, 3, 4, 5, 6, 7, 8, 9, 10} // 1 is inserted when creating
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(a), func(i, j int) { a[i], a[j] = a[j], a[i] })
@@ -140,7 +156,7 @@ func TestPersistentInternalNode_FindKey_Should_Find_Correct_Locations_When_Keys_
 
 	for i := 0; i < 9; i++ {
 		key := node.GetKeyAt(i)
-		val := node.GetValueAt(i+1)
+		val := node.GetValueAt(i + 1)
 
 		assert.Equal(t, PersistentKey(i+2), key)
 		assert.Equal(t, Pointer(i+2), val.(Pointer))

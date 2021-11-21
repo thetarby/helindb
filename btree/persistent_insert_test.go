@@ -13,7 +13,7 @@ import (
 )
 
 func TestPersistent_Insert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
-	tree := NewBtreeWithPager(3, NoopPersistentPager{})
+	tree := NewBtreeWithPager(3, NoopPersistentPager{KeySerializer: &PersistentKeySerializer{}})
 	p := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,
@@ -34,7 +34,7 @@ func TestPersistent_Insert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 func TestPersistentInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {
 	os.Remove("db2.helin")
 	pool := buffer.NewBufferPool("db2.helin")
-	tree := NewBtreeWithPager(80, &BufferPoolPager{pool})
+	tree := NewBtreeWithPager(80, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), SlotPointer{
 			PageId:  int64(i),
@@ -53,9 +53,10 @@ func TestPersistentInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *test
 func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 	os.Remove("db2.helin")
 	pool := buffer.NewBufferPool("db2.helin")
-	tree := NewBtreeWithPager(80, &BufferPoolPager{pool})
+	tree := NewBtreeWithPager(80, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
-	for idx, i := range rand.Perm(500_000){
+	n := 10000
+	for idx, i := range rand.Perm(n) {
 		println(idx)
 		tree.Insert(PersistentKey(i), SlotPointer{
 			PageId:  int64(i),
@@ -63,10 +64,10 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 		})
 	}
 
-	for i := 0; i < 500_000; i++ {
+	for i := 0; i < n; i++ {
 		println(i)
 		val := tree.Find(PersistentKey(i))
-		if val == nil{
+		if val == nil {
 			//tree.Print()
 			val = tree.Find(PersistentKey(i))
 		}
@@ -89,19 +90,19 @@ func TestPersistentInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *tes
 	assert.Equal(t, "new_500", val.(string))
 }
 
-func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopened(t *testing.T){
+func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopened(t *testing.T) {
 	os.Remove("db2.helin")
 	pool := buffer.NewBufferPool("db2.helin")
-	tree := NewBtreeWithPager(80, &BufferPoolPager{pool})
+	tree := NewBtreeWithPager(80, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
 
 	n := 10_000
 	v := make([]PersistentKey, n, n)
-	for i:=0; i<n; i++ {
+	for i := 0; i < n; i++ {
 		v[i] = PersistentKey(rand.Intn(math.MaxInt32))
 	}
 
-	for idx, i := range v{
+	for idx, i := range v {
 		println(idx)
 		tree.Insert(i, SlotPointer{
 			PageId:  int64(i),
@@ -113,14 +114,14 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 	err := tree.pager.(*BufferPoolPager).pool.DiskManager.Close()
 	assert.NoError(t, err)
 	newPool := buffer.NewBufferPool("db2.helin")
-	newTreeReference := ConstructBtreeFromRootPointer(tree.Root, 80, &BufferPoolPager{newPool})
+	newTreeReference := ConstructBtreeFromRootPointer(tree.Root, 80, NewBufferPoolPager(newPool, &PersistentKeySerializer{}))
 
 	rand.Shuffle(len(v), func(i, j int) {
 		t := v[i]
-		v[i]=v[j]
-		v[j]=t
+		v[i] = v[j]
+		v[j] = t
 	})
-	for idx, i := range v{
+	for idx, i := range v {
 		println(idx)
 		val := newTreeReference.Find(i)
 		assert.Equal(t, SlotPointer{
