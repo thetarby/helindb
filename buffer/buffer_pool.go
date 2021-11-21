@@ -6,21 +6,23 @@ import (
 	"helin/disk"
 	"helin/disk/pages"
 	"log"
+	"sort"
 	"sync"
 )
 
 type IBufferPool interface {
-	GetPage(pageId int) (*pages.IPage, error)
-	Pin(pageId int) error
+	GetPage(pageId int) (*pages.RawPage, error)
+	pin(pageId int) error
 	Unpin(pageId int, isDirty bool) bool
 	Flush(pageId int) error
 	FlushAll() error
-	NewPage() (page pages.IPage, err error)
+	NewPage() (page *pages.RawPage, err error)
+	EmptyFrameSize() int
 }
 
 type BufferPool struct {
 	poolSize    int
-	frames      []pages.IPage
+	frames      []*pages.RawPage
 	pageMap     map[int]int // physical page_id => frame index which keeps that page
 	emptyFrames []int       // list of indexes that points to empty frames in the pool
 	replacer    IReplacer
@@ -28,17 +30,17 @@ type BufferPool struct {
 	lock        sync.Mutex
 }
 
-const PoolSize = 32
+const PoolSize = 10_000 // TODO: no need to be a constant, instead pass this to buffer pool ctor and replacer ctor
 
-func NewBufferPool(dbFile string, poolsize int) *BufferPool {
+func NewBufferPool(dbFile string) *BufferPool {
 	emptyFrames := make([]int, PoolSize, PoolSize)
 	for i := 0; i < PoolSize; i++ {
 		emptyFrames[i] = i
 	}
 	d, _ := disk.NewDiskManager(dbFile)
 	return &BufferPool{
-		poolSize:    poolsize,
-		frames:      make([]pages.IPage, PoolSize, PoolSize),
+		poolSize:    PoolSize,
+		frames:      make([]*pages.RawPage, PoolSize, PoolSize),
 		pageMap:     map[int]int{},
 		emptyFrames: emptyFrames,
 		diskManager: d,
@@ -47,7 +49,7 @@ func NewBufferPool(dbFile string, poolsize int) *BufferPool {
 	}
 }
 
-func (b *BufferPool) GetPage(pageId int) (pages.IPage, error) {
+func (b *BufferPool) GetPage(pageId int) (*pages.RawPage, error) {
 	// if page is already in a frame pin and return it
 	frameId, ok := b.pageMap[pageId]
 	if ok {
@@ -166,13 +168,14 @@ func (b *BufferPool) Flush(pageId int) error {
 	if err := b.diskManager.WritePage(page.GetData(), page.GetPageId()); err != nil {
 		return err
 	}
-	page.SetClean()
+	page.SetClean() // TODO: should this happen ?
 	page.WUnlatch()
 	return nil
 }
 
 func (b *BufferPool) FlushAll() error {
 	// TODO does this require lock? maybe not since flush acquires lock but empty frames could change in midway flushing
+	dirtyFrames := make([]*pages.RawPage, 0)
 	for i, frame := range b.frames {
 		flag := 0
 		for _, emptyIdx := range b.emptyFrames {
@@ -182,15 +185,23 @@ func (b *BufferPool) FlushAll() error {
 			}
 		}
 		if flag == 0 && frame.IsDirty() {
-			if err := b.Flush(frame.GetPageId()); err != nil {
-				return err
-			}
+			dirtyFrames = append(dirtyFrames)
+		}
+	}
+
+	sort.Slice(dirtyFrames, func(i, j int) bool {
+		return dirtyFrames[i].GetPageId() < dirtyFrames[j].GetPageId()
+	})
+
+	for _, frame := range dirtyFrames {
+		if err := b.Flush(frame.GetPageId()); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func (b *BufferPool) NewPage() (page pages.IPage, err error) {
+func (b *BufferPool) NewPage() (page *pages.RawPage, err error) {
 	// TODO: too many duplicate code with GetPage
 	b.lock.Lock()
 	defer b.lock.Unlock()
@@ -232,4 +243,8 @@ func (b *BufferPool) NewPage() (page pages.IPage, err error) {
 	b.frames[victimIdx] = p
 	b.pin(newPageId)
 	return p, err
+}
+
+func (b *BufferPool) EmptyFrameSize() int {
+	return len(b.emptyFrames)
 }

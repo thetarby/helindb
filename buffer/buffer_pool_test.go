@@ -3,7 +3,8 @@ package buffer
 import (
 	"encoding/json"
 	"github.com/stretchr/testify/assert"
-	"helin/disk/pages"
+	"helin/disk"
+	"math/rand"
 	"os"
 	"testing"
 )
@@ -13,9 +14,9 @@ type teststruct struct {
 	Val string
 }
 
-func TestBufferPoolShouldWritePagesToDisk(t *testing.T) {
+func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 	os.Remove("tmp.helin")
-	b := NewBufferPool("tmp.helin", 2)
+	b := NewBufferPool("tmp.helin")
 	defer os.Remove("tmp.helin")
 
 	// write 50 pages with 2 sized buffer pool
@@ -34,7 +35,7 @@ func TestBufferPoolShouldWritePagesToDisk(t *testing.T) {
 		}
 
 		data[4095] = byte('\n')
-		p.(*pages.RawPage).Data = data[:]
+		p.Data = data[:]
 
 		b.Unpin(p.GetPageId(), true)
 	}
@@ -54,6 +55,43 @@ func TestBufferPoolShouldWritePagesToDisk(t *testing.T) {
 		json.Unmarshal(byteArr, &x)
 		assert.Equal(t, i, x.Num)
 		assert.Equal(t, "selam", x.Val)
+		b.Unpin(p.GetPageId(), false)
+	}
+}
+
+func TestBuffer_Pool_Should_Not_Corrupt_Pages(t *testing.T) {
+	os.Remove("tmp2.helin")
+	b := NewBufferPool("tmp2.helin")
+	defer os.Remove("tmp2.helin")
+	numPagesToTest := 50
+
+	//generate 50 random page sized byte arrays
+	randomPages := make([][]byte, 0)
+	for i := 0; i < numPagesToTest; i++ {
+		randomPage := make([]byte, disk.PageSize)
+		rand.Read(randomPage)
+		randomPages = append(randomPages, randomPage)
+	}
+
+	// write random pages with 10 sized buffer pool
+	for i := 0; i < numPagesToTest; i++ {
+		p, err := b.NewPage()
+		println(p.GetPageId())
+		if err != nil {
+			println(err.Error())
+		}
+
+		p.Data = randomPages[i]
+
+		b.Unpin(p.GetPageId(), true)
+	}
+
+	// read each page and validate content
+	for i := 0; i < numPagesToTest; i++ {
+		p, err := b.GetPage(i)
+		assert.NoError(t, err)
+
+		assert.ElementsMatch(t, randomPages[i], p.GetData())
 		b.Unpin(p.GetPageId(), false)
 	}
 }

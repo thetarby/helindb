@@ -50,7 +50,9 @@ func (p *RawPage) DecrPinCount() {
 	p.PinCount--
 }
 
-func (p *RawPage) GetData() []byte {
+func (p *RawPage) GetData() []byte { // TODO: it would be really good for debugging if this method can recognize whether buffer pool has replaced
+	// underlying page with another physical page. pages may contain their id for example and this method checks
+	// id in raw bytes with the id struct holds?
 	return p.Data
 }
 
