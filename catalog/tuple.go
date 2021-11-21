@@ -10,6 +10,9 @@ type ITuple interface {
 	GetValue(schema Schema, columnIdx int) *db_types.Value
 }
 
+// Tuple inherits from row. Row does not care about its content and sees it as bytes only
+// however Tuple can interpret its content given a schema. A row can be converted to a 
+// tuple with CastRowAsTuple function.
 type Tuple struct {
 	structures.Row
 }

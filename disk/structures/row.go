@@ -15,6 +15,9 @@ type IRow interface {
 	Length() int
 }
 
+// Row corresponds to each record in a table at the lowest level. It does not care about
+// its content and sees it as byte array only. It has Rid which should be unique for every
+// row and acts as an address for the Row.
 type Row struct {
 	Data []byte
 	Rid  Rid
