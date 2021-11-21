@@ -122,7 +122,7 @@ func (c *Catalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string
 	}
 
 	// TODO: calc degree
-	index := btree.NewBtreeWithPager(50, btree.NewBufferPoolPager(c.pool, serializer, keySize))
+	index := btree.NewBtreeWithPager(50, btree.NewBufferPoolPager(c.pool, serializer))
 	table := c.GetTable(tableName)
 	it := structures.NewTableIterator(txn, table.Heap)
 	for {
@@ -181,7 +181,7 @@ func (c *Catalog) CreateBtreeIndexWithTuple(txn concurrency.Transaction, indexNa
 		keySize += 8
 	}
 	serializer := TupleKeySerializer{schema: keySchema, keySize: keySize}
-	index := btree.NewBtreeWithPager(50, btree.NewBufferPoolPager(c.pool, &serializer, keySize))
+	index := btree.NewBtreeWithPager(50, btree.NewBufferPoolPager(c.pool, &serializer))
 	for {
 		n := CastRowAsTuple(it.Next())
 		if n == nil {

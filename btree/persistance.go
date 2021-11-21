@@ -62,8 +62,6 @@ var lastPageId Pointer = 0
 
 type NoopPersistentPager struct {
 	KeySerializer   KeySerializer
-	KeySize         int
-	ValSize         int
 	ValueSerializer ValueSerializer
 }
 
