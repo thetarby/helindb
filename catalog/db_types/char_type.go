@@ -6,8 +6,12 @@ import (
 	"helin/common"
 )
 
+var CharTypeID = TypeID{
+	KindID: 2,
+	Size:   0,
+}
+
 type CharType struct {
-	Size int
 }
 
 func (c *CharType) Less(this *Value, than *Value) bool {
@@ -46,9 +50,9 @@ func (c *CharType) Deserialize(src []byte) *Value {
 func (c *CharType) Length() int {
 	//return c.Size
 	// TODO: char'ı daha güzel hallet
-	return 10
+	return 20
 }
 
-func (c *CharType) TypeId() uint8 {
-	return 2
+func (c *CharType) TypeId() TypeID {
+	return CharTypeID
 }

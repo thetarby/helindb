@@ -22,3 +22,5 @@ pool but each buffer pool can have different size)
 
 - [ ] Access and modify a page using its rw latch everywhere in the code
 
+- [ ] Btree KeySize must not be a constant. It depends on the key type
+

@@ -22,12 +22,12 @@ func TestCatalog_CreateTable_Should_Create_Table_Successfully(t *testing.T) {
 		columns: []Column{
 			{
 				Name:   "id",
-				TypeId: 1,
+				TypeId: db_types.IntegerTypeID,
 				Offset: 0,
 			},
 			{
 				Name:   "name",
-				TypeId: 2,
+				TypeId: db_types.CharTypeID,
 				Offset: 4,
 			},
 		},
@@ -48,12 +48,12 @@ func TestCatalog(t *testing.T) {
 		columns: []Column{
 			{
 				Name:   "id",
-				TypeId: 1,
+				TypeId: db_types.IntegerTypeID,
 				Offset: 0,
 			},
 			{
 				Name:   "name",
-				TypeId: 2,
+				TypeId: db_types.CharTypeID,
 				Offset: 4,
 			},
 		},
@@ -82,8 +82,8 @@ func TestCatalog(t *testing.T) {
 		intVal := tuple.GetValue(&schema, 0)
 		strVal := tuple.GetValue(&schema, 1)
 
-		assert.Equal(t, uint8(1), intVal.GetTypeId())
-		assert.Equal(t, uint8(2), strVal.GetTypeId())
+		assert.Equal(t, db_types.IntegerTypeID, intVal.GetTypeId())
+		assert.Equal(t, db_types.CharTypeID, strVal.GetTypeId())
 		assert.Equal(t, int32(i), intVal.GetAsInterface().(int32))
 		assert.Equal(t, "selam", strVal.GetAsInterface().(string))
 	}

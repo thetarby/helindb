@@ -18,6 +18,10 @@ func (t *Tuple) GetValue(schema Schema, columnIdx int) *db_types.Value {
 	col := schema.GetColumn(columnIdx)
 	if col.IsInlined() {
 		data := t.GetData()
+		if int(col.Offset) >= len(data) {
+			return nil
+		}
+
 		return db_types.Deserialize(col.TypeId, data[col.Offset:])
 	}
 
@@ -30,6 +34,9 @@ func (t *Tuple) GetRow() *structures.Row {
 }
 
 func CastRowAsTuple(row *structures.Row) *Tuple {
+	if row == nil {
+		return nil
+	}
 	return &Tuple{*row}
 }
 

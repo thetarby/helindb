@@ -3,6 +3,8 @@ package catalog
 import (
 	"helin/btree"
 	"helin/buffer"
+	"helin/catalog/db_types"
+	"helin/common"
 	"helin/concurrency"
 	"helin/disk/structures"
 	"log"
@@ -26,6 +28,8 @@ type IndexInfo struct {
 	KeySize       int
 	Index         *btree.BTree
 	catalog       *Catalog
+	ColumnIndexes []int
+	IsUnique      bool
 }
 
 type TableOID uint32
@@ -39,7 +43,8 @@ type ICatalog interface {
 	GetTable(name string) *TableInfo
 	GetTableByOID(oid TableOID) *TableInfo
 
-	CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, schema Schema, keySize int, serializer btree.KeySerializer, columnIdx int) *IndexInfo
+	CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, keySize int, serializer btree.KeySerializer, columnIdx int) *IndexInfo
+	CreateBtreeIndexWithTuple(txn concurrency.Transaction, indexName string, tableName string, keySchema Schema, columnIndexes []int, keySize int, isUnique bool) *IndexInfo
 	GetIndex(indexName, tableName string) *IndexInfo
 	GetIndexByOID(indexOID IndexOID) *IndexInfo
 	GetIndexByTableOID(indexName, oid TableOID) *IndexInfo
@@ -104,7 +109,7 @@ func (c *Catalog) GetTableByOID(oid TableOID) *TableInfo {
 	panic("implement me")
 }
 
-func (c *Catalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, schema Schema, keySize int, serializer btree.KeySerializer, columnIdx int) *IndexInfo {
+func (c *Catalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, keySize int, serializer btree.KeySerializer, columnIdx int) *IndexInfo {
 	if c.tableNames[tableName] == 0 {
 		log.Printf("tried to create an index on a nonexistent table: %v", tableName)
 		return nil
@@ -116,7 +121,8 @@ func (c *Catalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string
 		return nil
 	}
 
-	index := btree.NewBtreeWithPager(10, btree.NewBufferPoolPager(c.pool, serializer))
+	// TODO: calc degree
+	index := btree.NewBtreeWithPager(50, btree.NewBufferPoolPager(c.pool, serializer, keySize))
 	table := c.GetTable(tableName)
 	it := structures.NewTableIterator(txn, table.Heap)
 	for {
@@ -125,13 +131,13 @@ func (c *Catalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string
 			break
 		}
 
-		key := n.GetValue(schema, columnIdx)
+		key := n.GetValue(table.Schema, columnIdx)
 		index.Insert(key, n.Rid)
 	}
 
 	oid := c.getNextIndexOID()
 	info := IndexInfo{
-		Schema:        schema,
+		Schema:        table.Schema,
 		IndexedColIdx: columnIdx,
 		IndexName:     indexName,
 		TableName:     tableName,
@@ -139,6 +145,81 @@ func (c *Catalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string
 		KeySize:       keySize,
 		Index:         index,
 		catalog:       c,
+	}
+	c.indexes[oid] = &info
+	indexesOnTable[indexName] = oid
+	return &info
+}
+
+func (c *Catalog) CreateBtreeIndexWithTuple(txn concurrency.Transaction, indexName string, tableName string, keySchema Schema, columnIndexes []int, keySize int, isUnique bool) *IndexInfo {
+	if c.tableNames[tableName] == 0 {
+		log.Printf("tried to create an index on a nonexistent table: %v", tableName)
+		return nil
+	}
+
+	indexesOnTable := c.indexNames[tableName]
+	if indexesOnTable[indexName] != 0 {
+		log.Printf("an index with the same name is already defined on the table. table: %v, index: %v", tableName, indexName)
+		return nil
+	}
+
+	// TODO: calc degree
+	table := c.GetTable(tableName)
+	it := structures.NewTableIterator(txn, table.Heap)
+	if !isUnique{
+		cols := keySchema.GetColumns()
+		cols = append(cols, Column{
+			Name:   "page_id",
+			TypeId: db_types.IntegerTypeID,
+			Offset: uint16(keySize),
+		}, Column{
+			Name:   "slot_idx",
+			TypeId: db_types.IntegerTypeID,
+			Offset: uint16(keySize) + 4,
+		})
+		keySchema = NewSchema(cols)
+		keySize += 8
+	}
+	serializer := TupleKeySerializer{schema: keySchema, keySize: keySize}
+	index := btree.NewBtreeWithPager(50, btree.NewBufferPoolPager(c.pool, &serializer, keySize))
+	for {
+		n := CastRowAsTuple(it.Next())
+		if n == nil {
+			break
+		}
+
+		vals := make([]*db_types.Value, 0)
+		for _, idx := range columnIndexes {
+			val := n.GetValue(table.Schema, idx)
+			vals = append(vals, val)
+		}
+
+		if !isUnique{ // if it is not a unique index append rid to make keys unique
+			vals = append(vals, db_types.NewValue(int32(n.Rid.PageId)), db_types.NewValue(int32(n.Rid.SlotIdx))) // TODO: pageID is uint64 there might be overflow
+		}
+
+		t, err := NewTupleWithSchema(vals, keySchema)
+		common.PanicIfErr(err)
+
+		tupleKey := TupleKey{
+			Schema: keySchema,
+			Tuple:  *t,
+		}
+		index.Insert(&tupleKey, n.Rid)
+	}
+
+	oid := c.getNextIndexOID()
+	info := IndexInfo{
+		Schema:        keySchema,
+		IndexedColIdx: 0,
+		IndexName:     indexName,
+		TableName:     tableName,
+		OID:           oid,
+		KeySize:       keySize,
+		Index:         index,
+		catalog:       c,
+		ColumnIndexes: columnIndexes,
+		IsUnique:      isUnique,
 	}
 	c.indexes[oid] = &info
 	indexesOnTable[indexName] = oid

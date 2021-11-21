@@ -6,6 +6,11 @@ import (
 	"helin/common"
 )
 
+var IntegerTypeID = TypeID{
+	KindID: 1,
+	Size:   0,
+}
+
 type IntegerType struct {
 }
 
@@ -36,6 +41,6 @@ func (i *IntegerType) Length() int {
 	return binary.Size(int32(1))
 }
 
-func (i *IntegerType) TypeId() uint8 {
-	return 1
+func (i *IntegerType) TypeId() TypeID {
+	return IntegerTypeID
 }
