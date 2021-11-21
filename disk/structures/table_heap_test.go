@@ -28,7 +28,7 @@ func TestTableHeap(t *testing.T) {
 		LastPageID:  0,
 	}
 
-	rid, err := table.InsertTuple(Tuple{
+	rid, err := table.InsertTuple(Row{
 		Data: make([]byte, 10),
 		Rid:  Rid{},
 	}, "")
@@ -53,7 +53,7 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 
 	inserted := make([]Rid, 0)
 	for i := 0; i < 3000; i++ {
-		rid, err := table.InsertTuple(Tuple{
+		rid, err := table.InsertTuple(Row{
 			Data: []byte(strconv.Itoa(i)),
 			Rid:  Rid{},
 		}, "")
@@ -64,7 +64,7 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 
 	for i := 0; i < 3000; i++ {
 		rid := inserted[i]
-		tuple := Tuple{}
+		tuple := Row{}
 		table.ReadTuple(rid, &tuple, "")
 
 		assert.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
@@ -88,7 +88,7 @@ func TestTableHeap_Delete(t *testing.T) {
 
 	inserted := make([]Rid, 0)
 	for i := 0; i < 10_000; i++ {
-		rid, err := table.InsertTuple(Tuple{
+		rid, err := table.InsertTuple(Row{
 			Data: []byte(strconv.Itoa(i)),
 			Rid:  Rid{},
 		}, "")
@@ -105,7 +105,7 @@ func TestTableHeap_Delete(t *testing.T) {
 
 	for i := 0; i < 10_000; i++ {
 		rid := inserted[i]
-		tuple := Tuple{}
+		tuple := Row{}
 		if common.Contains(toDelete, i) {
 			table.ReadTuple(rid, &tuple, "")
 			require.Nil(t, tuple.GetData())
@@ -133,7 +133,7 @@ func TestTableHeap_Delete_Last_Inserted_Item(t *testing.T) {
 
 	inserted := make([]Rid, 0)
 	for i := 0; i < 10; i++ {
-		rid, err := table.InsertTuple(Tuple{
+		rid, err := table.InsertTuple(Row{
 			Data: []byte(strconv.Itoa(i)),
 			Rid:  Rid{},
 		}, "")
@@ -154,7 +154,7 @@ func TestTableHeap_Delete_Last_Inserted_Item(t *testing.T) {
 		}
 
 		rid := inserted[i]
-		tuple := Tuple{}
+		tuple := Row{}
 		table.ReadTuple(rid, &tuple, "")
 
 		require.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
@@ -177,7 +177,7 @@ func TestTableHeap_Delete_First_Inserted_Item(t *testing.T) {
 
 	inserted := make([]Rid, 0)
 	for i := 0; i < 10; i++ {
-		rid, err := table.InsertTuple(Tuple{
+		rid, err := table.InsertTuple(Row{
 			Data: []byte(strconv.Itoa(i)),
 			Rid:  Rid{},
 		}, "")
@@ -198,7 +198,7 @@ func TestTableHeap_Delete_First_Inserted_Item(t *testing.T) {
 		}
 
 		rid := inserted[i]
-		tuple := Tuple{}
+		tuple := Row{}
 		table.ReadTuple(rid, &tuple, "")
 
 		require.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
@@ -222,7 +222,7 @@ func TestTableHeap_Update(t *testing.T) {
 
 	inserted := make([]Rid, 0)
 	for i := 0; i < 100; i++ {
-		rid, err := table.InsertTuple(Tuple{
+		rid, err := table.InsertTuple(Row{
 			Data: []byte(strconv.Itoa(i)),
 			Rid:  Rid{},
 		}, "")
@@ -233,13 +233,13 @@ func TestTableHeap_Update(t *testing.T) {
 
 	toUpdate := []int{15, 25, 35}
 	for _, i := range toUpdate {
-		err := table.UpdateTuple(Tuple{Data: []byte("updated")}, inserted[i], "")
+		err := table.UpdateTuple(Row{Data: []byte("updated")}, inserted[i], "")
 		assert.NoError(t, err)
 	}
 
 	for i := 0; i < 100; i++ {
 		rid := inserted[i]
-		tuple := Tuple{}
+		tuple := Row{}
 		if common.Contains(toUpdate, i) {
 			table.ReadTuple(rid, &tuple, "")
 			require.Equal(t, []byte("updated"), tuple.GetData())
