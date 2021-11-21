@@ -1,7 +1,7 @@
 # What Is This?
 I dunno, a database written in go maybe? It will be at least.
 
-## To Run Tests
+# To Run Tests
 ```shell
 go test ./...
 ```
