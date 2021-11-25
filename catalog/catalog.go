@@ -43,7 +43,6 @@ type ICatalog interface {
 	GetTable(name string) *TableInfo
 	GetTableByOID(oid TableOID) *TableInfo
 
-	CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, keySize int, serializer btree.KeySerializer, columnIdx int) *IndexInfo
 	CreateBtreeIndexWithTuple(txn concurrency.Transaction, indexName string, tableName string, keySchema Schema, columnIndexes []int, keySize int, isUnique bool) *IndexInfo
 	GetIndex(indexName, tableName string) *IndexInfo
 	GetIndexByOID(indexOID IndexOID) *IndexInfo
@@ -106,51 +105,10 @@ func (c *Catalog) GetTable(name string) *TableInfo {
 }
 
 func (c *Catalog) GetTableByOID(oid TableOID) *TableInfo {
-	panic("implement me")
+	return c.tables[oid]
 }
 
-func (c *Catalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, keySize int, serializer btree.KeySerializer, columnIdx int) *IndexInfo {
-	if c.tableNames[tableName] == 0 {
-		log.Printf("tried to create an index on a nonexistent table: %v", tableName)
-		return nil
-	}
-
-	indexesOnTable := c.indexNames[tableName]
-	if indexesOnTable[indexName] != 0 {
-		log.Printf("an index with the same name is already defined on the table. table: %v, index: %v", tableName, indexName)
-		return nil
-	}
-
-	// TODO: calc degree
-	index := btree.NewBtreeWithPager(50, btree.NewBufferPoolPager(c.pool, serializer))
-	table := c.GetTable(tableName)
-	it := structures.NewTableIterator(txn, table.Heap)
-	for {
-		n := CastRowAsTuple(it.Next())
-		if n == nil {
-			break
-		}
-
-		key := n.GetValue(table.Schema, columnIdx)
-		index.Insert(key, n.Rid)
-	}
-
-	oid := c.getNextIndexOID()
-	info := IndexInfo{
-		Schema:        table.Schema,
-		IndexedColIdx: columnIdx,
-		IndexName:     indexName,
-		TableName:     tableName,
-		OID:           oid,
-		KeySize:       keySize,
-		Index:         index,
-		catalog:       c,
-	}
-	c.indexes[oid] = &info
-	indexesOnTable[indexName] = oid
-	return &info
-}
-
+// TODO: keySize should be calculated from schema.
 func (c *Catalog) CreateBtreeIndexWithTuple(txn concurrency.Transaction, indexName string, tableName string, keySchema Schema, columnIndexes []int, keySize int, isUnique bool) *IndexInfo {
 	if c.tableNames[tableName] == 0 {
 		log.Printf("tried to create an index on a nonexistent table: %v", tableName)

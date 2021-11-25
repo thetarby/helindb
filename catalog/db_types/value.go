@@ -53,6 +53,11 @@ func NewValue(src interface{}) *Value {
 			KindID: 3,
 			Size:   uint32(len(src.(string))),
 		}
+	case bool:
+		typeID = TypeID{
+			KindID: 4,
+			Size:   1,
+		}
 	default:
 		panic("not supported type")
 	}

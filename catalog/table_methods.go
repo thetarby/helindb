@@ -7,7 +7,7 @@ import (
 	"helin/disk/structures"
 )
 
-func (tbl *TableInfo) InsertTuple(values []*db_types.Value, txn concurrency.Transaction) (*structures.Rid, error) {
+func (tbl *TableInfo) InsertTupleViaValues(values []*db_types.Value, txn concurrency.Transaction) (*structures.Rid, error) {
 	tuple, err := NewTupleWithSchema(values, tbl.Schema)
 	if err != nil {
 		return nil, err
@@ -17,23 +17,17 @@ func (tbl *TableInfo) InsertTuple(values []*db_types.Value, txn concurrency.Tran
 	if err != nil {
 		return nil, err
 	}
+	tuple.Rid = rid
 
 	indexes := tbl.GetIndexes()
 	for _, index := range indexes {
-		indexedCol := index.IndexedColIdx
-		key := tuple.GetValue(tbl.Schema, indexedCol)
-		index.Index.Insert(key, rid) // TODO: txn should pass down
+		index.InsertViaTuple(tuple, rid)
 	}
 
 	return &rid, nil
 }
 
-func (tbl *TableInfo) InsertTuple2(values []*db_types.Value, txn concurrency.Transaction) (*structures.Rid, error) {
-	tuple, err := NewTupleWithSchema(values, tbl.Schema)
-	if err != nil {
-		return nil, err
-	}
-
+func (tbl *TableInfo) InsertTuple(tuple *Tuple, txn concurrency.Transaction) (*structures.Rid, error) {
 	rid, err := tbl.Heap.InsertTuple(*tuple.GetRow(), txn)
 	if err != nil {
 		return nil, err
@@ -71,6 +65,7 @@ func (tbl *TableInfo) DeleteTuple(rid structures.Rid, txn concurrency.Transactio
 }
 
 func (tbl *TableInfo) UpdateTuple(rid structures.Rid, values []*db_types.Value, txn concurrency.Transaction) error {
+	// first read old tuple from heap
 	oldTuple := Tuple{
 		Row: structures.Row{},
 	}
@@ -78,15 +73,15 @@ func (tbl *TableInfo) UpdateTuple(rid structures.Rid, values []*db_types.Value, 
 		return err
 	}
 
+	// convert values list to tuple
 	newTuple, err := NewTupleWithSchema(values, tbl.Schema)
 	if err != nil {
 		return err
 	}
 
-	indexes := tbl.GetIndexes()
-
 	// first try in-place update and if it succeeds update indexes and return directly
 	if err := tbl.Heap.UpdateTuple(newTuple.Row, rid, txn); err == nil {
+		indexes := tbl.GetIndexes()
 		for _, index := range indexes {
 			indexedCol := index.IndexedColIdx
 			key := oldTuple.GetValue(tbl.Schema, indexedCol)
@@ -100,11 +95,13 @@ func (tbl *TableInfo) UpdateTuple(rid structures.Rid, values []*db_types.Value, 
 	if err := tbl.DeleteTuple(rid, txn); err != nil {
 		return err
 	}
-	newRid ,err := tbl.InsertTuple(values, txn)
+	newRid ,err := tbl.InsertTupleViaValues(values, txn)
 	if err != nil {
 		return err
 	}
 
+	// update all indexes as well
+	indexes := tbl.GetIndexes()
 	for _, index := range indexes {
 		indexedCol := index.IndexedColIdx
 		key := oldTuple.GetValue(tbl.Schema, indexedCol)

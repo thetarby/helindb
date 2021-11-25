@@ -10,7 +10,7 @@ type IExecutor interface {
 	Init()
 
 	// Next yields next tuple from executor
-	Next(t *catalog.Tuple, rid *structures.Rid)
+	Next(t *catalog.Tuple, rid *structures.Rid) error
 
 	GetExecutorCtx() *execution.ExecutorContext
 
@@ -30,7 +30,7 @@ func (e *BaseExecutor) Init(){
 	panic("implement me")
 }
 
-func (e *BaseExecutor) Next(t *catalog.Tuple, rid *structures.Rid){
+func (e *BaseExecutor) Next(t *catalog.Tuple, rid *structures.Rid) error{
 	panic("implement me")
 }
 

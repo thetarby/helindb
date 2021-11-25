@@ -28,14 +28,18 @@ type BasePlanNode struct {
 	 * and this tells you what schema this plan node's tuples will have.
 	 */
 	OutSchema catalog.Schema
-	Children  []*BasePlanNode
+	Children  []IPlanNode
 }
 
-func (n *BasePlanNode) GetChildAt(idx int) *BasePlanNode{
+func (n *BasePlanNode) GetType() PlanType{
+	panic("implement me")
+}
+
+func (n *BasePlanNode) GetChildAt(idx int) IPlanNode{
 	return n.Children[idx]
 }
 
-func (n *BasePlanNode) GetChildren() []*BasePlanNode{
+func (n *BasePlanNode) GetChildren() []IPlanNode{
 	return n.Children
 }
 

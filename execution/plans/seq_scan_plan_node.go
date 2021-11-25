@@ -23,3 +23,13 @@ func (n *SeqScanPlanNode) GetTableOID() catalog.TableOID{
 	return n.tableOID
 }
  
+func NewSeqScanPlanNode(outSchema catalog.Schema, pred expressions.IExpression, toid catalog.TableOID) *SeqScanPlanNode{
+	return &SeqScanPlanNode{
+		BasePlanNode: BasePlanNode{
+			OutSchema: outSchema,
+			Children:  []IPlanNode{},
+		},
+		predicate:    pred,
+		tableOID:     toid,
+	}
+}

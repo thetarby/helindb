@@ -7,9 +7,9 @@ import (
 
 type ConstExpression struct{
 	BaseExpression
-	val db_types.Value
+	Val db_types.Value
 }
 
 func (e *ConstExpression) Eval(t catalog.Tuple, s catalog.Schema) db_types.Value{
-	return e.val
+	return e.Val
 }

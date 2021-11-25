@@ -7,9 +7,9 @@ import (
 
 type GetColumnExpression struct{
 	BaseExpression
-	colIdx int
+	ColIdx int
 }
 
 func (e *GetColumnExpression) Eval(t catalog.Tuple, s catalog.Schema) db_types.Value{
-	return *t.GetValue(s, e.colIdx)
+	return *t.GetValue(s, e.ColIdx)
 }

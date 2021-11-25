@@ -3,6 +3,7 @@ package executors
 import (
 	"helin/catalog"
 	"helin/disk/structures"
+	"helin/execution"
 	"helin/execution/plans"
 )
 
@@ -22,14 +23,34 @@ func (e *SeqScanExecutor) GetOutSchema() catalog.Schema {
 	return e.plan.OutSchema
 }
 
-func (e *SeqScanExecutor) Next(t *catalog.Tuple, rid *structures.Rid) {
+func (e *SeqScanExecutor) Next(t *catalog.Tuple, rid *structures.Rid) error {
 	it := e.tableIter
-	t, rid = nil, nil
-	row := it.Next()
-	if row == nil {
-		return
+	for {
+		row := it.Next()
+		if row == nil {
+			return ErrNoTuple{}
+		}
+	
+		*t = *catalog.CastRowAsTuple(row)
+		*rid = t.Rid
+	
+		pred := e.plan.GetPredicate()
+		if pred != nil{
+			val := pred.Eval(*t, e.GetOutSchema())
+			if !val.GetAsInterface().(bool){
+				continue
+			}
+		}
+		
+		return nil
 	}
+}
 
-	*t = *catalog.CastRowAsTuple(row)
-	*rid = t.Rid
+func NewSeqScanExecutor(ctx *execution.ExecutorContext,  plan *plans.SeqScanPlanNode) *SeqScanExecutor{
+	return &SeqScanExecutor{
+		BaseExecutor: BaseExecutor{
+			executorCtx: ctx,
+		},
+		plan:         plan,
+	}
 }
