@@ -45,6 +45,10 @@ func ConstructBtreeFromRootPointer(rootPage Pointer, degree int, pager Pager) *B
 	}
 }
 
+func (tree *BTree) GetPager() Pager {
+	return tree.pager
+}
+
 func (tree *BTree) Insert(key Key, value interface{}) {
 	pager := tree.pager
 	var stack = make([]NodeIndexPair, 0)
@@ -212,7 +216,7 @@ func (tree BTree) Print() {
 func (tree *BTree) Delete(key Key) bool {
 	var stack = make([]NodeIndexPair, 0)
 	var i interface{}
-	root := tree.GetRoot() 
+	root := tree.GetRoot()
 	defer tree.pager.Unpin(root, false)
 	i, stack = tree.findAndGetStack(root, key, stack, Delete)
 	if i == nil {
@@ -309,15 +313,15 @@ func (tree *BTree) Delete(key Key) bool {
 	return true
 }
 
-func (tree *BTree) findAndGetStack(node Node, key Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair){
-	if node.IsLeaf(){
+func (tree *BTree) findAndGetStack(node Node, key Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
+	if node.IsLeaf() {
 		i, found := node.findKey(key)
 		stackOut = append(stackIn, NodeIndexPair{node.GetPageId(), i})
 		if !found {
 			return nil, stackOut
 		}
 		return node.GetValueAt(i), stackOut
-	}else{
+	} else {
 		i, found := node.findKey(key)
 		if found {
 			i++
@@ -325,23 +329,23 @@ func (tree *BTree) findAndGetStack(node Node, key Key, stackIn []NodeIndexPair, 
 		stackOut = append(stackIn, NodeIndexPair{node.GetPageId(), i})
 		pointer := node.GetValueAt(i).(Pointer)
 		childNode := tree.pager.GetNode(pointer)
-		
+
 		// if mode == Insert{
 		// 	if childNode.IsSafeForMerge(tree.degree){
 		// 		for _, v := range st {
-					
+
 		// 		}
 		// 		tree.pager.Unpin(node, false)
 		// 	}
 		// }
-		
+
 		defer tree.pager.Unpin(childNode, false)
 		res, stackOut := tree.findAndGetStack(childNode, key, stackOut, mode)
 		return res, stackOut
 	}
 }
 
-func (tree *BTree) FindAndGetStack(key Key, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair){
+func (tree *BTree) FindAndGetStack(key Key, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
 	root := tree.GetRoot()
 	defer tree.pager.Unpin(root, false)
 	stack := []NodeIndexPair{}

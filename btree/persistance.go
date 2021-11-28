@@ -58,18 +58,21 @@ func (n NoopPersistentPage) GetPageId() Pointer {
 	return n.pageId
 }
 
+// will be used by noop peristent pager. Making them global is not good but NoopPager is only intented
+// for testing purposes
 var lastPageId Pointer = 0
+var mapping = make(map[Pointer]Node)
 
 type NoopPersistentPager struct {
 	KeySerializer   KeySerializer
 	ValueSerializer ValueSerializer
 }
 
-func (n2 NoopPersistentPager) UnpinByPointer(p Pointer, isDirty bool) {}
+func (n2 *NoopPersistentPager) UnpinByPointer(p Pointer, isDirty bool) {}
 
-func (n2 NoopPersistentPager) Unpin(n Node, isDirty bool) {}
+func (n2 *NoopPersistentPager) Unpin(n Node, isDirty bool) {}
 
-func (n NoopPersistentPager) NewInternalNode(firstPointer Pointer) Node {
+func (n *NoopPersistentPager) NewInternalNode(firstPointer Pointer) Node {
 	h := PersistentNodeHeader{
 		IsLeaf: 0,
 		KeyLen: 0,
@@ -91,11 +94,11 @@ func (n NoopPersistentPager) NewInternalNode(firstPointer Pointer) Node {
 	asByte := buf.Bytes()
 	copy(data[PersistentNodeHeaderSize:], asByte)
 
-	mapping2[lastPageId] = &node
+	mapping[lastPageId] = &node
 	return &node
 }
 
-func (n NoopPersistentPager) NewLeafNode() Node {
+func (n *NoopPersistentPager) NewLeafNode() Node {
 	h := PersistentNodeHeader{
 		IsLeaf: 1,
 		KeyLen: 0,
@@ -107,7 +110,7 @@ func (n NoopPersistentPager) NewLeafNode() Node {
 	var node PersistentLeafNode
 	if n.ValueSerializer == nil {
 		node = PersistentLeafNode{PersistentPage: NewNoopPersistentPage(lastPageId), pager: n, keySerializer: n.KeySerializer, valSerializer: &SlotPointerValueSerializer{}}
-	}else{
+	} else {
 		node = PersistentLeafNode{PersistentPage: NewNoopPersistentPage(lastPageId), pager: n, keySerializer: n.KeySerializer, valSerializer: n.ValueSerializer}
 
 	}
@@ -116,12 +119,17 @@ func (n NoopPersistentPager) NewLeafNode() Node {
 	data := node.GetData()
 	WritePersistentNodeHeader(&h, data)
 
-	mapping2[lastPageId] = &node
+	mapping[lastPageId] = &node
 	return &node
 }
 
-var mapping2 = make(map[Pointer]Node)
+func (n *NoopPersistentPager) GetNode(p Pointer) Node {
+	return mapping[p]
+}
 
-func (n NoopPersistentPager) GetNode(p Pointer) Node {
-	return mapping2[p]
+func NewNoopPagerWithValueSize(serializer KeySerializer, valSerializer ValueSerializer) *NoopPersistentPager {
+	return &NoopPersistentPager{
+		KeySerializer:   serializer,
+		ValueSerializer: valSerializer,
+	}
 }
