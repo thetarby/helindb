@@ -1,13 +1,15 @@
 package db_types
 
-import "helin/btree"
+import (
+	"helin/common"
+)
 
 type Value struct {
 	typeID TypeID
 	value  interface{}
 }
 
-func (v *Value) Less(than btree.Key) bool {
+func (v *Value) Less(than common.Key) bool {
 	return v.LessThanValue(than.(*Value))
 }
 

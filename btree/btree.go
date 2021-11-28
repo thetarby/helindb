@@ -9,6 +9,7 @@ package btree
 
 import (
 	"fmt"
+	"helin/common"
 )
 
 type BTree struct {
@@ -49,7 +50,7 @@ func (tree *BTree) GetPager() Pager {
 	return tree.pager
 }
 
-func (tree *BTree) Insert(key Key, value interface{}) {
+func (tree *BTree) Insert(key common.Key, value interface{}) {
 	pager := tree.pager
 	var stack = make([]NodeIndexPair, 0)
 	var i interface{}
@@ -94,7 +95,7 @@ func (tree *BTree) Insert(key Key, value interface{}) {
 	//}
 }
 
-func (tree *BTree) InsertOrReplace(key Key, value interface{}) (isInserted bool) {
+func (tree *BTree) InsertOrReplace(key common.Key, value interface{}) (isInserted bool) {
 	pager := tree.pager
 	var stack = make([]NodeIndexPair, 0)
 	var i interface{}
@@ -136,7 +137,7 @@ func (tree *BTree) InsertOrReplace(key Key, value interface{}) (isInserted bool)
 	return true
 }
 
-func (tree *BTree) Find(key Key) interface{} {
+func (tree *BTree) Find(key common.Key) interface{} {
 	root := tree.GetRoot()
 	res, stack := tree.findAndGetStack(root, key, []NodeIndexPair{}, Read)
 	for _, pair := range stack {
@@ -145,7 +146,7 @@ func (tree *BTree) Find(key Key) interface{} {
 	return res
 }
 
-func (tree *BTree) FindSince(key Key) []interface{} {
+func (tree *BTree) FindSince(key common.Key) []interface{} {
 	root := tree.GetRoot()
 	_, stack := tree.findAndGetStack(root, key, []NodeIndexPair{}, Read)
 
@@ -213,7 +214,7 @@ func (tree BTree) Print() {
 	}
 }
 
-func (tree *BTree) Delete(key Key) bool {
+func (tree *BTree) Delete(key common.Key) bool {
 	var stack = make([]NodeIndexPair, 0)
 	var i interface{}
 	root := tree.GetRoot()
@@ -313,7 +314,7 @@ func (tree *BTree) Delete(key Key) bool {
 	return true
 }
 
-func (tree *BTree) findAndGetStack(node Node, key Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
+func (tree *BTree) findAndGetStack(node Node, key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
 	if node.IsLeaf() {
 		i, found := node.findKey(key)
 		stackOut = append(stackIn, NodeIndexPair{node.GetPageId(), i})
@@ -345,7 +346,7 @@ func (tree *BTree) findAndGetStack(node Node, key Key, stackIn []NodeIndexPair, 
 	}
 }
 
-func (tree *BTree) FindAndGetStack(key Key, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
+func (tree *BTree) FindAndGetStack(key common.Key, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
 	root := tree.GetRoot()
 	defer tree.pager.Unpin(root, false)
 	stack := []NodeIndexPair{}

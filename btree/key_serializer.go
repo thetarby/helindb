@@ -3,17 +3,18 @@ package btree
 import (
 	"bytes"
 	"encoding/binary"
+	"helin/common"
 )
 
 type KeySerializer interface {
-	Serialize(key Key) ([]byte, error)
-	Deserialize([]byte) (Key, error)
+	Serialize(key common.Key) ([]byte, error)
+	Deserialize([]byte) (common.Key, error)
 	Size() int
 }
 
 type PersistentKeySerializer struct{}
 
-func (p *PersistentKeySerializer) Serialize(key Key) ([]byte, error) {
+func (p *PersistentKeySerializer) Serialize(key common.Key) ([]byte, error) {
 	buf := bytes.Buffer{}
 	err := binary.Write(&buf, binary.BigEndian, key.(PersistentKey))
 	if err != nil {
@@ -22,7 +23,7 @@ func (p *PersistentKeySerializer) Serialize(key Key) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (p *PersistentKeySerializer) Deserialize(data []byte) (Key, error) {
+func (p *PersistentKeySerializer) Deserialize(data []byte) (common.Key, error) {
 	reader := bytes.NewReader(data)
 	var key PersistentKey
 	err := binary.Read(reader, binary.BigEndian, &key)
@@ -40,7 +41,7 @@ type StringKeySerializer struct {
 	Len int
 }
 
-func (s *StringKeySerializer) Serialize(key Key) ([]byte, error) {
+func (s *StringKeySerializer) Serialize(key common.Key) ([]byte, error) {
 	buf := bytes.Buffer{}
 	err := binary.Write(&buf, binary.BigEndian, ([]byte)(key.(StringKey)))
 	if err != nil {
@@ -49,7 +50,7 @@ func (s *StringKeySerializer) Serialize(key Key) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (s *StringKeySerializer) Deserialize(data []byte) (Key, error) {
+func (s *StringKeySerializer) Deserialize(data []byte) (common.Key, error) {
 	return StringKey(data[:s.Len]), nil
 }
 
@@ -63,7 +64,7 @@ type ValueSerializer interface {
 	Size() int
 }
 
-type StringValueSerializer struct{
+type StringValueSerializer struct {
 	Len int
 }
 
@@ -86,7 +87,7 @@ func (s *StringValueSerializer) Size() int {
 	return s.Len
 }
 
-type SlotPointerValueSerializer struct{
+type SlotPointerValueSerializer struct {
 }
 
 func (s *SlotPointerValueSerializer) Serialize(val interface{}) ([]byte, error) {

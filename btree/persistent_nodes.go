@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"helin/common"
 	"sort"
 )
 
 type PersistentKey int64
 
-func (p PersistentKey) Less(than Key) bool {
+func (p PersistentKey) Less(than common.Key) bool {
 	return p < than.(PersistentKey)
 }
 
@@ -19,7 +20,7 @@ func (p StringKey) String() string {
 	return string(p)
 }
 
-func (p StringKey) Less(than Key) bool {
+func (p StringKey) Less(than common.Key) bool {
 	return p < than.(StringKey)
 }
 
@@ -63,7 +64,7 @@ func WritePersistentNodeHeader(header *PersistentNodeHeader, dest []byte) {
 	copy(dest, buf.Bytes())
 }
 
-func (p *PersistentLeafNode) findAndGetStack(key Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
+func (p *PersistentLeafNode) findAndGetStack(key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
 	i, found := p.findKey(key)
 	stackOut = append(stackIn, NodeIndexPair{p.GetPageId(), i})
 	if !found {
@@ -72,7 +73,7 @@ func (p *PersistentLeafNode) findAndGetStack(key Key, stackIn []NodeIndexPair, m
 	return p.GetValueAt(i), stackOut
 }
 
-func (p *PersistentLeafNode) findKey(key Key) (index int, found bool) {
+func (p *PersistentLeafNode) findKey(key common.Key) (index int, found bool) {
 	data := p.GetData()
 	h := ReadPersistentNodeHeader(data)
 	//for i := 0; i < int(h.KeyLen) -1 ; i++ {
@@ -113,7 +114,7 @@ func (p *PersistentLeafNode) shiftKeyValueToLeftAt(n int) {
 	copy(data[PersistentNodeHeaderSize+destOffset:], data[PersistentNodeHeaderSize+offset:])
 }
 
-func (p *PersistentLeafNode) setKeyAt(idx int, key Key) { // TODO use persistentKey
+func (p *PersistentLeafNode) setKeyAt(idx int, key common.Key) { // TODO use persistentKey
 	data := p.GetData()
 	offset := idx * (p.keySerializer.Size() + p.valSerializer.Size())
 	asByte, err := p.keySerializer.Serialize(key)
@@ -129,7 +130,7 @@ func (p *PersistentLeafNode) setValueAt(idx int, val interface{}) {
 	copy(data[PersistentNodeHeaderSize+offset:], asByte)
 }
 
-func (p *PersistentLeafNode) GetKeyAt(idx int) Key {
+func (p *PersistentLeafNode) GetKeyAt(idx int) common.Key {
 	data := p.GetData()
 	offset := idx * (p.keySerializer.Size() + p.valSerializer.Size())
 	key, err := p.keySerializer.Deserialize(data[PersistentNodeHeaderSize+offset:])
@@ -158,7 +159,7 @@ func (p *PersistentLeafNode) GetValues() []interface{} {
 	return res
 }
 
-func (p *PersistentLeafNode) SplitNode(idx int) (right Pointer, keyAtLeft Key, keyAtRight Key) {
+func (p *PersistentLeafNode) SplitNode(idx int) (right Pointer, keyAtLeft common.Key, keyAtRight common.Key) {
 	pager := p.pager
 	keyAtLeft = p.GetKeyAt(idx - 1)
 	keyAtRight = p.GetKeyAt(idx)
@@ -199,7 +200,7 @@ func (p *PersistentLeafNode) IsOverFlow(degree int) bool {
 	return h.KeyLen == int16(degree)
 }
 
-func (p *PersistentLeafNode) InsertAt(index int, key Key, val interface{}) {
+func (p *PersistentLeafNode) InsertAt(index int, key common.Key, val interface{}) {
 	// update header and increase key count
 	h := ReadPersistentNodeHeader(p.GetData())
 	h.KeyLen++
@@ -325,7 +326,7 @@ func NewPersistentInternalNode(firstPointer Pointer) *PersistentInternalNode {
 
 }
 
-func (p *PersistentInternalNode) findAndGetStack(key Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
+func (p *PersistentInternalNode) findAndGetStack(key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
 	pager := p.pager
 	i, found := p.findKey(key)
 	if found {
@@ -341,7 +342,7 @@ func (p *PersistentInternalNode) findAndGetStack(key Key, stackIn []NodeIndexPai
 	return res, stackOut
 }
 
-func (p *PersistentInternalNode) findKey(key Key) (index int, found bool) {
+func (p *PersistentInternalNode) findKey(key common.Key) (index int, found bool) {
 	data := p.GetData()
 	h := ReadPersistentNodeHeader(data)
 	//for i := 0; i < int(h.KeyLen) -1 ; i++ {
@@ -392,7 +393,7 @@ func (p *PersistentInternalNode) shiftKeyValueToLeftAt(n int) {
 	copy(data[pairBeginningOffset+destOffset:], data[pairBeginningOffset+offset:])
 }
 
-func (p *PersistentInternalNode) setKeyAt(idx int, key Key) {
+func (p *PersistentInternalNode) setKeyAt(idx int, key common.Key) {
 	data := p.GetData()
 	offset := idx * (p.keySerializer.Size() + NodePointerSize)
 	pairBeginningOffset := PersistentNodeHeaderSize + NodePointerSize
@@ -419,7 +420,7 @@ func (p *PersistentInternalNode) setValueAt(idx int, val interface{}) {
 	copy(data[pairBeginningOffset+offset:], asByte)
 }
 
-func (p *PersistentInternalNode) GetKeyAt(idx int) Key {
+func (p *PersistentInternalNode) GetKeyAt(idx int) common.Key {
 	data := p.GetData()
 	offset := idx * (p.keySerializer.Size() + NodePointerSize)
 	pairBeginningOffset := PersistentNodeHeaderSize + NodePointerSize
@@ -459,7 +460,7 @@ func (p *PersistentInternalNode) GetValues() []interface{} {
 	return res
 }
 
-func (p *PersistentInternalNode) SplitNode(idx int) (right Pointer, keyAtLeft Key, keyAtRight Key) {
+func (p *PersistentInternalNode) SplitNode(idx int) (right Pointer, keyAtLeft common.Key, keyAtRight common.Key) {
 	pager := p.pager
 	// keyAtLeft is the last key in right node after split and keyAtRight is the key which is pushed up. it is actually
 	// not in rightNode poor naming :(
@@ -502,7 +503,7 @@ func (p *PersistentInternalNode) IsOverFlow(degree int) bool {
 	return int(h.KeyLen) == degree
 }
 
-func (p *PersistentInternalNode) InsertAt(index int, key Key, val interface{}) {
+func (p *PersistentInternalNode) InsertAt(index int, key common.Key, val interface{}) {
 	h := ReadPersistentNodeHeader(p.GetData())
 	h.KeyLen++
 	WritePersistentNodeHeader(h, p.GetData())
@@ -570,7 +571,7 @@ func (p *PersistentInternalNode) MergeNodes(rightNode Node, parent Node) {
 	}
 
 	for ii := 0; ii < rightNode.Keylen()+1; ii++ {
-		var k Key
+		var k common.Key
 		if ii == 0 {
 			k = parent.GetKeyAt(i)
 		} else {
@@ -615,7 +616,7 @@ func (p *PersistentInternalNode) Redistribute(rightNode Node, parent Node) {
 	numKeysAtRight := (p.Keylen() + rightNode.Keylen()) - numKeysAtLeft
 
 	for ii := 0; ii < rightNode.Keylen()+1; ii++ {
-		var k Key
+		var k common.Key
 		if ii == 0 {
 			k = parent.GetKeyAt(i)
 		} else {

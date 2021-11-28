@@ -1,6 +1,7 @@
 package btree
 
 import (
+	"helin/common"
 	"helin/concurrency"
 )
 
@@ -52,7 +53,7 @@ func NewTreeIterator(txn concurrency.Transaction, tree *BTree, pager Pager) *Tre
 	}
 }
 
-func NewTreeIteratorWithKey(txn concurrency.Transaction, key Key, tree *BTree, pager Pager) *TreeIterator {
+func NewTreeIteratorWithKey(txn concurrency.Transaction, key common.Key, tree *BTree, pager Pager) *TreeIterator {
 	_, stack := tree.FindAndGetStack(key, Read)
 	leaf, idx := stack[len(stack)-1].Node, stack[len(stack)-1].Index
 
