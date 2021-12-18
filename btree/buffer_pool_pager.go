@@ -37,11 +37,11 @@ func (b *BufferPoolPager) NewInternalNode(firstPointer Pointer) Node {
 	common.PanicIfErr(err)
 	node := PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer}
 
-	// write header
-	data := node.GetData()
-	WritePersistentNodeHeader(&h, data)
+	// set header
+	node.SetHeader(&h)
 
 	// write first pointer
+	data := node.GetData()
 	buf := bytes.Buffer{}
 	err = binary.Write(&buf, binary.BigEndian, firstPointer)
 	CheckErr(err)
@@ -62,8 +62,7 @@ func (b *BufferPoolPager) NewLeafNode() Node {
 	node := PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
 
 	// write header
-	data := node.GetData()
-	WritePersistentNodeHeader(&h, data)
+	node.SetHeader(&h)
 
 	return &node
 }

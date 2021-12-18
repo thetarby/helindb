@@ -33,9 +33,6 @@ const (
 )
 
 type Node interface {
-	// findAndGetStack is used to recursively find the given key and it also passes a stack object recursively to
-	// keep the path it followed down to leaf node. value is nil when key does not exist.
-	findAndGetStack(key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair)
 	findKey(key common.Key) (index int, found bool)
 	shiftKeyValueToRightAt(n int)
 	shiftKeyValueToLeftAt(n int)
@@ -52,6 +49,7 @@ type Node interface {
 	GetPageId() Pointer
 	IsLeaf() bool
 	GetHeader() *PersistentNodeHeader
+	SetHeader(*PersistentNodeHeader)
 
 	// IsSafeForSplit returns true if there is at least one empty place in the node meaning it
 	// won't split even one key is inserted

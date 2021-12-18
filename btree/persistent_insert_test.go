@@ -24,9 +24,7 @@ func TestPersistent_Insert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 	tree.Insert(PersistentKey(5), p)
 	tree.Insert(PersistentKey(3), p)
 
-	var stack []NodeIndexPair
-
-	res, stack := tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(5), stack, Insert)
+	res, stack := tree.FindAndGetStack(PersistentKey(5), Insert)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, p, res.(SlotPointer))

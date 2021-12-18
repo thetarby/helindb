@@ -64,15 +64,6 @@ func WritePersistentNodeHeader(header *PersistentNodeHeader, dest []byte) {
 	copy(dest, buf.Bytes())
 }
 
-func (p *PersistentLeafNode) findAndGetStack(key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
-	i, found := p.findKey(key)
-	stackOut = append(stackIn, NodeIndexPair{p.GetPageId(), i})
-	if !found {
-		return nil, stackOut
-	}
-	return p.GetValueAt(i), stackOut
-}
-
 func (p *PersistentLeafNode) findKey(key common.Key) (index int, found bool) {
 	data := p.GetData()
 	h := ReadPersistentNodeHeader(data)
@@ -295,6 +286,10 @@ func (p *PersistentLeafNode) GetHeader() *PersistentNodeHeader {
 	return ReadPersistentNodeHeader(d)
 }
 
+func (p *PersistentLeafNode) SetHeader(h *PersistentNodeHeader) {
+	WritePersistentNodeHeader(h, p.GetData())
+}
+
 type PersistentInternalNode struct {
 	PersistentPage
 	pager         Pager
@@ -324,22 +319,6 @@ func NewPersistentInternalNode(firstPointer Pointer) *PersistentInternalNode {
 
 	return &node
 
-}
-
-func (p *PersistentInternalNode) findAndGetStack(key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
-	pager := p.pager
-	i, found := p.findKey(key)
-	if found {
-		i++
-	}
-
-	stackOut = append(stackIn, NodeIndexPair{p.GetPageId(), i})
-	pointer := p.GetValueAt(i).(Pointer)
-	node := pager.GetNode(pointer)
-
-	defer pager.Unpin(node, false)
-	res, stackOut := node.findAndGetStack(key, stackOut, mode)
-	return res, stackOut
 }
 
 func (p *PersistentInternalNode) findKey(key common.Key) (index int, found bool) {
@@ -651,6 +630,10 @@ func (p *PersistentInternalNode) IsUnderFlow(degree int) bool {
 func (p *PersistentInternalNode) GetHeader() *PersistentNodeHeader {
 	d := p.GetData()
 	return ReadPersistentNodeHeader(d)
+}
+
+func (p *PersistentInternalNode) SetHeader(h *PersistentNodeHeader) {
+	WritePersistentNodeHeader(h, p.GetData())
 }
 
 func (n *PersistentLeafNode) IsSafeForMerge(degree int) bool {

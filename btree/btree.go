@@ -314,6 +314,8 @@ func (tree *BTree) Delete(key common.Key) bool {
 	return true
 }
 
+// findAndGetStack is used to recursively find the given key and it also passes a stack object recursively to
+// keep the path it followed down to leaf node. value is nil when key does not exist.
 func (tree *BTree) findAndGetStack(node Node, key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
 	if node.IsLeaf() {
 		i, found := node.findKey(key)
