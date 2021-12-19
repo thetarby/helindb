@@ -13,7 +13,7 @@ type TreeIterator struct {
 	pager   Pager
 }
 
-func (it *TreeIterator) Next() interface{} {
+func (it *TreeIterator) Next() (common.Key, interface{}) {
 	currNode := it.pager.GetNode(it.curr)
 	h := currNode.GetHeader()
 
@@ -21,17 +21,17 @@ func (it *TreeIterator) Next() interface{} {
 	if h.KeyLen == int16(it.currIdx) {
 		it.pager.Unpin(currNode, false)
 		if h.Right == 0 {
-			return nil
+			return nil, nil
 		}
 		it.curr = h.Right
 		currNode = it.pager.GetNode(it.curr)
 		it.currIdx = 0
 	}
 
-	val := currNode.GetValueAt(it.currIdx)
+	val, key := currNode.GetValueAt(it.currIdx), currNode.GetKeyAt(it.currIdx)
 	it.pager.Unpin(currNode, false)
 	it.currIdx++
-	return val
+	return key, val
 }
 
 func NewTreeIterator(txn concurrency.Transaction, tree *BTree, pager Pager) *TreeIterator {

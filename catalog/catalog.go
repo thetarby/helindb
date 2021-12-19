@@ -124,7 +124,7 @@ func (c *Catalog) CreateBtreeIndexWithTuple(txn concurrency.Transaction, indexNa
 	// TODO: calc degree
 	table := c.GetTable(tableName)
 	it := structures.NewTableIterator(txn, table.Heap)
-	if !isUnique{
+	if !isUnique {
 		cols := keySchema.GetColumns()
 		cols = append(cols, Column{
 			Name:   "page_id",
@@ -152,7 +152,7 @@ func (c *Catalog) CreateBtreeIndexWithTuple(txn concurrency.Transaction, indexNa
 			vals = append(vals, val)
 		}
 
-		if !isUnique{ // if it is not a unique index append rid to make keys unique
+		if !isUnique { // if it is not a unique index append rid to make keys unique
 			vals = append(vals, db_types.NewValue(int32(n.Rid.PageId)), db_types.NewValue(int32(n.Rid.SlotIdx))) // TODO: pageID is uint64 there might be overflow
 		}
 
@@ -189,7 +189,7 @@ func (c *Catalog) GetIndex(indexName, tableName string) *IndexInfo {
 }
 
 func (c *Catalog) GetIndexByOID(indexOID IndexOID) *IndexInfo {
-	panic("implement me")
+	return c.indexes[indexOID]
 }
 
 func (c *Catalog) GetIndexByTableOID(indexName, oid TableOID) *IndexInfo {
