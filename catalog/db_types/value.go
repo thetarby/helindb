@@ -53,7 +53,7 @@ func NewValue(src interface{}) *Value {
 	case []byte:
 		typeID = TypeID{
 			KindID: 3,
-			Size:   uint32(len(src.(string))),
+			Size:   uint32(len(src.([]byte))),
 		}
 	case bool:
 		typeID = TypeID{

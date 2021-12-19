@@ -8,7 +8,7 @@ import (
 
 var IntegerTypeID = TypeID{
 	KindID: 1,
-	Size:   0,
+	Size:   4,
 }
 
 type IntegerType struct {
