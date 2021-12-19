@@ -28,7 +28,8 @@ func TestTreeIterator_Should_Return_Every_Value_Bigger_Than_Or_Euqal_To_Key_When
 	}
 
 	it := NewTreeIteratorWithKey(nil, StringKey("selam_099"), tree, tree.pager)
-	for i, val := 9900, it.Next(); val != nil; val = it.Next() {
+	i := 9900
+	for _, val := it.Next(); val != nil; _, val = it.Next() {
 		assert.Equal(t, fmt.Sprintf("value_%05d", i), val.(string))
 		i++
 	}
@@ -53,8 +54,9 @@ func TestTreeIterator_Should_Return_All_Values_When_Initialized_Without_A_Key(t 
 
 	it := NewTreeIterator(nil, tree, tree.pager)
 	for i := 0; i < n; i++ {
-		val := it.Next()
+		_, val := it.Next()
 		assert.Equal(t, fmt.Sprintf("value_%05d", i), val.(string))
 	}
-	assert.Nil(t, it.Next())
+	_, val := it.Next()
+	assert.Nil(t, val)
 }

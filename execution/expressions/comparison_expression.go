@@ -16,12 +16,12 @@ const (
 	GreaterThanOrEqual
 )
 
-type CompExpression struct{
+type CompExpression struct {
 	BaseExpression
 	CompType CompType
 }
 
-func (e *CompExpression) Eval(t catalog.Tuple, s catalog.Schema) db_types.Value{
+func (e *CompExpression) Eval(t catalog.Tuple, s catalog.Schema) db_types.Value {
 	lhs := e.GetChildAt(0).Eval(t, s)
 	rhs := e.GetChildAt(1).Eval(t, s)
 	res := doComparison(e.CompType, lhs, rhs)
@@ -29,23 +29,31 @@ func (e *CompExpression) Eval(t catalog.Tuple, s catalog.Schema) db_types.Value{
 	return *db_types.NewValue(res)
 }
 
-func (e *CompExpression) GetCompType(t catalog.Tuple, s catalog.Schema) CompType{
+func (e *CompExpression) EvalJoin(lt catalog.Tuple, ls catalog.Schema, rt catalog.Tuple, rs catalog.Schema) db_types.Value {
+	lhs := e.GetChildAt(0).EvalJoin(lt, ls, rt, rs)
+	rhs := e.GetChildAt(1).EvalJoin(lt, ls, rt, rs)
+	res := doComparison(e.CompType, lhs, rhs)
+
+	return *db_types.NewValue(res)
+}
+
+func (e *CompExpression) GetCompType(t catalog.Tuple, s catalog.Schema) CompType {
 	return e.CompType
 }
 
-func doComparison(compType CompType, lhs, rhs db_types.Value) bool{
-	switch compType{
+func doComparison(compType CompType, lhs, rhs db_types.Value) bool {
+	switch compType {
 	case Equal:
-		if lhs.Less(&rhs){
+		if lhs.Less(&rhs) {
 			return false
-		}else if rhs.Less(&lhs){
+		} else if rhs.Less(&lhs) {
 			return false
 		}
 		return true
 	case NotEqual:
-		if lhs.Less(&rhs){
+		if lhs.Less(&rhs) {
 			return true
-		}else if rhs.Less(&lhs){
+		} else if rhs.Less(&lhs) {
 			return true
 		}
 		return false
@@ -62,11 +70,11 @@ func doComparison(compType CompType, lhs, rhs db_types.Value) bool{
 	}
 }
 
-func NewCompExpr(cType CompType, lhs, rhs IExpression) *CompExpression{
+func NewCompExpr(cType CompType, lhs, rhs IExpression) *CompExpression {
 	return &CompExpression{
 		BaseExpression: BaseExpression{
 			Children: []IExpression{lhs, rhs},
 		},
-		CompType:       cType,
+		CompType: cType,
 	}
 }

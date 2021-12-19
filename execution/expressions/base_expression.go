@@ -6,26 +6,31 @@ import (
 )
 
 // IExpression is the node in expression tree
-type IExpression interface{
+type IExpression interface {
 	Eval(catalog.Tuple, catalog.Schema) db_types.Value
+	EvalJoin(catalog.Tuple, catalog.Schema, catalog.Tuple, catalog.Schema) db_types.Value
 	GetChildAt(idx int) IExpression
 	GetChildren() []IExpression
 }
 
-// BaseExpression implements trivial methods needed for each type implementing IExpression interface such as 
+// BaseExpression implements trivial methods needed for each type implementing IExpression interface such as
 // tree traversal methods
-type BaseExpression struct{
+type BaseExpression struct {
 	Children []IExpression
 }
 
-func (e *BaseExpression) Eval(catalog.Tuple, catalog.Schema) db_types.Value{
+func (e *BaseExpression) Eval(catalog.Tuple, catalog.Schema) db_types.Value {
 	panic("implement me")
 }
 
-func (e *BaseExpression) GetChildAt(idx int) IExpression{
+func (e *BaseExpression) EvalJoin(catalog.Tuple, catalog.Schema, catalog.Tuple, catalog.Schema) db_types.Value {
+	panic("implement me")
+}
+
+func (e *BaseExpression) GetChildAt(idx int) IExpression {
 	return e.Children[idx]
 }
 
-func (e *BaseExpression) GetChildren() []IExpression{
+func (e *BaseExpression) GetChildren() []IExpression {
 	return e.Children
 }
