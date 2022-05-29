@@ -180,7 +180,7 @@ func TestInsert_Internals_2(t *testing.T) {
 	}
 
 	_, stack := tree.FindAndGetStack(PersistentKey(9000), Read)
-	leftMostNode := tree.pager.GetNode(stack[len(stack)-1].Node)
+	leftMostNode := stack[len(stack)-1].Node
 	for {
 		if leftMostNode == nil {
 			break

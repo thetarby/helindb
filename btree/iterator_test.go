@@ -25,6 +25,7 @@ func TestTreeIterator_Should_Return_Every_Value_Bigger_Than_Or_Euqal_To_Key_When
 	n := 10000
 	for _, i := range rand.Perm(n) {
 		tree.Insert(StringKey(fmt.Sprintf("selam_%05d", i)), fmt.Sprintf("value_%05d", i))
+		assert.Zero(t, pool.Replacer.NumPinnedPages())
 	}
 
 	it := NewTreeIteratorWithKey(nil, StringKey("selam_099"), tree, tree.pager)

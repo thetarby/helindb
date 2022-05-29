@@ -153,8 +153,7 @@ func (b *BufferPool) Unpin(pageId int, isDirty bool) bool {
 
 	// if pin count is already 0 it is already unpinned. Although that should not happen I guess
 	if page.GetPinCount() == 0 {
-		log.Printf("buffer.Unpin is called while pin count is already zero. PageId: %v\n", pageId)
-		return true
+		panic(fmt.Sprintf("buffer.Unpin is called while pin count is already zero. PageId: %v\n", pageId))
 	}
 
 	// decrease pin count and if it is 0 unpin frame in the replacer so that new pages can be read

@@ -3,6 +3,7 @@ package btree
 import (
 	"bytes"
 	"encoding/binary"
+	"sync"
 )
 
 /* InternalNode and SlottedPage structures should extend a PersistentPage implementation to be able to be disk persistent */
@@ -12,6 +13,11 @@ type PersistentPage interface {
 
 	// GetPageId returns the page_id of the physical page.
 	GetPageId() Pointer
+
+	WLatch()
+	WUnlatch()
+	RLatch()
+	RUnLatch()
 }
 
 type Pager interface {
@@ -20,10 +26,10 @@ type Pager interface {
 	// Finally, it should serialize the structure on to pointed byte array.
 	// NOTE: the node should have a reference(by extending it for example) to the created PersistentPage
 	// so that it can be serialized in the future when its state changes.
-	NewInternalNode(firstPointer Pointer) Node
+	NewInternalNode(p Pointer) Node
 
 	// NewLeafNode first should create an PersistentPage which points to a byte array.
-	// Then initialize an LeafNode structure.
+	// Then initialize a LeafNode structure.
 	// Finally, it should serialize the structure on to pointed byte array
 	NewLeafNode() Node
 
@@ -39,23 +45,41 @@ type Pager interface {
 /* NOOP IMPLEMENTATION*/
 
 type NoopPersistentPage struct {
-	pageId Pointer
-	data   []byte
+	pageId  Pointer
+	data    []byte
+	rwLatch *sync.RWMutex
 }
 
 func NewNoopPersistentPage(pageId Pointer) *NoopPersistentPage {
 	return &NoopPersistentPage{
-		pageId: pageId,
-		data:   make([]byte, 4096, 4096),
+		pageId:  pageId,
+		data:    make([]byte, 4096, 4096),
+		rwLatch: &sync.RWMutex{},
 	}
 }
 
-func (n NoopPersistentPage) GetData() []byte {
+func (n *NoopPersistentPage) GetData() []byte {
 	return n.data
 }
 
-func (n NoopPersistentPage) GetPageId() Pointer {
+func (n *NoopPersistentPage) GetPageId() Pointer {
 	return n.pageId
+}
+
+func (n *NoopPersistentPage) WLatch() {
+	n.rwLatch.Lock()
+}
+
+func (n *NoopPersistentPage) WUnlatch() {
+	n.rwLatch.Unlock()
+}
+
+func (n *NoopPersistentPage) RLatch() {
+	n.rwLatch.RLock()
+}
+
+func (n *NoopPersistentPage) RUnLatch() {
+	n.rwLatch.RUnlock()
 }
 
 // will be used by noop peristent pager. Making them global is not good but NoopPager is only intented
