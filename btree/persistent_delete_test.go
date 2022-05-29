@@ -22,7 +22,7 @@ func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_3(t *testing.T) {
 		})
 	}
 	var stack []NodeIndexPair
-	res, stack := tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(1), stack, Insert)
+	res, stack := tree.FindAndGetStack(PersistentKey(1), Insert)
 	assert.Len(t, stack, 3)
 	assert.Equal(t, SlotPointer{
 		PageId:  10,
@@ -31,8 +31,7 @@ func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_3(t *testing.T) {
 
 	tree.Delete(PersistentKey(1))
 	stack = []NodeIndexPair{}
-	_, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(1), stack, Insert)
-
+	_, stack = tree.FindAndGetStack(PersistentKey(1), Insert)
 	assert.Len(t, stack, 2)
 }
 

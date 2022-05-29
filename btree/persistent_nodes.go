@@ -65,15 +65,6 @@ func WritePersistentNodeHeader(header *PersistentNodeHeader, dest []byte) {
 	copy(dest, buf.Bytes())
 }
 
-func (p *PersistentLeafNode) findAndGetStack(key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
-	i, found := p.findKey(key)
-	stackOut = append(stackIn, NodeIndexPair{p, i})
-	if !found {
-		return nil, stackOut
-	}
-	return p.GetValueAt(i), stackOut
-}
-
 func (p *PersistentLeafNode) findKey(key common.Key) (index int, found bool) {
 	data := p.GetData()
 	h := ReadPersistentNodeHeader(data)
@@ -326,21 +317,6 @@ func NewPersistentInternalNode(firstPointer Pointer) *PersistentInternalNode {
 
 	return &node
 
-}
-
-func (p *PersistentInternalNode) findAndGetStack(key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
-	pager := p.pager
-	i, found := p.findKey(key)
-	if found {
-		i++
-	}
-
-	stackOut = append(stackIn, NodeIndexPair{p, i})
-	pointer := p.GetValueAt(i).(Pointer)
-	node := pager.GetNode(pointer)
-
-	res, stackOut := node.findAndGetStack(key, stackOut, mode)
-	return res, stackOut
 }
 
 func (p *PersistentInternalNode) findKey(key common.Key) (index int, found bool) {

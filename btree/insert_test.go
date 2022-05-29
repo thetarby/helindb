@@ -38,7 +38,7 @@ func TestInsert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 
 	var stack []NodeIndexPair
 
-	res, stack := tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(5), stack, Insert)
+	res, stack := tree.FindAndGetStack(PersistentKey(5), Insert)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("5"), res)
@@ -94,71 +94,60 @@ func TestInsert_Internals(t *testing.T) {
 	tree := NewBtreeWithPager(4, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	tree.Insert(PersistentKey(1), "1")
 
-	stack := make([]NodeIndexPair, 0)
-	val, stack := tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(1), stack, Insert)
+	val, stack := tree.FindAndGetStack(PersistentKey(1), Insert)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("1"), val.(string))
 
 	tree.Insert(PersistentKey(2), "2")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(2), stack, Insert)
-
+	val, stack = tree.FindAndGetStack(PersistentKey(2), Insert)
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("2"), val.(string))
 
 	tree.Insert(PersistentKey(3), "3")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(3), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(3), Insert)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("3"), val.(string))
 
 	tree.Insert(PersistentKey(4), "4")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(4), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(4), Insert)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("4"), val.(string))
 
 	tree.Insert(PersistentKey(5), "5")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(5), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(5), Insert)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("5"), val.(string))
 
 	tree.Insert(PersistentKey(6), "6")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(6), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(6), Insert)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("6"), val.(string))
 
 	tree.Insert(PersistentKey(7), "7")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(7), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(7), Insert)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("7"), val.(string))
 
 	tree.Insert(PersistentKey(8), "8")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(8), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(8), Insert)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("8"), val.(string))
 
 	tree.Insert(PersistentKey(9), "9")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(9), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(9), Insert)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("9"), val.(string))
 
 	tree.Insert(PersistentKey(10), "10")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(10), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(10), Insert)
 
 	assert.Len(t, stack, 3)
 	assert.Equal(t, padStr("10"), val.(string))
