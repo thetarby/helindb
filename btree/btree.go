@@ -439,6 +439,7 @@ func (tree *BTree) FindAndGetStack(key common.Key, mode TraverseMode) (value int
 	tree.rootEntryLock.Lock()
 	root := tree.GetRoot(mode)
 	if mode == Insert || mode == Delete {
+		// this is a special NodeIndexPair which indicates that root entry lock is acquired and caller should release it.
 		stack = append(stack, NodeIndexPair{Index: -1})
 	} else {
 		// in read mode there is no way root will be split hence we can release entry lock directly

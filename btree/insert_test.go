@@ -31,7 +31,7 @@ func padStr(str string) string {
 }
 
 func TestInsert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	tree.Insert(PersistentKey(1), padStr("1"))
 	tree.Insert(PersistentKey(5), padStr("5"))
 	tree.Insert(PersistentKey(3), padStr("3"))
@@ -46,7 +46,7 @@ func TestInsert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 }
 
 func TestInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), strconv.Itoa(i))
 	}
@@ -57,7 +57,7 @@ func TestInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {
 }
 
 func TestInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), strconv.Itoa(i))
 	}
@@ -69,7 +69,7 @@ func TestInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
 }
 
 func TestAll_Inserts_Should_Be_Found_By_Find_Method(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	arr := make([]int, 0)
 	for i := 0; i < 1000; i++ {
 		arr = append(arr, i)
@@ -91,7 +91,7 @@ func TestAll_Inserts_Should_Be_Found_By_Find_Method(t *testing.T) {
 }
 
 func TestInsert_Internals(t *testing.T) {
-	tree := NewBtreeWithPager(4, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(4, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	tree.Insert(PersistentKey(1), "1")
 
 	val, stack := tree.FindAndGetStack(PersistentKey(1), Read)

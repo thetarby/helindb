@@ -45,7 +45,7 @@ type PersistentNodeHeader struct {
 
 var _ Node = &PersistentLeafNode{}
 type PersistentLeafNode struct {
-	PersistentPage
+	NodePage
 	pager         Pager
 	keySerializer KeySerializer
 	valSerializer ValueSerializer
@@ -290,7 +290,7 @@ func (p *PersistentLeafNode) GetHeader() *PersistentNodeHeader {
 
 var _ Node = &PersistentInternalNode{}
 type PersistentInternalNode struct {
-	PersistentPage
+	NodePage
 	pager         Pager
 	keySerializer KeySerializer
 }
@@ -303,7 +303,7 @@ func NewPersistentInternalNode(firstPointer Pointer) *PersistentInternalNode {
 
 	// create a new node
 	// TODO: should use an adam akıllı pager
-	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1)}
+	node := PersistentInternalNode{NodePage: NewMemoryPage(1)}
 
 	// write header
 	data := node.GetData()

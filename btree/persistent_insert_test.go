@@ -15,7 +15,7 @@ import (
 )
 
 func TestPersistent_Insert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &SlotPointerValueSerializer{}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &SlotPointerValueSerializer{}))
 	p := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,
@@ -105,7 +105,7 @@ func TestPersistent_Pin_Count_Should_Be_Zero_After_Inserts_Are_Complete(t *testi
 }
 
 func TestPersistentInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), strconv.Itoa(i))
 	}

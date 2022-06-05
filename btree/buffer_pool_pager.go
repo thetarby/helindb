@@ -8,11 +8,11 @@ import (
 	"helin/disk/pages"
 )
 
-type RealPersistentPage struct {
+type PersistentPage struct {
 	pages.RawPage
 }
 
-func (p RealPersistentPage) GetPageId() Pointer {
+func (p PersistentPage) GetPageId() Pointer {
 	return Pointer(p.RawPage.GetPageId())
 }
 
@@ -36,7 +36,7 @@ func (b *BufferPoolPager) NewInternalNode(firstPointer Pointer) Node {
 	p, err := b.pool.NewPage()
 	common.PanicIfErr(err)
 	p.WLatch()
-	node := PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer}
+	node := PersistentInternalNode{NodePage: &PersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer}
 
 	// write header
 	data := node.GetData()
@@ -61,7 +61,7 @@ func (b *BufferPoolPager) NewLeafNode() Node {
 	p, err := b.pool.NewPage() // TODO: handle error
 	p.WLatch()
 	common.PanicIfErr(err)
-	node := PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
+	node := PersistentLeafNode{NodePage: &PersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
 
 	// write header
 	data := node.GetData()
@@ -84,9 +84,9 @@ func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 	
 	h := ReadPersistentNodeHeader(page.GetData())
 	if h.IsLeaf == 1 {
-		return &PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
+		return &PersistentLeafNode{NodePage: &PersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
 	}
-	return &PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer}
+	return &PersistentInternalNode{NodePage: &PersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer}
 }
 
 func (b *BufferPoolPager) Unpin(n Node, isDirty bool) {
