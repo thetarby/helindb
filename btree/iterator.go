@@ -4,6 +4,9 @@ import (
 	"helin/common"
 	"helin/concurrency"
 )
+/*
+	TODO: iterator should take locks
+*/
 
 type TreeIterator struct {
 	txn     concurrency.Transaction
@@ -14,7 +17,7 @@ type TreeIterator struct {
 }
 
 func (it *TreeIterator) Next() (common.Key, interface{}) {
-	currNode := it.pager.GetNode(it.curr)
+	currNode := it.pager.GetNode(it.curr, Read)
 	h := currNode.GetHeader()
 
 	// if there is no element left in node proceed to next node
@@ -24,7 +27,7 @@ func (it *TreeIterator) Next() (common.Key, interface{}) {
 			return nil, nil
 		}
 		it.curr = h.Right
-		currNode = it.pager.GetNode(it.curr)
+		currNode = it.pager.GetNode(it.curr, Read)
 		it.currIdx = 0
 	}
 
@@ -35,10 +38,10 @@ func (it *TreeIterator) Next() (common.Key, interface{}) {
 }
 
 func NewTreeIterator(txn concurrency.Transaction, tree *BTree, pager Pager) *TreeIterator {
-	curr := tree.GetRoot()
+	curr := tree.GetRoot(Read)
 	for !curr.IsLeaf() {
 		old := curr
-		curr = tree.pager.GetNode(curr.GetValueAt(0).(Pointer))
+		curr = tree.pager.GetNode(curr.GetValueAt(0).(Pointer), Read)
 		tree.pager.Unpin(old, false)
 	}
 
@@ -56,11 +59,11 @@ func NewTreeIterator(txn concurrency.Transaction, tree *BTree, pager Pager) *Tre
 func NewTreeIteratorWithKey(txn concurrency.Transaction, key common.Key, tree *BTree, pager Pager) *TreeIterator {
 	_, stack := tree.FindAndGetStack(key, Read)
 	leaf, idx := stack[len(stack)-1].Node, stack[len(stack)-1].Index
-
+	tree.unpinAll(stack)
 	return &TreeIterator{
 		txn:     txn,
 		tree:    tree,
-		curr:    leaf,
+		curr:    leaf.GetPageId(),
 		currIdx: idx,
 		pager:   pager,
 	}

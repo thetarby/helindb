@@ -20,7 +20,7 @@ func (k Keys) find(item common.Key) (index int, found bool) {
 }
 
 type NodeIndexPair struct {
-	Node  Pointer
+	Node  Node
 	Index int // pointer index for internal nodes and value index for leaf nodes
 }
 
@@ -32,10 +32,11 @@ const (
 	Insert
 )
 
+/*
+	TODO: no need for findAndGetStack in node level. they are only used in tests and can be removed
+*/
+
 type Node interface {
-	// findAndGetStack is used to recursively find the given key and it also passes a stack object recursively to
-	// keep the path it followed down to leaf node. value is nil when key does not exist.
-	findAndGetStack(key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair)
 	findKey(key common.Key) (index int, found bool)
 	shiftKeyValueToRightAt(n int)
 	shiftKeyValueToLeftAt(n int)
@@ -65,7 +66,14 @@ type Node interface {
 
 	Keylen() int
 	GetRight() Pointer
+
+	// TODO: this should free right node
 	MergeNodes(rightNode Node, parent Node)
 	Redistribute(rightNode_ Node, parent_ Node)
 	IsUnderFlow(degree int) bool
+
+	WLatch()
+	WUnlatch()
+	RLatch()
+	RUnLatch()
 }

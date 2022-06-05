@@ -43,7 +43,7 @@ func NewValue(src interface{}) *Value {
 	case int32:
 		typeID = TypeID{
 			KindID: 1,
-			Size:   0,
+			Size:   4,
 		}
 	case string:
 		typeID = TypeID{

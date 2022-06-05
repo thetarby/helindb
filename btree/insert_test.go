@@ -31,22 +31,22 @@ func padStr(str string) string {
 }
 
 func TestInsert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	tree.Insert(PersistentKey(1), padStr("1"))
 	tree.Insert(PersistentKey(5), padStr("5"))
 	tree.Insert(PersistentKey(3), padStr("3"))
 
 	var stack []NodeIndexPair
 
-	res, stack := tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(5), stack, Insert)
+	res, stack := tree.FindAndGetStack(PersistentKey(5), Read)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("5"), res)
-	assert.Equal(t, PersistentKey(3), tree.pager.GetNode(tree.Root).GetKeyAt(0))
+	assert.Equal(t, PersistentKey(3), tree.pager.GetNode(tree.Root, Read).GetKeyAt(0))
 }
 
 func TestInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), strconv.Itoa(i))
 	}
@@ -57,7 +57,7 @@ func TestInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {
 }
 
 func TestInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), strconv.Itoa(i))
 	}
@@ -69,7 +69,7 @@ func TestInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
 }
 
 func TestAll_Inserts_Should_Be_Found_By_Find_Method(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	arr := make([]int, 0)
 	for i := 0; i < 1000; i++ {
 		arr = append(arr, i)
@@ -91,74 +91,74 @@ func TestAll_Inserts_Should_Be_Found_By_Find_Method(t *testing.T) {
 }
 
 func TestInsert_Internals(t *testing.T) {
-	tree := NewBtreeWithPager(4, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(4, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	tree.Insert(PersistentKey(1), "1")
 
-	stack := make([]NodeIndexPair, 0)
-	val, stack := tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(1), stack, Insert)
+	val, stack := tree.FindAndGetStack(PersistentKey(1), Read)
+	tree.runlatch(stack)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("1"), val.(string))
 
 	tree.Insert(PersistentKey(2), "2")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(2), stack, Insert)
-
+	val, stack = tree.FindAndGetStack(PersistentKey(2), Read)
+	tree.runlatch(stack)
+	
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("2"), val.(string))
 
 	tree.Insert(PersistentKey(3), "3")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(3), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(3), Read)
+	tree.runlatch(stack)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("3"), val.(string))
 
 	tree.Insert(PersistentKey(4), "4")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(4), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(4), Read)
+	tree.runlatch(stack)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("4"), val.(string))
 
 	tree.Insert(PersistentKey(5), "5")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(5), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(5), Read)
+	tree.runlatch(stack)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("5"), val.(string))
 
 	tree.Insert(PersistentKey(6), "6")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(6), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(6), Read)
+	tree.runlatch(stack)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("6"), val.(string))
 
 	tree.Insert(PersistentKey(7), "7")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(7), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(7), Read)
+	tree.runlatch(stack)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("7"), val.(string))
 
 	tree.Insert(PersistentKey(8), "8")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(8), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(8), Read)
+	tree.runlatch(stack)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("8"), val.(string))
 
 	tree.Insert(PersistentKey(9), "9")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(9), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(9), Read)
+	tree.runlatch(stack)
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("9"), val.(string))
 
 	tree.Insert(PersistentKey(10), "10")
-	stack = make([]NodeIndexPair, 0)
-	val, stack = tree.pager.GetNode(tree.Root).findAndGetStack(PersistentKey(10), stack, Insert)
+	val, stack = tree.FindAndGetStack(PersistentKey(10), Read)
+	tree.runlatch(stack)
 
 	assert.Len(t, stack, 3)
 	assert.Equal(t, padStr("10"), val.(string))
@@ -180,14 +180,14 @@ func TestInsert_Internals_2(t *testing.T) {
 	}
 
 	_, stack := tree.FindAndGetStack(PersistentKey(9000), Read)
-	leftMostNode := tree.pager.GetNode(stack[len(stack)-1].Node)
+	leftMostNode := stack[len(stack)-1].Node
 	for {
 		if leftMostNode == nil {
 			break
 		}
 		leftMostNode.PrintNode()
 		old := leftMostNode
-		leftMostNode = tree.pager.GetNode(leftMostNode.GetRight())
+		leftMostNode = tree.pager.GetNode(leftMostNode.GetRight(), Read)
 		tree.pager.Unpin(old, false)
 	}
 

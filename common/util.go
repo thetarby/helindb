@@ -24,3 +24,17 @@ func IndexOfInt(element int, data []int) (int) {
 	}
 	return -1    //not found.
  }
+
+func ChunksInt(arr []int, chunkSize int) [][]int{
+	var res [][]int
+	for i := 0; i < len(arr); i += chunkSize {
+		end := i + chunkSize
+		if end > len(arr) {
+			end = len(arr)
+		}
+
+		res = append(res, arr[i:end])
+	}
+
+	return res
+}

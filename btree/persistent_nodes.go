@@ -43,8 +43,9 @@ type PersistentNodeHeader struct {
 	Left   Pointer
 }
 
+var _ Node = &PersistentLeafNode{}
 type PersistentLeafNode struct {
-	PersistentPage
+	NodePage
 	pager         Pager
 	keySerializer KeySerializer
 	valSerializer ValueSerializer
@@ -62,15 +63,6 @@ func WritePersistentNodeHeader(header *PersistentNodeHeader, dest []byte) {
 	err := binary.Write(&buf, binary.BigEndian, header)
 	CheckErr(err)
 	copy(dest, buf.Bytes())
-}
-
-func (p *PersistentLeafNode) findAndGetStack(key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
-	i, found := p.findKey(key)
-	stackOut = append(stackIn, NodeIndexPair{p.GetPageId(), i})
-	if !found {
-		return nil, stackOut
-	}
-	return p.GetValueAt(i), stackOut
 }
 
 func (p *PersistentLeafNode) findKey(key common.Key) (index int, found bool) {
@@ -173,6 +165,7 @@ func (p *PersistentLeafNode) SplitNode(idx int) (right Pointer, keyAtLeft common
 
 	rightNode := pager.NewLeafNode().(*PersistentLeafNode)
 	defer pager.Unpin(rightNode, true)
+	defer rightNode.WUnlatch()
 	rightData := rightNode.GetData()
 	copy(rightData[PersistentNodeHeaderSize:], leftData[PersistentNodeHeaderSize+offset:])
 	rightHeader := ReadPersistentNodeHeader(rightData)
@@ -295,8 +288,9 @@ func (p *PersistentLeafNode) GetHeader() *PersistentNodeHeader {
 	return ReadPersistentNodeHeader(d)
 }
 
+var _ Node = &PersistentInternalNode{}
 type PersistentInternalNode struct {
-	PersistentPage
+	NodePage
 	pager         Pager
 	keySerializer KeySerializer
 }
@@ -309,7 +303,7 @@ func NewPersistentInternalNode(firstPointer Pointer) *PersistentInternalNode {
 
 	// create a new node
 	// TODO: should use an adam akıllı pager
-	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(1)}
+	node := PersistentInternalNode{NodePage: NewMemoryPage(1)}
 
 	// write header
 	data := node.GetData()
@@ -324,22 +318,6 @@ func NewPersistentInternalNode(firstPointer Pointer) *PersistentInternalNode {
 
 	return &node
 
-}
-
-func (p *PersistentInternalNode) findAndGetStack(key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
-	pager := p.pager
-	i, found := p.findKey(key)
-	if found {
-		i++
-	}
-
-	stackOut = append(stackIn, NodeIndexPair{p.GetPageId(), i})
-	pointer := p.GetValueAt(i).(Pointer)
-	node := pager.GetNode(pointer)
-
-	defer pager.Unpin(node, false)
-	res, stackOut := node.findAndGetStack(key, stackOut, mode)
-	return res, stackOut
 }
 
 func (p *PersistentInternalNode) findKey(key common.Key) (index int, found bool) {
@@ -480,6 +458,7 @@ func (p *PersistentInternalNode) SplitNode(idx int) (right Pointer, keyAtLeft co
 	// corresponding pointer is in the next index that is why +1
 	rightNode := pager.NewInternalNode(p.GetValueAt(idx + 1).(Pointer)).(*PersistentInternalNode)
 	defer pager.Unpin(rightNode, true)
+	defer rightNode.WUnlatch()
 	rightData := rightNode.GetData()
 	copy(rightData[pairBeginningOffset:], leftData[pairBeginningOffset+offset:])
 	rightHeader := ReadPersistentNodeHeader(rightData)
