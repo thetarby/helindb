@@ -42,7 +42,7 @@ func TestInsert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("5"), res)
-	assert.Equal(t, PersistentKey(3), tree.pager.GetNode(tree.Root).GetKeyAt(0))
+	assert.Equal(t, PersistentKey(3), tree.pager.GetNode(tree.Root, Read).GetKeyAt(0))
 }
 
 func TestInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {
@@ -187,7 +187,7 @@ func TestInsert_Internals_2(t *testing.T) {
 		}
 		leftMostNode.PrintNode()
 		old := leftMostNode
-		leftMostNode = tree.pager.GetNode(leftMostNode.GetRight())
+		leftMostNode = tree.pager.GetNode(leftMostNode.GetRight(), Read)
 		tree.pager.Unpin(old, false)
 	}
 

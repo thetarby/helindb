@@ -70,13 +70,18 @@ func (b *BufferPoolPager) NewLeafNode() Node {
 	return &node
 }
 
-func (b *BufferPoolPager) GetNode(p Pointer) Node {
+func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 	if p == 0 {
 		return nil
 	}
 	page, err := b.pool.GetPage(int(p))
 	common.PanicIfErr(err)
-
+	if mode == Read{
+		page.RLatch()
+	}else{
+		page.WLatch()
+	}
+	
 	h := ReadPersistentNodeHeader(page.GetData())
 	if h.IsLeaf == 1 {
 		return &PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}

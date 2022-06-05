@@ -17,7 +17,7 @@ type TreeIterator struct {
 }
 
 func (it *TreeIterator) Next() (common.Key, interface{}) {
-	currNode := it.pager.GetNode(it.curr)
+	currNode := it.pager.GetNode(it.curr, Read)
 	h := currNode.GetHeader()
 
 	// if there is no element left in node proceed to next node
@@ -27,7 +27,7 @@ func (it *TreeIterator) Next() (common.Key, interface{}) {
 			return nil, nil
 		}
 		it.curr = h.Right
-		currNode = it.pager.GetNode(it.curr)
+		currNode = it.pager.GetNode(it.curr, Read)
 		it.currIdx = 0
 	}
 
@@ -38,10 +38,10 @@ func (it *TreeIterator) Next() (common.Key, interface{}) {
 }
 
 func NewTreeIterator(txn concurrency.Transaction, tree *BTree, pager Pager) *TreeIterator {
-	curr := tree.GetRoot()
+	curr := tree.GetRoot(Read)
 	for !curr.IsLeaf() {
 		old := curr
-		curr = tree.pager.GetNode(curr.GetValueAt(0).(Pointer))
+		curr = tree.pager.GetNode(curr.GetValueAt(0).(Pointer), Read)
 		tree.pager.Unpin(old, false)
 	}
 

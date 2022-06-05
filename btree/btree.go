@@ -49,8 +49,8 @@ func ConstructBtreeFromRootPointer(rootPage Pointer, degree int, pager Pager) *B
 	}
 }
 
-func (tree *BTree) GetRoot() Node {
-	return tree.pager.GetNode(tree.Root)
+func (tree *BTree) GetRoot(mode TraverseMode) Node {
+	return tree.pager.GetNode(tree.Root, mode)
 }
 
 func (tree *BTree) GetPager() Pager {
@@ -169,10 +169,13 @@ func (tree *BTree) FindSince(key common.Key) []interface{} {
 	for {
 		p := node.GetRight()
 		if p == 0 {
+			node.RUnLatch()
+			tree.pager.Unpin(node, false)
 			break
 		}
 		old := node
-		node = tree.pager.GetNode(p)
+		node = tree.pager.GetNode(p, Read)
+		old.RUnLatch()
 		tree.pager.Unpin(old, false)
 		vals := node.GetValues()
 		res = append(res, vals...)
@@ -183,13 +186,16 @@ func (tree *BTree) FindSince(key common.Key) []interface{} {
 
 func (tree *BTree) Height() int {
 	pager := tree.pager
-	var currentNode Node = tree.pager.GetNode(tree.Root)
+	var currentNode Node = tree.pager.GetNode(tree.Root, Read)
 	acc := 0
 	for {
 		if currentNode.IsLeaf() {
+			currentNode.RUnLatch()
 			return acc + 1
 		} else {
-			currentNode = pager.GetNode(currentNode.GetValueAt(0).(Pointer))
+			old := currentNode
+			currentNode = pager.GetNode(currentNode.GetValueAt(0).(Pointer), Read)
+			old.RUnLatch()
 		}
 		acc++
 	}
@@ -197,16 +203,14 @@ func (tree *BTree) Height() int {
 
 func (tree *BTree) Count() int {
 	tree.rootEntryLock.RLock()
-	n := tree.GetRoot()
-	n.RLatch()
+	n := tree.GetRoot(Read)
 	tree.rootEntryLock.RUnlock()
 	for{
 		if n.IsLeaf(){
 			break
 		}
 		old := n
-		n = tree.pager.GetNode(n.GetValueAt(0).(Pointer))
-		n.RLatch()
+		n = tree.pager.GetNode(n.GetValueAt(0).(Pointer), Read)
 		old.RUnLatch()
 	}
 
@@ -219,8 +223,7 @@ func (tree *BTree) Count() int {
 			break
 		}
 		old := n
-		n = tree.pager.GetNode(r)
-		n.RLatch()
+		n = tree.pager.GetNode(r, Read)
 		old.RUnLatch()
 	}
 	
@@ -233,7 +236,10 @@ func (tree BTree) Print() {
 	queue = append(queue, tree.Root)
 	queue = append(queue, 0)
 	for i := 0; i < len(queue); i++ {
-		node := tree.pager.GetNode(queue[i])
+		node := tree.pager.GetNode(queue[i], Read)
+		if node != nil {
+			node.RUnLatch()
+		}
 		if node != nil && node.IsLeaf() {
 			break
 		}
@@ -251,7 +257,8 @@ func (tree BTree) Print() {
 	}
 	for _, n := range queue {
 		if n != 0 {
-			currNode := pager.GetNode(n)
+			currNode := pager.GetNode(n, Read)
+			defer currNode.RUnLatch()
 			currNode.PrintNode()
 		} else {
 			fmt.Print("\n ### \n")
@@ -298,12 +305,10 @@ func (tree *BTree) Delete(key common.Key) bool {
 			// TODO: get write latch here
 			var rightSibling, leftSibling, merged Node
 			if indexAtParent > 0 {
-				leftSibling = tree.pager.GetNode(parent.GetValueAt(indexAtParent - 1).(Pointer)) //leftSibling = parent.Pointers[indexAtParent-1].(*InternalNode)
-				leftSibling.WLatch()
+				leftSibling = tree.pager.GetNode(parent.GetValueAt(indexAtParent - 1).(Pointer), Delete) //leftSibling = parent.Pointers[indexAtParent-1].(*InternalNode)
 			}
 			if indexAtParent+1 < (parent.Keylen() + 1) { // +1 is the length of pointers
-				rightSibling = tree.pager.GetNode(parent.GetValueAt(indexAtParent + 1).(Pointer)) //rightSibling = parent.Pointers[indexAtParent+1].(*InternalNode)
-				rightSibling.WLatch()
+				rightSibling = tree.pager.GetNode(parent.GetValueAt(indexAtParent + 1).(Pointer), Delete) //rightSibling = parent.Pointers[indexAtParent+1].(*InternalNode)
 			}
 
 			// try redistribute
@@ -396,12 +401,7 @@ func (tree *BTree) findAndGetStack(node Node, key common.Key, stackIn []NodeInde
 		}
 		stackOut = append(stackIn, NodeIndexPair{node, i})
 		pointer := node.GetValueAt(i).(Pointer)
-		childNode := tree.pager.GetNode(pointer)
-		if mode == Read {
-			childNode.RLatch()
-		} else {
-			childNode.WLatch()
-		}
+		childNode := tree.pager.GetNode(pointer, mode)
 
 		if mode == Read {
 			node.RUnLatch()
@@ -437,12 +437,10 @@ func (tree *BTree) findAndGetStack(node Node, key common.Key, stackIn []NodeInde
 func (tree *BTree) FindAndGetStack(key common.Key, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
 	stack := []NodeIndexPair{}
 	tree.rootEntryLock.Lock()
-	root := tree.GetRoot()
+	root := tree.GetRoot(mode)
 	if mode == Insert || mode == Delete {
-		root.WLatch()
 		stack = append(stack, NodeIndexPair{Index: -1})
 	} else {
-		root.RLatch()
 		// in read mode there is no way root will be split hence we can release entry lock directly
 		tree.rootEntryLock.Unlock()
 	}

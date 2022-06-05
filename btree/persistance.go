@@ -37,7 +37,9 @@ type Pager interface {
 
 	// GetNode returns a Node given a Pointer. Should be able to deserialize a node from byte arr and should be able to
 	// recognize if it is an InternalNode or LeafNode and return the correct type.
-	GetNode(p Pointer) Node
+	// NOTE: If TraverseMode is read returned node is read latched otherwise it is write latched and caller should also
+	// release latches when Node is not needed anymore.
+	GetNode(p Pointer, mode TraverseMode) Node
 
 	Unpin(n Node, isDirty bool)
 
@@ -149,8 +151,13 @@ func (n *NoopPersistentPager) NewLeafNode() Node {
 	return &node
 }
 
-func (n *NoopPersistentPager) GetNode(p Pointer) Node {
+func (n *NoopPersistentPager) GetNode(p Pointer, mode TraverseMode) Node {
 	node := mapping[p]
+	if mode == Read{
+		node.RLatch()
+	}else{
+		node.WLatch()
+	}
 	return node
 }
 

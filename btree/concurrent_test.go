@@ -20,8 +20,8 @@ func TestConcurrent_Inserts(t *testing.T) {
 	dbName := id.String()
 	defer os.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 1_000_000)
-	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	pool := buffer.NewBufferPool(dbName, 100_000)
+	tree := NewBtreeWithPager(50, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
 
 	rand.Seed(42)
@@ -58,7 +58,7 @@ func TestConcurrent_Inserts2(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 100_000)
-	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(50, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
 
 	rand.Seed(42)
