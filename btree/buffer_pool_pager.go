@@ -35,6 +35,7 @@ func (b *BufferPoolPager) NewInternalNode(firstPointer Pointer) Node {
 
 	p, err := b.pool.NewPage()
 	common.PanicIfErr(err)
+	p.WLatch()
 	node := PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer}
 
 	// write header
@@ -58,6 +59,7 @@ func (b *BufferPoolPager) NewLeafNode() Node {
 	}
 
 	p, err := b.pool.NewPage() // TODO: handle error
+	p.WLatch()
 	common.PanicIfErr(err)
 	node := PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
 
@@ -74,6 +76,7 @@ func (b *BufferPoolPager) GetNode(p Pointer) Node {
 	}
 	page, err := b.pool.GetPage(int(p))
 	common.PanicIfErr(err)
+
 	h := ReadPersistentNodeHeader(page.GetData())
 	if h.IsLeaf == 1 {
 		return &PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}

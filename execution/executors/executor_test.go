@@ -528,11 +528,11 @@ func TestNestedLoopJoinExecutor_Should_Do_Inner_Join(t *testing.T) {
 		}
 
 		// uncomment below to print join result
-		//for i, col := range joinExec.GetOutSchema().GetColumns() {
-		//	val := tup.GetValue(joinExec.GetOutSchema(), i)
-		//	fmt.Printf("%v : %v, ", col.Name, val.GetAsInterface())
-		//}
-		//fmt.Println()
+		for i, col := range joinExec.GetOutSchema().GetColumns() {
+			val := tup.GetValue(joinExec.GetOutSchema(), i)
+			fmt.Printf("%v : %v, ", col.Name, val.GetAsInterface())
+		}
+		fmt.Println()
 
 		readTuples = append(readTuples, tup)
 	}

@@ -165,6 +165,7 @@ func (p *PersistentLeafNode) SplitNode(idx int) (right Pointer, keyAtLeft common
 
 	rightNode := pager.NewLeafNode().(*PersistentLeafNode)
 	defer pager.Unpin(rightNode, true)
+	defer rightNode.WUnlatch()
 	rightData := rightNode.GetData()
 	copy(rightData[PersistentNodeHeaderSize:], leftData[PersistentNodeHeaderSize+offset:])
 	rightHeader := ReadPersistentNodeHeader(rightData)
@@ -457,6 +458,7 @@ func (p *PersistentInternalNode) SplitNode(idx int) (right Pointer, keyAtLeft co
 	// corresponding pointer is in the next index that is why +1
 	rightNode := pager.NewInternalNode(p.GetValueAt(idx + 1).(Pointer)).(*PersistentInternalNode)
 	defer pager.Unpin(rightNode, true)
+	defer rightNode.WUnlatch()
 	rightData := rightNode.GetData()
 	copy(rightData[pairBeginningOffset:], leftData[pairBeginningOffset+offset:])
 	rightHeader := ReadPersistentNodeHeader(rightData)

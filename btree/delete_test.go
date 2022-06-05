@@ -12,12 +12,13 @@ func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty(t *testing.T) {
 		tree.Insert(PersistentKey(val), "selam")
 	}
 
-	res, stack := tree.FindAndGetStack(PersistentKey(1), Insert)
+	res, stack := tree.FindAndGetStack(PersistentKey(1), Read)
+	tree.runlatch(stack)
 	assert.Len(t, stack, 3)
 	assert.Equal(t, "selam", res.(string))
 
 	tree.Delete(PersistentKey(1))
-	_, stack = tree.FindAndGetStack(PersistentKey(1), Insert)
+	_, stack = tree.FindAndGetStack(PersistentKey(1), Read)
 
 	assert.Len(t, stack, 2)
 }
@@ -28,19 +29,22 @@ func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_2(t *testing.T) {
 		tree.Insert(PersistentKey(val), "selam")
 	}
 
-	res, stack := tree.FindAndGetStack(PersistentKey(1), Insert)
+	res, stack := tree.FindAndGetStack(PersistentKey(1), Read)
+	tree.runlatch(stack)
 	assert.Len(t, stack, 4)
 	assert.Equal(t, "selam", res.(string))
 
 	for _, i := range []int{1, 2, 3, 4, 5} {
 		tree.Delete(PersistentKey(i))
-		res, stack := tree.FindAndGetStack(PersistentKey(10), Insert)
+		res, stack := tree.FindAndGetStack(PersistentKey(10), Read)
+		tree.runlatch(stack)
 		assert.Len(t, stack, 3)
 		assert.Equal(t, "selam", res.(string))
 	}
 
 	tree.Delete(PersistentKey(6))
-	_, stack = tree.FindAndGetStack(PersistentKey(10), Insert)
+	_, stack = tree.FindAndGetStack(PersistentKey(10), Read)
+	tree.runlatch(stack)
 	assert.Len(t, stack, 2)
 }
 

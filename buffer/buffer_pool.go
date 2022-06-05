@@ -43,7 +43,7 @@ func NewBufferPool(dbFile string, poolSize int) *BufferPool {
 		emptyFrames: emptyFrames,
 		DiskManager: d,
 		lock:        sync.Mutex{},
-		Replacer:    NewRandomReplacer(poolSize),
+		Replacer:    NewLruReplacer(poolSize),
 	}
 }
 
@@ -56,6 +56,9 @@ func (b *BufferPool) GetPage(pageId int) (*pages.RawPage, error) {
 	//	Accessed[pageId] = val+1
 	//}
 	//fmt.Println(b.pageMap)
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
 	if frameId, ok := b.pageMap[pageId]; ok {
 		b.pin(pageId)
 		return b.frames[frameId], nil

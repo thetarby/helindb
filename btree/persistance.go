@@ -26,11 +26,13 @@ type Pager interface {
 	// Finally, it should serialize the structure on to pointed byte array.
 	// NOTE: the node should have a reference(by extending it for example) to the created PersistentPage
 	// so that it can be serialized in the future when its state changes.
+	// NOTE: takes write latch on created node, caller should release it
 	NewInternalNode(p Pointer) Node
 
 	// NewLeafNode first should create an PersistentPage which points to a byte array.
 	// Then initialize a LeafNode structure.
 	// Finally, it should serialize the structure on to pointed byte array
+	// NOTE: takes write latch on created node, caller should release it
 	NewLeafNode() Node
 
 	// GetNode returns a Node given a Pointer. Should be able to deserialize a node from byte arr and should be able to
@@ -106,7 +108,7 @@ func (n *NoopPersistentPager) NewInternalNode(firstPointer Pointer) Node {
 	// TODO: should use an adam akıllı pager
 	lastPageId++
 	node := PersistentInternalNode{PersistentPage: NewNoopPersistentPage(lastPageId), pager: n, keySerializer: n.KeySerializer}
-
+	node.WLatch()
 	// write header
 	data := node.GetData()
 	WritePersistentNodeHeader(&h, data)
@@ -136,8 +138,8 @@ func (n *NoopPersistentPager) NewLeafNode() Node {
 		node = PersistentLeafNode{PersistentPage: NewNoopPersistentPage(lastPageId), pager: n, keySerializer: n.KeySerializer, valSerializer: &SlotPointerValueSerializer{}}
 	} else {
 		node = PersistentLeafNode{PersistentPage: NewNoopPersistentPage(lastPageId), pager: n, keySerializer: n.KeySerializer, valSerializer: n.ValueSerializer}
-
 	}
+	node.WLatch()
 
 	// write header
 	data := node.GetData()
@@ -148,7 +150,8 @@ func (n *NoopPersistentPager) NewLeafNode() Node {
 }
 
 func (n *NoopPersistentPager) GetNode(p Pointer) Node {
-	return mapping[p]
+	node := mapping[p]
+	return node
 }
 
 func NewNoopPagerWithValueSize(serializer KeySerializer, valSerializer ValueSerializer) *NoopPersistentPager {
