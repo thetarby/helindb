@@ -96,7 +96,7 @@ func (p *PersistentLeafNode) shiftKeyValueToLeftAt(n int) {
 	copy(data[PersistentNodeHeaderSize+destOffset:], data[PersistentNodeHeaderSize+offset:])
 }
 
-func (p *PersistentLeafNode) setKeyAt(idx int, key common.Key) { // TODO use persistentKey
+func (p *PersistentLeafNode) setKeyAt(idx int, key common.Key) {
 	data := p.GetData()
 	offset := idx * (p.keySerializer.Size() + p.valSerializer.Size())
 	asByte, err := p.keySerializer.Serialize(key)

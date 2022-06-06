@@ -68,7 +68,6 @@ func (memPager *MemPager) NewInternalNode(firstPointer Pointer) Node {
 	}
 
 	// create a new node
-	// TODO: should use an adam akıllı pager
 	memPager.lock.Lock()
 	memPagerLastPageID++
 	newID := memPagerLastPageID
@@ -98,7 +97,6 @@ func (memPager *MemPager) NewLeafNode() Node {
 	}
 
 	// create a new node
-	// TODO: should use an adam akıllı pager
 	memPager.lock.Lock()
 	memPagerLastPageID++
 	newID := memPagerLastPageID

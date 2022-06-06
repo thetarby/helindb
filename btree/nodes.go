@@ -36,10 +36,6 @@ const (
 	Insert
 )
 
-/*
-	TODO: no need for findAndGetStack in node level. they are only used in tests and can be removed
-*/
-
 type Node interface {
 	setKeyAt(idx int, key common.Key)
 	setValueAt(idx int, val interface{})
