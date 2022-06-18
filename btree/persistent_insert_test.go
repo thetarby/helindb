@@ -15,7 +15,7 @@ import (
 )
 
 func TestPersistent_Insert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &SlotPointerValueSerializer{}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &SlotPointerValueSerializer{}))
 	p := SlotPointer{
 		PageId:  10,
 		SlotIdx: 10,
@@ -24,11 +24,10 @@ func TestPersistent_Insert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 	tree.Insert(PersistentKey(5), p)
 	tree.Insert(PersistentKey(3), p)
 
-	res, stack := tree.FindAndGetStack(PersistentKey(5), Insert)
-
+	res, stack := tree.FindAndGetStack(PersistentKey(5), Read)
 	assert.Len(t, stack, 2)
 	assert.Equal(t, p, res.(SlotPointer))
-	assert.Equal(t, PersistentKey(3), tree.pager.GetNode(tree.Root).GetKeyAt(0))
+	assert.Equal(t, PersistentKey(3), tree.pager.GetNode(tree.Root, Read).GetKeyAt(0))
 }
 
 func TestPersistentInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {
@@ -88,7 +87,7 @@ func TestPersistent_Pin_Count_Should_Be_Zero_After_Inserts_Are_Complete(t *testi
 	dbName := id.String()
 	defer os.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 4)
+	pool := buffer.NewBufferPool(dbName, 5)
 	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
 	n := 1000
@@ -97,13 +96,16 @@ func TestPersistent_Pin_Count_Should_Be_Zero_After_Inserts_Are_Complete(t *testi
 			PageId:  int64(i),
 			SlotIdx: int16(i),
 		})
+		if pool.Replacer.NumPinnedPages() != 0 {
+			t.Error("# of pinned pages is not 0")
+		}
 	}
 
 	assert.Equal(t, 0, pool.Replacer.NumPinnedPages())
 }
 
 func TestPersistentInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewNoopPagerWithValueSize(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), strconv.Itoa(i))
 	}
@@ -163,7 +165,7 @@ func TestPersistent_Find_Should_Unpin_All_Nodes_It_Pinned(t *testing.T) {
 	dbName := id.String()
 	defer os.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 4)
+	pool := buffer.NewBufferPool(dbName, 5)
 	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
 	n := 1000
@@ -172,6 +174,9 @@ func TestPersistent_Find_Should_Unpin_All_Nodes_It_Pinned(t *testing.T) {
 			PageId:  int64(i),
 			SlotIdx: int16(i),
 		})
+		if pool.Replacer.NumPinnedPages() != 0 {
+			t.Error("# of pinned pages is not 0")
+		}
 	}
 
 	val := tree.Find(PersistentKey(999))

@@ -142,10 +142,10 @@ func (t *TableHeap) ReadTuple(rid Rid, dest *Row, txn concurrency.Transaction) e
 	slottedPage.RLatch()
 	defer slottedPage.RUnLatch()
 	defer t.Pool.Unpin(slottedPage.GetPageId(), false)
+	
 	data := slottedPage.GetTuple(int(rid.SlotIdx))
 	dest.Data = data
 	dest.Rid = rid
-	t.Pool.Unpin(p.GetPageId(), false)
 	return nil
 }
 

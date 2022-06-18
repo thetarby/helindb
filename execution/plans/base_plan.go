@@ -7,6 +7,7 @@ type PlanType int
 const (
 	SeqScan PlanType = iota
 	IndexScan
+	IndexRangeScan
 	Insert
 	Update
 	Delete
@@ -18,8 +19,11 @@ const (
 	HashJoin
 )
 
-type IPlanNode interface{
+type IPlanNode interface {
 	GetType() PlanType
+	GetChildAt(idx int) IPlanNode
+	GetChildren() []IPlanNode
+	GetOutSchema() catalog.Schema
 }
 
 type BasePlanNode struct {
@@ -31,18 +35,18 @@ type BasePlanNode struct {
 	Children  []IPlanNode
 }
 
-func (n *BasePlanNode) GetType() PlanType{
+func (n *BasePlanNode) GetType() PlanType {
 	panic("implement me")
 }
 
-func (n *BasePlanNode) GetChildAt(idx int) IPlanNode{
+func (n *BasePlanNode) GetChildAt(idx int) IPlanNode {
 	return n.Children[idx]
 }
 
-func (n *BasePlanNode) GetChildren() []IPlanNode{
+func (n *BasePlanNode) GetChildren() []IPlanNode {
 	return n.Children
 }
 
-func (n *BasePlanNode) GetOutSchema() catalog.Schema{
+func (n *BasePlanNode) GetOutSchema() catalog.Schema {
 	return n.OutSchema
 }

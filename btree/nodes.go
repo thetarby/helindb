@@ -20,7 +20,7 @@ func (k Keys) find(item common.Key) (index int, found bool) {
 }
 
 type NodeIndexPair struct {
-	Node  Pointer
+	Node  Node
 	Index int // pointer index for internal nodes and value index for leaf nodes
 }
 
@@ -31,6 +31,10 @@ const (
 	Delete
 	Insert
 )
+
+/*
+	TODO: no need for findAndGetStack in node level. they are only used in tests and can be removed
+*/
 
 type Node interface {
 	findKey(key common.Key) (index int, found bool)
@@ -63,7 +67,14 @@ type Node interface {
 
 	Keylen() int
 	GetRight() Pointer
+
+	// TODO: this should free right node
 	MergeNodes(rightNode Node, parent Node)
 	Redistribute(rightNode_ Node, parent_ Node)
 	IsUnderFlow(degree int) bool
+
+	WLatch()
+	WUnlatch()
+	RLatch()
+	RUnLatch()
 }

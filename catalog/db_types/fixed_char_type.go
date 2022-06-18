@@ -6,6 +6,13 @@ import (
 	"helin/common"
 )
 
+func FixedLenCharTypeID(size int) TypeID {
+	return TypeID{
+		KindID: 3,
+		Size:   uint32(size),
+	}
+}
+
 type FixedLenCharType struct {
 	Size uint32
 }
@@ -20,8 +27,8 @@ func (c *FixedLenCharType) Add(right *Value, left *Value) *Value {
 
 func (c *FixedLenCharType) Serialize(dest []byte, src *Value) {
 	buf := bytes.Buffer{}
-	str := src.GetAsInterface().(string)
-	err := binary.Write(&buf, binary.BigEndian, []byte(str))
+	str := src.GetAsInterface().([]byte)
+	err := binary.Write(&buf, binary.BigEndian, str)
 	common.PanicIfErr(err)
 	copy(dest, buf.Bytes())
 }

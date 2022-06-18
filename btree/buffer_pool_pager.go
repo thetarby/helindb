@@ -8,11 +8,11 @@ import (
 	"helin/disk/pages"
 )
 
-type RealPersistentPage struct {
+type PersistentPage struct {
 	pages.RawPage
 }
 
-func (p RealPersistentPage) GetPageId() Pointer {
+func (p PersistentPage) GetPageId() Pointer {
 	return Pointer(p.RawPage.GetPageId())
 }
 
@@ -35,7 +35,8 @@ func (b *BufferPoolPager) NewInternalNode(firstPointer Pointer) Node {
 
 	p, err := b.pool.NewPage()
 	common.PanicIfErr(err)
-	node := PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer}
+	p.WLatch()
+	node := PersistentInternalNode{NodePage: &PersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer}
 
 	// set header
 	node.SetHeader(&h)
@@ -58,8 +59,9 @@ func (b *BufferPoolPager) NewLeafNode() Node {
 	}
 
 	p, err := b.pool.NewPage() // TODO: handle error
+	p.WLatch()
 	common.PanicIfErr(err)
-	node := PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
+	node := PersistentLeafNode{NodePage: &PersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
 
 	// write header
 	node.SetHeader(&h)
@@ -67,17 +69,23 @@ func (b *BufferPoolPager) NewLeafNode() Node {
 	return &node
 }
 
-func (b *BufferPoolPager) GetNode(p Pointer) Node {
+func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 	if p == 0 {
 		return nil
 	}
 	page, err := b.pool.GetPage(int(p))
 	common.PanicIfErr(err)
+	if mode == Read{
+		page.RLatch()
+	}else{
+		page.WLatch()
+	}
+	
 	h := ReadPersistentNodeHeader(page.GetData())
 	if h.IsLeaf == 1 {
-		return &PersistentLeafNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
+		return &PersistentLeafNode{NodePage: &PersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
 	}
-	return &PersistentInternalNode{PersistentPage: &RealPersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer}
+	return &PersistentInternalNode{NodePage: &PersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer}
 }
 
 func (b *BufferPoolPager) Unpin(n Node, isDirty bool) {

@@ -15,15 +15,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func poolAndCatalog() (*buffer.BufferPool, catalog.ICatalog, func()){
+func poolAndCatalog() (*buffer.BufferPool, catalog.ICatalog, func()) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
 
-	poolSize := 64
+	poolSize := 1024
 	pool := buffer.NewBufferPool(dbName, poolSize)
 	ctg := catalog.NewCatalog(pool)
 
-	return pool, ctg, func() {defer os.Remove(dbName)}
+	return pool, ctg, func() { defer os.Remove(dbName) }
 }
 
 func TestInsertExecutor_Returns_ErrNoTuple_When_All_Is_Inserted(t *testing.T) {
@@ -50,7 +50,7 @@ func TestInsertExecutor_Returns_ErrNoTuple_When_All_Is_Inserted(t *testing.T) {
 	}
 	schema := catalog.NewSchema(columns)
 	table := ctg.CreateTable("", "myTable", schema)
-	
+
 	// create raw values to insert
 	n := 1000
 	rows := make([][]*db_types.Value, 0)
@@ -75,11 +75,11 @@ func TestInsertExecutor_Returns_ErrNoTuple_When_All_Is_Inserted(t *testing.T) {
 	// create and run executor
 	exec := NewInsertExecutor(&ctx, plan, nil)
 	exec.Init()
-	
+
 	var tup catalog.Tuple
 	var rid structures.Rid
 	for {
-		if err := exec.Next(&tup, &rid); err != nil{
+		if err := exec.Next(&tup, &rid); err != nil {
 			require.ErrorIs(t, err, ErrNoTuple{})
 			break
 		}
