@@ -68,17 +68,6 @@ func WritePersistentNodeHeader(header *PersistentNodeHeader, dest []byte) {
 func (p *PersistentLeafNode) findKey(key common.Key) (index int, found bool) {
 	data := p.GetData()
 	h := ReadPersistentNodeHeader(data)
-	//for i := 0; i < int(h.KeyLen) -1 ; i++ {
-	//	currKey := p.GetKeyAt(i)
-	//	nextKey := p.GetKeyAt(i+1)
-	//	if currKey == key{
-	//		return i, true
-	//	}else if key.Less(nextKey){
-	//		return i, false
-	//	}
-	//}
-
-	//return int(h.KeyLen), false
 	i := sort.Search(int(h.KeyLen), func(i int) bool {
 		return key.Less(p.GetKeyAt(i))
 	})
@@ -135,7 +124,6 @@ func (p *PersistentLeafNode) GetValueAt(idx int) interface{} {
 	data := p.GetData()
 	offset := idx*(p.keySerializer.Size()+p.valSerializer.Size()) + p.keySerializer.Size()
 	// TODO: direct byte array can be returned here since this method mostly called internally by methods that does not care about its content
-	// return data[PersistentNodeHeaderSize+offset:PersistentNodeHeaderSize+offset:PersistentNodeHeaderSize+offset:PersistentNodeHeaderSize+offset+p.ValueSize]
 	val, err := p.valSerializer.Deserialize(data[PersistentNodeHeaderSize+offset:])
 	CheckErr(err)
 
@@ -327,17 +315,6 @@ func NewPersistentInternalNode(firstPointer Pointer) *PersistentInternalNode {
 func (p *PersistentInternalNode) findKey(key common.Key) (index int, found bool) {
 	data := p.GetData()
 	h := ReadPersistentNodeHeader(data)
-	//for i := 0; i < int(h.KeyLen) -1 ; i++ {
-	//	currKey := p.GetKeyAt(i)
-	//	nextKey := p.GetKeyAt(i+1)
-	//	if currKey == key{
-	//		return i, true
-	//	}else if key.Less(nextKey){
-	//		return i, false
-	//	}
-	//}
-
-	//return int(h.KeyLen), false
 	i := sort.Search(int(h.KeyLen), func(i int) bool {
 		return key.Less(p.GetKeyAt(i))
 	})
@@ -518,37 +495,6 @@ func (p *PersistentInternalNode) GetRight() Pointer {
 }
 
 func (p *PersistentInternalNode) MergeNodes(rightNode Node, parent Node) {
-	//if parent.IsLeaf(){
-	//	panic("parent node cannot be leaf")
-	//}
-	//var i int
-	//for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {
-	//}
-	//
-	//// init needed variables
-	//leftData := p.GetData()
-	//rightData := rightNode.(*PersistentInternalNode).GetData()
-	//parentData := parent.(*PersistentInternalNode).GetData()
-	//leftHeader := ReadPersistentNodeHeader(leftData)
-	//rightHeader := ReadPersistentNodeHeader(rightData)
-	//
-	//// define offsets
-	//endOfLeft := PersistentNodeHeaderSize + NodePointerSize + ((leftHeader.KeyLen) * (NodePointerSize + KeySize))
-	//rightNodeFirstPointerOffset := PersistentNodeHeaderSize
-	//parentNodePushedDownKeyOffset := PersistentNodeHeaderSize + NodePointerSize + i * (NodePointerSize + KeySize)
-	//
-	////push down the key in the parent
-	//copy(leftData[endOfLeft:], parentData[parentNodePushedDownKeyOffset: parentNodePushedDownKeyOffset+KeySize])
-	//
-	//// below two can be merged but this is more expressive. firstly append first pointer of the right node and then append the rest
-	//copy(leftData[endOfLeft + KeySize:], rightData[rightNodeFirstPointerOffset:rightNodeFirstPointerOffset+NodePointerSize])
-	//copy(leftData[endOfLeft + KeySize + NodePointerSize:], rightData[rightNodeFirstPointerOffset+NodePointerSize:])
-	//
-	//// TODO: destroy rightNode
-	//parent.DeleteAt(i)
-	//leftHeader.KeyLen += rightHeader.KeyLen + 1 // +1 is the pushed down key
-	//WritePersistentNodeHeader(leftHeader, leftData)
-
 	var i int
 	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {
 	}
