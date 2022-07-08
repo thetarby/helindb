@@ -1,8 +1,6 @@
 package btree
 
 import (
-	"bytes"
-	"encoding/binary"
 	"helin/buffer"
 	"helin/common"
 	"helin/disk/pages"
@@ -36,20 +34,18 @@ func (b *BufferPoolPager) NewInternalNode(firstPointer Pointer) Node {
 	p, err := b.pool.NewPage()
 	common.PanicIfErr(err)
 	p.WLatch()
-	node := PersistentInternalNode{NodePage: &PersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer}
-
+	//node := PersistentInternalNode{NodePage: &PersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer}
+	nnode := VarKeyInternalNode{
+		p:             InitSlottedPage(*p),
+		keySerializer: b.keySerializer,
+	}
 	// set header
-	node.SetHeader(&h)
+ 	nnode.SetHeader(&h)
 
 	// write first pointer
-	data := node.GetData()
-	buf := bytes.Buffer{}
-	err = binary.Write(&buf, binary.BigEndian, firstPointer)
-	CheckErr(err)
-	asByte := buf.Bytes()
-	copy(data[PersistentNodeHeaderSize:], asByte)
+	nnode.setValueAt(0, firstPointer)
 
-	return &node
+	return &nnode
 }
 
 func (b *BufferPoolPager) NewLeafNode() Node {
@@ -59,14 +55,18 @@ func (b *BufferPoolPager) NewLeafNode() Node {
 	}
 
 	p, err := b.pool.NewPage() // TODO: handle error
-	p.WLatch()
 	common.PanicIfErr(err)
-	node := PersistentLeafNode{NodePage: &PersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
-
+	p.WLatch()
+	//node := PersistentLeafNode{NodePage: &PersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
+	nnode := VarKeyLeafNode{
+		p:             InitSlottedPage(*p),
+		keySerializer: b.keySerializer,
+		valSerializer: b.valueSerializer,
+	}
 	// write header
-	node.SetHeader(&h)
+	nnode.SetHeader(&h)
 
-	return &node
+	return &nnode
 }
 
 func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
@@ -80,12 +80,19 @@ func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 	}else{
 		page.WLatch()
 	}
-	
-	h := ReadPersistentNodeHeader(page.GetData())
+ 	sp := CastSlottedPage(*page)
+	h := ReadPersistentNodeHeader(sp.GetAt(0))
 	if h.IsLeaf == 1 {
-		return &PersistentLeafNode{NodePage: &PersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
+		return &VarKeyLeafNode{
+			p:             sp,
+			keySerializer: b.keySerializer,
+			valSerializer: b.valueSerializer,
+		}
 	}
-	return &PersistentInternalNode{NodePage: &PersistentPage{RawPage: *page}, pager: b, keySerializer: b.keySerializer}
+	return &VarKeyInternalNode{
+		p:             sp,
+		keySerializer: b.keySerializer,
+	}
 }
 
 func (b *BufferPoolPager) Unpin(n Node, isDirty bool) {
@@ -100,7 +107,7 @@ func NewBufferPoolPager(pool *buffer.BufferPool, serializer KeySerializer) *Buff
 	}
 }
 
-func NewBufferPoolPagerWithValueSize(pool *buffer.BufferPool, serializer KeySerializer, valSerializer ValueSerializer) *BufferPoolPager {
+func NewBufferPoolPagerWithValueSerializer(pool *buffer.BufferPool, serializer KeySerializer, valSerializer ValueSerializer) *BufferPoolPager {
 	return &BufferPoolPager{
 		pool:            pool,
 		keySerializer:   serializer,
