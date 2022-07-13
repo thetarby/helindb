@@ -46,7 +46,7 @@ func TestPersistentLeafNode_Should_Insert_To_Correct_Locations(t *testing.T) {
 		SlotIdx: 10,
 	}
 	for i := 0; i < 10; i++ {
-		idx, found := node.findKey(PersistentKey(i))
+		idx, found := node.FindKey(PersistentKey(i))
 		assert.False(t, found)
 		node.InsertAt(idx, PersistentKey(i), slotP)
 	}
@@ -71,7 +71,7 @@ func TestPersistentLeafNode_FindKey_Should_Find_Correct_Locations_When_Keys_Are_
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(a), func(i, j int) { a[i], a[j] = a[j], a[i] })
 	for _, item := range a {
-		idx, found := node.findKey(PersistentKey(item))
+		idx, found := node.FindKey(PersistentKey(item))
 		assert.False(t, found)
 		node.InsertAt(idx, PersistentKey(item), slotP)
 	}
@@ -124,7 +124,7 @@ func TestPersistentInternalNode_Should_Insert_To_Correct_Locations(t *testing.T)
 	node := PersistentInternalNode{NodePage: NewMemoryPage(1), keySerializer: &PersistentKeySerializer{}}
 
 	for i := 1; i < 10; i++ {
-		idx, found := node.findKey(PersistentKey(i))
+		idx, found := node.FindKey(PersistentKey(i))
 		assert.False(t, found)
 		node.InsertAt(idx, PersistentKey(i), Pointer(i))
 	}
@@ -145,7 +145,7 @@ func TestPersistentInternalNode_FindKey_Should_Find_Correct_Locations_When_Keys_
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(a), func(i, j int) { a[i], a[j] = a[j], a[i] })
 	for _, item := range a {
-		idx, found := node.findKey(PersistentKey(item))
+		idx, found := node.FindKey(PersistentKey(item))
 		assert.False(t, found)
 		node.InsertAt(idx, PersistentKey(item), Pointer(item))
 	}

@@ -6,12 +6,15 @@ import (
 	"github.com/stretchr/testify/require"
 	"helin/buffer"
 	"helin/disk/pages"
+	"io"
+	"log"
 	"os"
 	"strconv"
 	"testing"
 )
 
 func TestTableIterator(t *testing.T) {
+	log.SetOutput(io.Discard)
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
 	defer os.Remove(dbName)

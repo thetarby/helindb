@@ -51,6 +51,10 @@ func (s *StringKeySerializer) Serialize(key common.Key) ([]byte, error) {
 }
 
 func (s *StringKeySerializer) Deserialize(data []byte) (common.Key, error) {
+	if s.Len < 0 {
+		// then it is varchar
+		return StringKey(data), nil
+	}
 	return StringKey(data[:s.Len]), nil
 }
 
@@ -69,6 +73,10 @@ type StringValueSerializer struct {
 }
 
 func (s *StringValueSerializer) Serialize(val interface{}) ([]byte, error) {
+	if s.Len < 0 {
+		return []byte(val.(string)), nil
+	}
+	
 	buf := bytes.Buffer{}
 	err := binary.Write(&buf, binary.BigEndian, ([]byte)(val.(string)))
 	if err != nil {
@@ -80,6 +88,9 @@ func (s *StringValueSerializer) Serialize(val interface{}) ([]byte, error) {
 }
 
 func (s *StringValueSerializer) Deserialize(data []byte) (interface{}, error) {
+	if s.Len < 0 {
+		return string(data[:]), nil
+	}
 	return string(data[:s.Len]), nil
 }
 

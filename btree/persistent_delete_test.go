@@ -21,7 +21,7 @@ func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_3(t *testing.T) {
 			SlotIdx: 10,
 		})
 	}
-	var stack []NodeIndexPair
+
 	res, stack := tree.FindAndGetStack(PersistentKey(1), Read)
 	tree.runlatch(stack)
 	assert.Len(t, stack, 3)

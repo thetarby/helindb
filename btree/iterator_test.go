@@ -20,7 +20,7 @@ func TestTreeIterator_Should_Return_Every_Value_Bigger_Than_Or_Euqal_To_Key_When
 
 	pool := buffer.NewBufferPool(dbName, 32)
 
-	tree := NewBtreeWithPager(10, NewBufferPoolPagerWithValueSize(pool, &StringKeySerializer{Len: 11}, &StringValueSerializer{Len: 11}))
+	tree := NewBtreeWithPager(10, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: 11}, &StringValueSerializer{Len: 11}))
 	log.SetOutput(ioutil.Discard)
 	n := 10000
 	for _, i := range rand.Perm(n) {
@@ -46,7 +46,7 @@ func TestTreeIterator_Should_Return_All_Values_When_Initialized_Without_A_Key(t 
 
 	pool := buffer.NewBufferPool(dbName, 32)
 
-	tree := NewBtreeWithPager(10, NewBufferPoolPagerWithValueSize(pool, &StringKeySerializer{Len: 11}, &StringValueSerializer{Len: 11}))
+	tree := NewBtreeWithPager(10, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: 11}, &StringValueSerializer{Len: 11}))
 	log.SetOutput(ioutil.Discard)
 	n := 10000
 	for _, i := range rand.Perm(n) {

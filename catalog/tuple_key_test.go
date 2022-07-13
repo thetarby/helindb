@@ -6,6 +6,8 @@ import (
 	"helin/catalog/db_types"
 	"helin/common"
 	"helin/disk/structures"
+	"io"
+	"log"
 	"os"
 	"testing"
 
@@ -14,6 +16,7 @@ import (
 )
 
 func TestCatalog_Create_Index_On_Unpopulated_Table_2_Nonunique_Index(t *testing.T) {
+	log.SetOutput(io.Discard)
 	dbName := "db.helin"
 	defer os.Remove(dbName)
 	pool := buffer.NewBufferPool(dbName, 32)
@@ -54,7 +57,7 @@ func TestCatalog_Create_Index_On_Unpopulated_Table_2_Nonunique_Index(t *testing.
 			SlotIdx: int16(age),
 		}
 		index.Insert(&tk, sp)
-		if age >= int32(ageToFind){
+		if age >= int32(ageToFind) {
 			toFind = append(toFind, int(sp.PageId))
 		}
 	}
@@ -76,13 +79,13 @@ func TestCatalog_Create_Index_On_Unpopulated_Table_2_Nonunique_Index(t *testing.
 	for _, x := range index.FindSince(&tkToFind) {
 		sp := x.(btree.SlotPointer)
 		i := common.IndexOfInt(int(sp.PageId), toFind)
-		if !assert.NotEqual(t, -1, i){
+		if !assert.NotEqual(t, -1, i) {
 			println(sp.PageId)
 			return
 		}
 		if len(toFind) == 1 {
 			toFind = nil
-		}else{
+		} else {
 			copy(toFind[i:], toFind[i+1:])
 			toFind = toFind[:len(toFind)-1]
 		}

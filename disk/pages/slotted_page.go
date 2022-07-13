@@ -142,14 +142,6 @@ func (sp *SlottedPage) setInSlotArr(idx int, val SLotArrEntry) {
 	copy(sp.GetData()[offset:], buf.Bytes())
 }
 
-func (sp *SlottedPage) appendSlotArr(val SLotArrEntry) {
-	h := sp.GetHeader()
-	h.SLotArrLen++
-	defer sp.SetHeader(h)
-
-	sp.setInSlotArr(int(h.SLotArrLen)-1, val)
-}
-
 func (sp *SlottedPage) GetHeader() SlottedPageHeader {
 	reader := bytes.NewReader(sp.GetData())
 	dest := SlottedPageHeader{}

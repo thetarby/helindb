@@ -38,6 +38,7 @@ func TestTableHeap(t *testing.T) {
 }
 
 func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_Found(t *testing.T) {
+	log.SetOutput(io.Discard)
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
 	defer os.Remove(dbName)

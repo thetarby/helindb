@@ -7,11 +7,14 @@ import (
 	"helin/buffer"
 	"helin/catalog/db_types"
 	"helin/disk/structures"
+	"io"
+	"log"
 	"os"
 	"testing"
 )
 
 func TestCatalog_CreateTable_Should_Create_Table_Successfully(t *testing.T) {
+	log.SetOutput(io.Discard)
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
 	defer os.Remove(dbName)
@@ -38,6 +41,7 @@ func TestCatalog_CreateTable_Should_Create_Table_Successfully(t *testing.T) {
 }
 
 func TestCatalog(t *testing.T) {
+	log.SetOutput(io.Discard)
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
 	defer os.Remove(dbName)

@@ -53,8 +53,10 @@ func (p *TupleKeySerializer) Serialize(key common.Key) ([]byte, error) {
 }
 
 func (p *TupleKeySerializer) Deserialize(data []byte) (common.Key, error) {
+	copied := make([]byte, len(data))
+	copy(copied, data)
 	row := structures.Row{
-		Data: data[:p.keySize],
+		Data: copied[:p.keySize],
 		Rid:  structures.Rid{},
 	}
 
