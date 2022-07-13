@@ -1,14 +1,13 @@
 package btree
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"helin/disk/pages"
 	"sort"
 )
 
-var NotEnoughSpace error = errors.New("not enough space")
+var ErrNotEnoughSpace error = errors.New("not enough space")
 
 type SlottedPage struct {
 	PersistentPage
@@ -28,26 +27,24 @@ var HEADER_SIZE = binary.Size(SlottedPageHeader{})
 var SLOT_ARR_ENTRY_SIZE = binary.Size(SLotArrEntry{})
 
 func (sp *SlottedPage) GetHeader() SlottedPageHeader {
-	reader := bytes.NewReader(sp.GetData())
-	dest := SlottedPageHeader{}
-	binary.Read(reader, binary.BigEndian, &dest)
-	return dest
+	d := sp.GetData()
+	return SlottedPageHeader{
+		FreeSpacePointer: binary.BigEndian.Uint16(d),
+		SlotArrSize:      binary.BigEndian.Uint16(d[2:]),
+		EmptyBytes:       binary.BigEndian.Uint16(d[4:]),
+	}
 }
 
 func (sp *SlottedPage) SetHeader(h SlottedPageHeader) {
-	buf := bytes.Buffer{}
-
-	// NOTE: this error is actually the error returned by bytes.Buffer.Write call which always returns nil hence no need to check
-	if err := binary.Write(&buf, binary.BigEndian, &h); err != nil {
-		panic(err)
-	}
-
-	copy(sp.GetData(), buf.Bytes())
+	d := sp.GetData()
+	binary.BigEndian.PutUint16(d, h.FreeSpacePointer)
+	binary.BigEndian.PutUint16(d[2:], h.SlotArrSize)
+	binary.BigEndian.PutUint16(d[4:], h.EmptyBytes)
 }
 
 func (sp *SlottedPage) GetFreeSpace() int {
 	h := sp.GetHeader()
-	startingOffset := HEADER_SIZE + int(h.SlotArrSize)
+	startingOffset := HEADER_SIZE + (int(h.SlotArrSize) * SLOT_ARR_ENTRY_SIZE)
 	return int(h.FreeSpacePointer) - startingOffset
 }
 
@@ -76,39 +73,12 @@ func (sp *SlottedPage) GetAt(idx int) []byte {
 }
 
 func (sp *SlottedPage) InsertAt(idx int, data []byte) error {
-	h := sp.GetHeader()
-
-	temp := make([]byte, 4)
-	n := binary.PutUvarint(temp, uint64(len(data)))
-	h.FreeSpacePointer -= uint16(len(data) + n)
-	if h.FreeSpacePointer <= (h.SlotArrSize+1) * 2 { // 2 is one entry size in slotarr (uint16) 
-		return NotEnoughSpace
-	} 
-
-	copy(sp.GetData()[h.FreeSpacePointer:], temp[:n])
-	copy(sp.GetData()[h.FreeSpacePointer+uint16(n):], data)
-	arr := sp.getSlotArr()
-
-	if len(arr) <= idx {
-		for len(arr) <= idx {
-			if len(arr) == idx {
-				arr = append(arr, SLotArrEntry{Offset: h.FreeSpacePointer})
-			} else {
-				arr = append(arr, SLotArrEntry{})
-			}
-		}
-	} else {
-		arr = append(arr[:idx+1], arr[idx:]...)
-		arr[idx] = SLotArrEntry{
-			Offset: h.FreeSpacePointer,
-		}
+	if err := sp.insertAt(idx, data); err == ErrNotEnoughSpace{
+		sp.Vacuum()
+		return sp.insertAt(idx, data)
+	}else{
+		return err
 	}
-
-	h.SlotArrSize = uint16(len(arr))
-	sp.setSlotArr(arr)
-	sp.SetHeader(h)
-
-	return nil
 }
 
 func (sp *SlottedPage) SetAt(idx int, data []byte) error {
@@ -128,6 +98,11 @@ func (sp *SlottedPage) SetAt(idx int, data []byte) error {
 		n := binary.PutUvarint(d[offset:], uint64(newValSize))
 		copy(d[int(offset)+n:], data)
 		return nil
+	}
+
+	sp.Vacuum()
+	if sp.GetFreeSpace() < len(data) + binary.MaxVarintLen16{
+		return ErrNotEnoughSpace
 	}
 
 	if err := sp.InsertAt(idx, data); err != nil {
@@ -157,7 +132,11 @@ func (sp *SlottedPage) DeleteAt(idx int) error {
 	return nil
 }
 
-func (sp *SlottedPage) Vacuum() (int, error) {
+func (sp *SlottedPage) Vacuum() {
+	if sp.GetHeader().EmptyBytes == 0 {
+		return
+	}
+
 	// sort slice arr by offset descending
 	arr := sp.getSlotArr()
 	idxArr := make([]int, len(arr))
@@ -188,7 +167,42 @@ func (sp *SlottedPage) Vacuum() (int, error) {
 	h.EmptyBytes = 0
 	sp.SetHeader(h)
 	sp.setSlotArr(arr)
-	return 0, nil
+}
+
+func (sp *SlottedPage) insertAt(idx int, data []byte) error {
+	h := sp.GetHeader()
+
+	temp := make([]byte, 4)
+	n := binary.PutUvarint(temp, uint64(len(data)))
+	h.FreeSpacePointer -= uint16(len(data) + n)
+	if h.FreeSpacePointer <= (h.SlotArrSize+1) * uint16(SLOT_ARR_ENTRY_SIZE) { // 2 is one entry size in slotarr (uint16) 
+		return ErrNotEnoughSpace
+	} 
+
+	copy(sp.GetData()[h.FreeSpacePointer:], temp[:n])
+	copy(sp.GetData()[h.FreeSpacePointer+uint16(n):], data)
+	arr := sp.getSlotArr()
+
+	if len(arr) <= idx {
+		for len(arr) <= idx {
+			if len(arr) == idx {
+				arr = append(arr, SLotArrEntry{Offset: h.FreeSpacePointer})
+			} else {
+				arr = append(arr, SLotArrEntry{})
+			}
+		}
+	} else {
+		arr = append(arr[:idx+1], arr[idx:]...)
+		arr[idx] = SLotArrEntry{
+			Offset: h.FreeSpacePointer,
+		}
+	}
+
+	h.SlotArrSize = uint16(len(arr))
+	sp.setSlotArr(arr)
+	sp.SetHeader(h)
+
+	return nil
 }
 
 func (sp *SlottedPage) getSlotArr() []SLotArrEntry {
