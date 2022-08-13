@@ -3,14 +3,13 @@ package btree
 import (
 	"encoding/binary"
 	"errors"
-	"helin/disk/pages"
 	"sort"
 )
 
 var ErrNotEnoughSpace error = errors.New("not enough space")
 
 type SlottedPage struct {
-	PersistentPage
+	NodePage
 }
 
 type SlottedPageHeader struct {
@@ -25,6 +24,10 @@ type SLotArrEntry struct {
 
 var HEADER_SIZE = binary.Size(SlottedPageHeader{})
 var SLOT_ARR_ENTRY_SIZE = binary.Size(SLotArrEntry{})
+
+func (sp *SlottedPage) GetPageId() Pointer {
+	return sp.NodePage.GetPageId()
+}
 
 func (sp *SlottedPage) GetHeader() SlottedPageHeader {
 	d := sp.GetData()
@@ -235,26 +238,22 @@ func (sp *SlottedPage) values() []byte {
 	return sp.GetData()[sp.GetHeader().FreeSpacePointer:]
 }
 
-func InitSlottedPage(rawPage pages.RawPage) SlottedPage{
+func InitSlottedPage(p NodePage) SlottedPage{
 	sp :=  SlottedPage{
-		PersistentPage: PersistentPage{
-			RawPage: rawPage,
-		},
+		NodePage: p,
 	}
 
 	sp.SetHeader(SlottedPageHeader{
-		FreeSpacePointer: uint16(len(sp.Data)),
+		FreeSpacePointer: uint16(len(sp.GetData())),
 		SlotArrSize:      0,
 	})
 
 	return sp
 }
 
-func CastSlottedPage(rawPage pages.RawPage) SlottedPage{
+func CastSlottedPage(p NodePage) SlottedPage{
 	return SlottedPage{
-		PersistentPage: PersistentPage{
-			RawPage: rawPage,
-		},
+		NodePage: p,
 	}
 }
 

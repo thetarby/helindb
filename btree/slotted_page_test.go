@@ -10,7 +10,7 @@ import (
 
 func newSp() *SlottedPage{
 	sp :=  &SlottedPage{
-		PersistentPage: PersistentPage{
+		NodePage: &BtreePage{
 			RawPage: pages.RawPage{
 				PinCount: 0,
 				Data:     make([]byte, 4096),
@@ -19,7 +19,7 @@ func newSp() *SlottedPage{
 	}
 
 	sp.SetHeader(SlottedPageHeader{
-		FreeSpacePointer: uint16(len(sp.Data)),
+		FreeSpacePointer: uint16(len(sp.GetData())),
 		SlotArrSize:      0,
 	})
 	

@@ -221,31 +221,6 @@ type PersistentInternalNode struct {
 	keySerializer KeySerializer
 }
 
-func NewPersistentInternalNode(firstPointer Pointer) *PersistentInternalNode {
-	h := PersistentNodeHeader{
-		IsLeaf: 0,
-		KeyLen: 0,
-	}
-
-	// create a new node
-	// TODO: should use an adam akıllı pager
-	node := PersistentInternalNode{NodePage: NewMemoryPage(1)}
-
-	// write header
-	data := node.GetData()
-	WritePersistentNodeHeader(&h, data)
-
-	// write first pointer
-	buf := bytes.Buffer{}
-	err := binary.Write(&buf, binary.BigEndian, firstPointer)
-	CheckErr(err)
-	asByte := buf.Bytes()
-	copy(data[PersistentNodeHeaderSize:], asByte)
-
-	return &node
-
-}
-
 func (p *PersistentInternalNode) FindKey(key common.Key) (index int, found bool) {
 	data := p.GetData()
 	h := ReadPersistentNodeHeader(data)

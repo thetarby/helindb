@@ -113,12 +113,12 @@ func (n *VarKeyLeafNode) setValueAt(idx int, val interface{}) {
 	b := n.p.GetAt(idx + 1)
 	keySize, nn := binary.Uvarint(b)
 
-	keyb := b[nn+int(keySize):]
+	keyb := b[nn:nn+int(keySize)]
 
 	newValb, err := n.valSerializer.Serialize(val)
 	CheckErr(err)
 
-	buf := make([]byte, len(keyb)+len(newValb)+4)
+	buf := make([]byte, int(keySize) + len(newValb) + 4)
 	nn = binary.PutUvarint(buf, uint64(len(keyb)))
 	copy(buf[nn:], keyb)
 	copy(buf[nn+len(keyb):], newValb)

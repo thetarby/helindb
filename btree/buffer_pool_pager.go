@@ -6,11 +6,13 @@ import (
 	"helin/disk/pages"
 )
 
-type PersistentPage struct {
+// BtreePage is an implementation of the NodePage interface
+// pages.RawPage almost implements all methods except for GetPageId() 
+type BtreePage struct {
 	pages.RawPage
 }
 
-func (p PersistentPage) GetPageId() Pointer {
+func (p BtreePage) GetPageId() Pointer {
 	return Pointer(p.RawPage.GetPageId())
 }
 
@@ -34,18 +36,18 @@ func (b *BufferPoolPager) NewInternalNode(firstPointer Pointer) Node {
 	p, err := b.pool.NewPage()
 	common.PanicIfErr(err)
 	p.WLatch()
-	//node := PersistentInternalNode{NodePage: &PersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer}
-	nnode := VarKeyInternalNode{
-		p:             InitSlottedPage(*p),
+	
+	node := VarKeyInternalNode{
+		p:             InitSlottedPage(&BtreePage{*p}),
 		keySerializer: b.keySerializer,
 	}
 	// set header
- 	nnode.SetHeader(&h)
+ 	node.SetHeader(&h)
 
 	// write first pointer
-	nnode.setValueAt(0, firstPointer)
+	node.setValueAt(0, firstPointer)
 
-	return &nnode
+	return &node
 }
 
 func (b *BufferPoolPager) NewLeafNode() Node {
@@ -57,16 +59,16 @@ func (b *BufferPoolPager) NewLeafNode() Node {
 	p, err := b.pool.NewPage() // TODO: handle error
 	common.PanicIfErr(err)
 	p.WLatch()
-	//node := PersistentLeafNode{NodePage: &PersistentPage{RawPage: *p}, pager: b, keySerializer: b.keySerializer, valSerializer: b.valueSerializer}
-	nnode := VarKeyLeafNode{
-		p:             InitSlottedPage(*p),
+
+	node := VarKeyLeafNode{
+		p:             InitSlottedPage(&BtreePage{*p}),
 		keySerializer: b.keySerializer,
 		valSerializer: b.valueSerializer,
 	}
 	// write header
-	nnode.SetHeader(&h)
+	node.SetHeader(&h)
 
-	return &nnode
+	return &node
 }
 
 func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
@@ -80,7 +82,7 @@ func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 	}else{
 		page.WLatch()
 	}
- 	sp := CastSlottedPage(*page)
+ 	sp := CastSlottedPage(&BtreePage{*page})
 	h := ReadPersistentNodeHeader(sp.GetAt(0))
 	if h.IsLeaf == 1 {
 		return &VarKeyLeafNode{

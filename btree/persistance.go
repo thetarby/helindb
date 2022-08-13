@@ -1,7 +1,5 @@
 package btree
 
-/* InternalNode and SlottedPage structures should extend a PersistentPage implementation to be able to be disk persistent */
-
 type NodePage interface {
 	GetData() []byte
 

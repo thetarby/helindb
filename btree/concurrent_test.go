@@ -1,12 +1,15 @@
 package btree
 
 import (
+	"fmt"
 	"helin/buffer"
 	"helin/common"
 	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -62,7 +65,7 @@ func TestConcurrent_Inserts2(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
 
 	rand.Seed(42)
-	n, chunkSize := 100_000, 100_000 // there will be n/chunkSize parallel routines
+	n, chunkSize := 100000, 25000 // there will be n/chunkSize parallel routines
 	inserted := rand.Perm(n)
 	wg := &sync.WaitGroup{}
 	for _, chunk := range common.ChunksInt(inserted, chunkSize) {
@@ -125,7 +128,7 @@ func TestConcurrent_Deletes(t *testing.T) {
 
 func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
-	memPager := NewMemPager(&PersistentKeySerializer{}, nil)
+	memPager := NewMemPager(&StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1})
 	tree := NewBtreeWithPager(10, memPager)
 
 	rand.Seed(42)
@@ -138,10 +141,7 @@ func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 		wg.Add(1)
 		go func(arr []int) {
 			for _, i := range arr {
-				tree.Insert(PersistentKey(i), SlotPointer{
-					PageId:  int64(i),
-					SlotIdx: int16(i),
-				})
+				tree.Insert(StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("key_%v_val_%v", i, i))
 			}
 			wg.Done()
 		}(chunk)
@@ -150,10 +150,16 @@ func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 
 	assert.Equal(t, len(inserted), tree.Count())
 	// assert they are sorted
-	vals := tree.FindSince(PersistentKey(1))
-	prev := -1
-	for _, v := range vals {
-		require.Less(t, int64(prev), v.(SlotPointer).PageId)
-		prev = int(v.(SlotPointer).PageId)
-	}
+	it := NewTreeIterator(nil, tree, tree.pager)
+	var prev common.Key = StringKey("")
+	for k, v := it.Next(); k != nil; k, v = it.Next(){
+		require.Less(t, prev, k)
+		key := string(k.(StringKey))
+		
+		i, err := strconv.Atoi(strings.TrimPrefix(key, "key_"))
+		require.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("key_%v_val_%v", i, i), v)
+		
+		prev = k
+	} 
 }
