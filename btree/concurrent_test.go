@@ -163,3 +163,38 @@ func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 		prev = k
 	} 
 }
+
+
+// go test -run FuzzConcurrentInserts ./btree -fuzz=Fuzz -fuzztime 10s
+func FuzzConcurrent_Inserts(f *testing.F) {
+    keys := []string {"Hello", "world", " ", "!12345"}
+    for _, tc := range keys {
+        f.Add(tc)
+    }
+
+	memPager := NewMemPager(&StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1})
+	tree := NewBtreeWithPager(10, memPager)
+    f.Fuzz(func(t *testing.T, orig string) {
+		if len(orig) > 100 || orig == "" {
+			// NOTE: with overflow pages should pass this test without this if condition too
+			// NOTE: without overflow pages, it fails this test
+			return
+		}
+		tree.InsertOrReplace(StringKey(orig), fmt.Sprintf("val_%v", orig))
+		
+		// assert they are sorted
+		it := NewTreeIterator(nil, tree, tree.pager)
+		var prev common.Key = StringKey("")
+		i := 0
+		for k, v := it.Next(); k != nil; k, v = it.Next(){
+			require.Less(t, prev, k)
+			key := string(k.(StringKey))
+			
+			require.Equal(t, fmt.Sprintf("val_%v", key), v)
+			
+		 	prev = k
+			i++
+		}
+		it.Close()
+    })
+}
