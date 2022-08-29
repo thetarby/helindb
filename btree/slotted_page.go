@@ -29,6 +29,42 @@ func (sp *SlottedPage) GetPageId() Pointer {
 	return sp.NodePage.GetPageId()
 }
 
+// Cap returns total size of the underlying page
+func (sp *SlottedPage) Cap() int {
+	return len(sp.GetData())
+}
+
+// UsedSize returns number of used bytes including slot entries and payload. Fragmented bytes are considered empty.
+func (sp *SlottedPage) UsedSize() int {
+	h := sp.GetHeader()
+	return sp.Cap() - int(h.FreeSpacePointer) - int(h.EmptyBytes) + (int(h.SlotArrSize) * SLOT_ARR_ENTRY_SIZE)
+}
+
+// PayloadSize returns number of bytes used to store payloads. Fragmented bytes are not included.
+func (sp *SlottedPage) PayloadSize() int {
+	h := sp.GetHeader()
+	payloadSizeWithFrag := len(sp.GetData()) - int(h.FreeSpacePointer)
+	return payloadSizeWithFrag - int(h.EmptyBytes)
+}
+
+// FillFactor returns the ratio between total used space to store payloads and their actual size.
+func (sp *SlottedPage) FillFactor() float32 {
+	h := sp.GetHeader()
+	payloadSize := len(sp.GetData()) - int(h.FreeSpacePointer)
+	if payloadSize == 0 {
+		return 1
+	}
+	filled := payloadSize - int(h.EmptyBytes)
+	return float32(filled) / float32(payloadSize)
+}
+
+// EmptySpace returns number of used bytes including slot entries and payload. Fragmented bytes are considered empty
+// hence this actually returns number of bytes between slots and payloads when page is vacuumed.
+func (sp *SlottedPage) EmptySpace() int {
+	h := sp.GetHeader()
+	return int(h.FreeSpacePointer) + int(h.EmptyBytes) - (int(h.SlotArrSize)*SLOT_ARR_ENTRY_SIZE + HEADER_SIZE)
+}
+
 func (sp *SlottedPage) GetHeader() SlottedPageHeader {
 	d := sp.GetData()
 	return SlottedPageHeader{
@@ -51,19 +87,8 @@ func (sp *SlottedPage) GetFreeSpace() int {
 	return int(h.FreeSpacePointer) - startingOffset
 }
 
-func (sp *SlottedPage) FillFactor() float32 {
-	h := sp.GetHeader()
-	payloadSize := len(sp.GetData()) - int(h.FreeSpacePointer)
-	if payloadSize == 0 {
-		return 1
-	}
-	filled := payloadSize - int(h.EmptyBytes)
-	return float32(filled) / float32(payloadSize)
-}
-
 func (sp *SlottedPage) GetAt(idx int) []byte {
-	slots := sp.getSlotArr()
-	entry := slots[idx]
+	entry := sp.getSlotArrAt(idx)
 
 	if entry.Offset == 0 || isDeleted(entry) {
 		return nil
@@ -76,10 +101,10 @@ func (sp *SlottedPage) GetAt(idx int) []byte {
 }
 
 func (sp *SlottedPage) InsertAt(idx int, data []byte) error {
-	if err := sp.insertAt(idx, data); err == ErrNotEnoughSpace{
+	if err := sp.insertAt(idx, data); err == ErrNotEnoughSpace {
 		sp.Vacuum()
 		return sp.insertAt(idx, data)
-	}else{
+	} else {
 		return err
 	}
 }
@@ -87,16 +112,19 @@ func (sp *SlottedPage) InsertAt(idx int, data []byte) error {
 func (sp *SlottedPage) SetAt(idx int, data []byte) error {
 	// TODO: optimize this. try directly to put same place as old data
 	arr := sp.getSlotArr()
-	if len(arr) <= idx{
+	if len(arr) <= idx {
 		return sp.InsertAt(idx, data) // TODO: bad impl.
 	}
 	offset := arr[idx].Offset
 	d := sp.GetData()
-	valSize, _ := binary.Uvarint(d[offset:])
-	
+	valSize, n := binary.Uvarint(d[offset:])
+	if n <= 0 {
+		return errors.New("binary.Uvarint failed")
+	}
+
 	// no need to account for uvarint valsize because if new data is smaller its uvarint valsize must be of equal
 	// length or shorter
-	if int(valSize) >= len(data){
+	if int(valSize) >= len(data) {
 		newValSize := len(data)
 		n := binary.PutUvarint(d[offset:], uint64(newValSize))
 		copy(d[int(offset)+n:], data)
@@ -104,7 +132,7 @@ func (sp *SlottedPage) SetAt(idx int, data []byte) error {
 	}
 
 	sp.Vacuum()
-	if sp.GetFreeSpace() < len(data) + binary.MaxVarintLen16{
+	if sp.GetFreeSpace() < len(data)+binary.MaxVarintLen16 {
 		return ErrNotEnoughSpace
 	}
 
@@ -112,7 +140,7 @@ func (sp *SlottedPage) SetAt(idx int, data []byte) error {
 		return err
 	}
 
-	return sp.DeleteAt(idx+1)
+	return sp.DeleteAt(idx + 1)
 }
 
 func (sp *SlottedPage) DeleteAt(idx int) error {
@@ -124,11 +152,11 @@ func (sp *SlottedPage) DeleteAt(idx int) error {
 	e := arr[idx]
 	valSize, n := binary.Uvarint(sp.GetData()[e.Offset:])
 	arr = append(arr[:idx], arr[idx+1:]...)
-	
+
 	h := sp.GetHeader()
 	h.SlotArrSize--
 	h.EmptyBytes += uint16(valSize) + uint16(n)
-	
+
 	sp.setSlotArr(arr)
 	sp.SetHeader(h)
 
@@ -178,9 +206,9 @@ func (sp *SlottedPage) insertAt(idx int, data []byte) error {
 	temp := make([]byte, 4)
 	n := binary.PutUvarint(temp, uint64(len(data)))
 	h.FreeSpacePointer -= uint16(len(data) + n)
-	if h.FreeSpacePointer <= (h.SlotArrSize+1) * uint16(SLOT_ARR_ENTRY_SIZE) { // 2 is one entry size in slotarr (uint16) 
+	if h.FreeSpacePointer <= uint16(HEADER_SIZE)+(h.SlotArrSize+1)*uint16(SLOT_ARR_ENTRY_SIZE) {
 		return ErrNotEnoughSpace
-	} 
+	}
 
 	copy(sp.GetData()[h.FreeSpacePointer:], temp[:n])
 	copy(sp.GetData()[h.FreeSpacePointer+uint16(n):], data)
@@ -214,7 +242,7 @@ func (sp *SlottedPage) getSlotArr() []SLotArrEntry {
 	arr := make([]SLotArrEntry, 0)
 	for n := 0; n < int(h.SlotArrSize); n++ {
 		e := SLotArrEntry{}
-		offset := binary.BigEndian.Uint16(buf[n*2:]) // 2 is uint16 size 
+		offset := binary.BigEndian.Uint16(buf[n*2:]) // 2 is uint16 size
 		e.Offset = offset
 		arr = append(arr, e)
 	}
@@ -222,14 +250,24 @@ func (sp *SlottedPage) getSlotArr() []SLotArrEntry {
 	return arr
 }
 
+func (sp *SlottedPage) getSlotArrAt(idx int) SLotArrEntry {
+	arr := sp.GetData()[HEADER_SIZE:]
+	offset := binary.BigEndian.Uint16(arr[idx*SLOT_ARR_ENTRY_SIZE:])
+
+	return SLotArrEntry{
+		Offset: offset,
+	}
+}
+
 func (sp *SlottedPage) setSlotArr(arr []SLotArrEntry) {
+	// OPTIMIZATION: do not serialize whole array each time
 	buf := sp.GetData()[HEADER_SIZE:]
 	n := 0
 	for _, e := range arr {
 		binary.BigEndian.PutUint16(buf[n:], e.Offset)
 		n += 2 // size of uint16
 	}
-	if n + HEADER_SIZE > int(sp.GetHeader().FreeSpacePointer){
+	if n+HEADER_SIZE > int(sp.GetHeader().FreeSpacePointer) {
 		panic("") // TODO: check these
 	}
 }
@@ -238,8 +276,8 @@ func (sp *SlottedPage) values() []byte {
 	return sp.GetData()[sp.GetHeader().FreeSpacePointer:]
 }
 
-func InitSlottedPage(p NodePage) SlottedPage{
-	sp :=  SlottedPage{
+func InitSlottedPage(p NodePage) SlottedPage {
+	sp := SlottedPage{
 		NodePage: p,
 	}
 
@@ -251,7 +289,7 @@ func InitSlottedPage(p NodePage) SlottedPage{
 	return sp
 }
 
-func CastSlottedPage(p NodePage) SlottedPage{
+func CastSlottedPage(p NodePage) SlottedPage {
 	return SlottedPage{
 		NodePage: p,
 	}

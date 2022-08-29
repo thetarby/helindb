@@ -12,11 +12,49 @@ import (
 // These will be used by noop peristent pager.
 var memPagerLastPageID Pointer = 0
 var memPagerNodeMapping = make(map[Pointer]Node)
+var memPagerNodeMapping2 = make(map[Pointer]NodePage)
+
+var _ Pager = &MemPager{}
 
 type MemPager struct {
 	lock            *sync.Mutex
 	KeySerializer   KeySerializer
 	ValueSerializer ValueSerializer
+}
+
+// Free implements Pager
+func (*MemPager) Free(p Pointer) error {
+	delete(memPagerNodeMapping, p)
+	delete(memPagerNodeMapping2, p)
+	return nil
+}
+
+// FreeNode implements Pager
+func (*MemPager) FreeNode(n Node) error {
+	delete(memPagerNodeMapping, n.GetPageId())
+	delete(memPagerNodeMapping2, n.GetPageId())
+	return nil
+}
+
+func (memPager *MemPager) CreatePage() NodePage {
+	memPager.lock.Lock()
+	defer memPager.lock.Unlock()
+	memPagerLastPageID++
+	newID := memPagerLastPageID
+	p := &BtreePage{*pages.NewRawPage(int(newID))}
+	memPagerNodeMapping2[newID] = p
+	return p
+}
+
+func (memPager *MemPager) GetPage(p Pointer) NodePage {
+	memPager.lock.Lock()
+	node := memPagerNodeMapping2[p]
+	memPager.lock.Unlock()
+	if node == nil {
+		print("")
+	}
+
+	return node
 }
 
 func (memPager *MemPager) UnpinByPointer(p Pointer, isDirty bool) {}
@@ -38,6 +76,7 @@ func (memPager *MemPager) NewInternalNode(firstPointer Pointer) Node {
 	node := VarKeyInternalNode{
 		p:             InitSlottedPage(&BtreePage{*pages.NewRawPage(int(newID))}),
 		keySerializer: memPager.KeySerializer,
+		pager:         memPager,
 	}
 	node.WLatch()
 	// set header
@@ -45,7 +84,7 @@ func (memPager *MemPager) NewInternalNode(firstPointer Pointer) Node {
 
 	// write first pointer
 	node.setValueAt(0, firstPointer)
-	
+
 	memPager.lock.Lock()
 	memPagerNodeMapping[newID] = &node
 	memPager.lock.Unlock()
@@ -68,6 +107,7 @@ func (memPager *MemPager) NewLeafNode() Node {
 		p:             InitSlottedPage(&BtreePage{*pages.NewRawPage(int(newID))}),
 		keySerializer: memPager.KeySerializer,
 		valSerializer: memPager.ValueSerializer,
+		pager:         memPager,
 	}
 	node.WLatch()
 
@@ -83,7 +123,7 @@ func (memPager *MemPager) GetNode(p Pointer, mode TraverseMode) Node {
 	memPager.lock.Lock()
 	node := memPagerNodeMapping[p]
 	memPager.lock.Unlock()
-	if node == nil{
+	if node == nil {
 		panic("node not found")
 	}
 

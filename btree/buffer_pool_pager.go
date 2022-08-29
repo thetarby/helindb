@@ -7,7 +7,7 @@ import (
 )
 
 // BtreePage is an implementation of the NodePage interface
-// pages.RawPage almost implements all methods except for GetPageId() 
+// pages.RawPage almost implements all methods except for GetPageId()
 type BtreePage struct {
 	pages.RawPage
 }
@@ -16,10 +16,39 @@ func (p BtreePage) GetPageId() Pointer {
 	return Pointer(p.RawPage.GetPageId())
 }
 
+var _ Pager = &BufferPoolPager{}
+
 type BufferPoolPager struct {
 	pool            *buffer.BufferPool
 	keySerializer   KeySerializer
 	valueSerializer ValueSerializer
+}
+
+func (b *BufferPoolPager) Free(p Pointer) error {
+	return b.pool.FreePage(int(p))
+}
+
+func (b *BufferPoolPager) FreeNode(n Node) error {
+	return b.pool.FreePage(int(n.GetPageId()))
+}
+
+func (b *BufferPoolPager) CreatePage() NodePage {
+	p, err := b.pool.NewPage()
+	common.PanicIfErr(err)
+	bp := &BtreePage{
+		RawPage: *p,
+	}
+	
+	return bp
+}
+
+func (b *BufferPoolPager) GetPage(p Pointer) NodePage {
+	pg, err := b.pool.GetPage(int(p))
+	common.PanicIfErr(err)
+
+	return &BtreePage{
+		RawPage: *pg,
+	}
 }
 
 func (b *BufferPoolPager) UnpinByPointer(p Pointer, isDirty bool) {
@@ -36,13 +65,13 @@ func (b *BufferPoolPager) NewInternalNode(firstPointer Pointer) Node {
 	p, err := b.pool.NewPage()
 	common.PanicIfErr(err)
 	p.WLatch()
-	
+
 	node := VarKeyInternalNode{
 		p:             InitSlottedPage(&BtreePage{*p}),
 		keySerializer: b.keySerializer,
 	}
 	// set header
- 	node.SetHeader(&h)
+	node.SetHeader(&h)
 
 	// write first pointer
 	node.setValueAt(0, firstPointer)
@@ -77,12 +106,12 @@ func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 	}
 	page, err := b.pool.GetPage(int(p))
 	common.PanicIfErr(err)
-	if mode == Read{
+	if mode == Read {
 		page.RLatch()
-	}else{
+	} else {
 		page.WLatch()
 	}
- 	sp := CastSlottedPage(&BtreePage{*page})
+	sp := CastSlottedPage(&BtreePage{*page})
 	h := ReadPersistentNodeHeader(sp.GetAt(0))
 	if h.IsLeaf == 1 {
 		return &VarKeyLeafNode{

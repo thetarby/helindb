@@ -60,7 +60,7 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 	pool := buffer.NewBufferPool(dbName, 32)
 	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
-	n := 10000
+	n := 100000
 	for _, i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
 			PageId:  int64(i),

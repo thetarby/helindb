@@ -84,7 +84,7 @@ func (tree *BTree) Insert(key common.Key, value interface{}) {
 		//topOfStack.PrintNode()
 
 		if popped.IsOverFlow(tree.degree) {
-			rightNod, _, rightKey = tree.splitNode(popped, (tree.degree) / 2)
+			rightNod, _, rightKey = tree.splitNode(popped, popped.Keylen()/2)
 			tree.pager.Unpin(popped, true)
 			if rootLocked && popped.GetPageId() == tree.Root {
 				leftNode := popped
@@ -132,7 +132,7 @@ func (tree *BTree) InsertOrReplace(key common.Key, value interface{}) (isInserte
 		//topOfStack.PrintNode()
 
 		if popped.IsOverFlow(tree.degree) {
-			rightNod, _, rightKey = tree.splitNode(popped, (tree.degree) / 2)
+			rightNod, _, rightKey = tree.splitNode(popped, popped.Keylen()/2)
 			tree.pager.Unpin(popped, true)
 			if rootLocked && popped.GetPageId() == tree.Root {
 				leftNode := popped
@@ -213,6 +213,7 @@ func (tree *BTree) Count() int {
 		old := n
 		n = tree.pager.GetNode(n.GetValueAt(0).(Pointer), Read)
 		old.RUnLatch()
+		tree.pager.Unpin(old, false)
 	}
 
 	num := 0
@@ -221,11 +222,13 @@ func (tree *BTree) Count() int {
 		r := n.GetRight()
 		if r == 0{
 			n.RUnLatch()
+			tree.pager.Unpin(n, false)
 			break
 		}
 		old := n
 		n = tree.pager.GetNode(r, Read)
 		old.RUnLatch()
+		tree.pager.Unpin(old, false)
 	}
 	
 	return num
