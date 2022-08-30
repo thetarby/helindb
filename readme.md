@@ -21,9 +21,22 @@ Maybe check and panic to detect possible api changes in bytes.Buffer
 - [x] Make pool size dynamic for each buffer pool instance.(Constant for the buffer 
 pool but each buffer pool can have different size)
 
-- [ ] Concurrent index
+- [x] Concurrent index
 
-- [ ] Access and modify a page using its rw latch everywhere in the code
+- [x] Variable sized keys in B+ tree
 
-- [x] Btree KeySize must not be a constant. It depends on the key type
+- [x] Overflow pages in B+ tree
 
+- [ ] More than one overflow pages in B+ tree
+
+- [ ] B+ tree try insert with read lock traversal 
+
+- [ ] Refactor B+ tree split logic so that nodes are split in the middle in terms of bytes with variable sized keys
+
+- [ ] Eliminate duplicated code in var_key_nodes.go
+
+- [ ] Write better random load tests for B+ tree index with concurrent inserts and deletes
+
+- [ ] Buffer pool free page implementation
+
+- [ ] WAL implementation 
