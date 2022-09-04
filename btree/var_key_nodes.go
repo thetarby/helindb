@@ -53,7 +53,7 @@ func (n *VarKeyLeafNode) GetRight() Pointer {
 }
 
 func (n *VarKeyLeafNode) GetKeyAt(idx int) common.Key {
-	b := n.getAt(idx + 1)
+	b := getAt(n.pager, &n.p,idx + 1)
 	keySize, nn := binary.Uvarint(b)
 
 	key, err := n.keySerializer.Deserialize(b[nn : nn+int(keySize)])
@@ -74,7 +74,7 @@ func (n *VarKeyLeafNode) InsertAt(index int, key common.Key, val interface{}) {
 	copy(buf[nn:], keyb)
 	copy(buf[nn+len(keyb):], valb)
 
-	n.insertAt(index+1, buf[:len(valb)+len(keyb)+nn])
+	insertAt(n.pager, &n.p,index+1, buf[:len(valb)+len(keyb)+nn])
 
 	h := n.GetHeader()
 	h.KeyLen++
@@ -90,7 +90,7 @@ func (n *VarKeyLeafNode) DeleteAt(index int) {
 }
 
 func (n *VarKeyLeafNode) GetValueAt(idx int) interface{} {
-	b := n.getAt(idx + 1)
+	b := getAt(n.pager, &n.p,idx + 1)
 	keySize, nn := binary.Uvarint(b)
 
 	val, err := n.valSerializer.Deserialize(b[nn+int(keySize):])
@@ -100,7 +100,7 @@ func (n *VarKeyLeafNode) GetValueAt(idx int) interface{} {
 }
 
 func (n *VarKeyLeafNode) setKeyAt(idx int, key common.Key) {
-	b := n.getAt(idx + 1)
+	b := getAt(n.pager, &n.p,idx + 1)
 	keySize, nn := binary.Uvarint(b)
 
 	valb := b[nn+int(keySize):]
@@ -113,11 +113,11 @@ func (n *VarKeyLeafNode) setKeyAt(idx int, key common.Key) {
 	copy(buf[nn:], newKb)
 	copy(buf[nn+len(newKb):], valb)
 
-	n.setAt(idx+1, b, buf[:len(newKb)+len(valb)+nn])
+	setAt(n.pager, &n.p,idx+1, b, buf[:len(newKb)+len(valb)+nn])
 }
 
 func (n *VarKeyLeafNode) setValueAt(idx int, val interface{}) {
-	b := n.getAt(idx + 1)
+	b := getAt(n.pager, &n.p,idx + 1)
 	keySize, nn := binary.Uvarint(b)
 
 	keyb := b[nn : nn+int(keySize)]
@@ -130,7 +130,7 @@ func (n *VarKeyLeafNode) setValueAt(idx int, val interface{}) {
 	copy(buf[nn:], keyb)
 	copy(buf[nn+len(keyb):], newValb)
 
-	n.setAt(idx+1, b, buf[:len(keyb)+len(newValb)+nn])
+	setAt(n.pager, &n.p,idx+1, b, buf[:len(keyb)+len(newValb)+nn])
 }
 
 func (n *VarKeyLeafNode) GetValues() []interface{} {
@@ -205,97 +205,6 @@ func (n *VarKeyLeafNode) WUnlatch() {
 	n.p.WUnlatch()
 }
 
-func (n *VarKeyLeafNode) setAt(idx int, old, data []byte) {
-	if len(old) > maxPayloadSize {
-		// TODO: free page
-		// b := n.p.GetAt(idx)
-		// ptr := DeserializePointer(b[maxPayloadSize:])
-		// n.pager.Free(ptr)
-	}
-
-	if len(data) > maxPayloadSize {
-		rest := data[maxPayloadSize:]
-		init := data[:maxPayloadSize]
-		overflowPage := n.pager.CreatePage()
-		defer n.pager.UnpinByPointer(overflowPage.GetPageId(), true)
-
-		newData := make([]byte, len(init) + pointerSize)
-		nc := copy(newData, init)
-		overflowPage.GetPageId().Serialize(newData[nc:])
-
-		newRest := make([]byte, len(rest)+binary.MaxVarintLen64)
-		nc = binary.PutUvarint(newRest, uint64(len(rest)))
-		copy(newRest[nc:], rest)
-
-		copy(overflowPage.GetData(), newRest)
-
-		err := n.p.SetAt(idx, newData)
-		CheckErr(err)
-		return
-	}
-
-	err := n.p.SetAt(idx, data)
-	CheckErr(err)
-}
-
-func (n *VarKeyLeafNode) insertAt(idx int, data []byte) {
-	// TODO: optimize this method
-	if len(data) > maxPayloadSize {
-		rest := data[maxPayloadSize:]
-		init := data[:maxPayloadSize]
-		overflowPage := n.pager.CreatePage()
-		defer n.pager.UnpinByPointer(overflowPage.GetPageId(), true)
-
-		newData := make([]byte, len(init) + pointerSize)
-		nc := copy(newData, init)
-		overflowPage.GetPageId().Serialize(newData[nc:])
-
-		newRest := make([]byte, len(rest)+binary.MaxVarintLen64)
-		nc = binary.PutUvarint(newRest, uint64(len(rest)))
-		copy(newRest[nc:], rest)
-
-		copy(overflowPage.GetData(), newRest)
-
-		if len(newData) > maxPayloadSize + 8 {
-			panic("whatttt")
-		}
-		err := n.p.InsertAt(idx, newData)
-		h := n.p.GetHeader()
-		if false{
-			println(h)
-		}
-		CheckErr(err)
-		return
-	}
-
-	err := n.p.InsertAt(idx, data)
-	CheckErr(err)
-}
-
-func (n *VarKeyLeafNode) getAt(idx int) []byte {
-	// TODO: optimize this method
-	b := n.p.GetAt(idx)
-
-	if len(b) > maxPayloadSize {
-		of := n.pager.GetPage(DeserializePointer(b[len(b)-pointerSize:]))
-		if of == nil {
-			panic(fmt.Sprintf("page id not found: %v, idx: %v, len: %v", DeserializePointer(b[len(b)-pointerSize:]), idx, len(b)))
-		}
-		defer n.pager.UnpinByPointer(of.GetPageId(), false)
-
-		d := of.GetData()
-		size, readBytes := binary.Uvarint(d)
-
-		res := make([]byte, len(b)-pointerSize+int(size))
-		copied := copy(res, b[:len(b)-pointerSize])
-		copy(res[copied:], d[readBytes:int(size)+readBytes])
-
-		return res
-	}
-
-	return b
-}
-
 var _ Node = &VarKeyInternalNode{}
 
 // VarKeyInternalNode is an internal node implementation which supports variable sized keys
@@ -341,7 +250,7 @@ func (n *VarKeyInternalNode) InsertAt(index int, key common.Key, val interface{}
 	copy(buf[nn:], keyb)
 	val.(Pointer).Serialize(buf[nn+len(keyb):])
 
-	n.insertAt(index+2, buf[:pointerSize+len(keyb)+nn])
+	insertAt(n.pager, &n.p,index+2, buf[:pointerSize+len(keyb)+nn])
 
 	h := n.GetHeader()
 	h.KeyLen++
@@ -358,19 +267,19 @@ func (n *VarKeyInternalNode) DeleteAt(index int) {
 
 func (n *VarKeyInternalNode) GetValueAt(idx int) interface{} {
 	if idx == 0 {
-		b := n.getAt(1)
+		b := getAt(n.pager, &n.p,1)
 		p := binary.BigEndian.Uint64(b)
 		return Pointer(p)
 	}
 
-	b := n.getAt(idx + 1)
+	b := getAt(n.pager, &n.p,idx + 1)
 	keySize, nn := binary.Uvarint(b)
 
 	return DeserializePointer(b[nn+int(keySize):])
 }
 
 func (n *VarKeyInternalNode) GetKeyAt(idx int) common.Key {
-	b := n.getAt(idx + 2)
+	b := getAt(n.pager, &n.p,idx + 2)
 	keySize, nn := binary.Uvarint(b)
 
 	key, err := n.keySerializer.Deserialize(b[nn : nn+int(keySize)])
@@ -380,7 +289,7 @@ func (n *VarKeyInternalNode) GetKeyAt(idx int) common.Key {
 }
 
 func (n *VarKeyInternalNode) setKeyAt(idx int, key common.Key) {
-	b := n.getAt(idx + 2)
+	b := getAt(n.pager, &n.p,idx + 2)
 	keySize, nn := binary.Uvarint(b)
 
 	valb := b[nn+int(keySize):]
@@ -393,17 +302,17 @@ func (n *VarKeyInternalNode) setKeyAt(idx int, key common.Key) {
 	copy(buf[nn:], newKb)
 	copy(buf[nn+len(newKb):], valb)
 
-	n.setAt(idx+2, b, buf[:len(newKb)+len(valb)+nn])
+	setAt(n.pager, &n.p,idx+2, b, buf[:len(newKb)+len(valb)+nn])
 }
 
 func (n *VarKeyInternalNode) setValueAt(idx int, val interface{}) {
 	valb := val.(Pointer).Bytes()
 	if idx == 0 {
-		n.setAt(1, n.getAt(0), valb)
+		setAt(n.pager, &n.p,1, getAt(n.pager, &n.p,0), valb)
 		return
 	}
 
-	b := n.getAt(idx + 1)
+	b := getAt(n.pager, &n.p,idx + 1)
 	keySize, nn := binary.Uvarint(b)
 	keyb := b[nn : nn+int(keySize)]
 
@@ -412,7 +321,7 @@ func (n *VarKeyInternalNode) setValueAt(idx int, val interface{}) {
 	copy(buf[nn:], keyb)
 	copy(buf[nn+len(keyb):], valb)
 
-	n.setAt(idx+1, b, buf[:len(keyb)+len(valb)+nn])
+	setAt(n.pager, &n.p,idx+1, b, buf[:len(keyb)+len(valb)+nn])
 }
 
 func (n *VarKeyInternalNode) GetValues() []interface{} {
@@ -479,7 +388,7 @@ func (n *VarKeyInternalNode) WUnlatch() {
 	n.p.WUnlatch()
 }
 
-func (n *VarKeyInternalNode) setAt(idx int, old, data []byte) {
+func setAt(pager Pager, p *SlottedPage, idx int, old, data []byte) {
 	if len(old) > maxPayloadSize {
 		// TODO: free page
 		// b := n.p.GetAt(idx)
@@ -490,8 +399,8 @@ func (n *VarKeyInternalNode) setAt(idx int, old, data []byte) {
 	if len(data) > maxPayloadSize {
 		rest := data[maxPayloadSize:]
 		init := data[:maxPayloadSize]
-		overflowPage := n.pager.CreatePage()
-		defer n.pager.UnpinByPointer(overflowPage.GetPageId(), true)
+		overflowPage := pager.CreatePage()
+		defer pager.UnpinByPointer(overflowPage.GetPageId(), true)
 
 		newData := make([]byte, len(init) + pointerSize)
 		nc := copy(newData, init)
@@ -503,21 +412,21 @@ func (n *VarKeyInternalNode) setAt(idx int, old, data []byte) {
 
 		copy(overflowPage.GetData(), newRest)
 
-		err := n.p.SetAt(idx, newData)
+		err := p.SetAt(idx, newData)
 		CheckErr(err)
 		return
 	}
 
-	err := n.p.SetAt(idx, data)
+	err := p.SetAt(idx, data)
 	CheckErr(err)
 }
 
-func (n *VarKeyInternalNode) insertAt(idx int, data []byte) {
+func insertAt(pager Pager, p *SlottedPage, idx int, data []byte) {
 	if len(data) > maxPayloadSize {
 		rest := data[maxPayloadSize:]
 		init := data[:maxPayloadSize]
-		overflowPage := n.pager.CreatePage()
-		defer n.pager.UnpinByPointer(overflowPage.GetPageId(), true)
+		overflowPage := pager.CreatePage()
+		defer pager.UnpinByPointer(overflowPage.GetPageId(), true)
 
 		newData := make([]byte, len(init) + pointerSize)
 		nc := copy(newData, init)
@@ -529,21 +438,21 @@ func (n *VarKeyInternalNode) insertAt(idx int, data []byte) {
 
 		copy(overflowPage.GetData(), newRest)
 
-		err := n.p.InsertAt(idx, newData)
+		err := p.InsertAt(idx, newData)
 		CheckErr(err)
 		return
 	}
 
-	err := n.p.InsertAt(idx, data)
+	err := p.InsertAt(idx, data)
 	CheckErr(err)
 }
 
-func (n *VarKeyInternalNode) getAt(idx int) []byte {
-	b := n.p.GetAt(idx)
+func getAt(pager Pager, p *SlottedPage, idx int) []byte {
+	b := p.GetAt(idx)
 
 	if len(b) > maxPayloadSize {
-		of := n.pager.GetPage(DeserializePointer(b[len(b)-pointerSize:]))
-		defer n.pager.UnpinByPointer(of.GetPageId(), false)
+		of := pager.GetPage(DeserializePointer(b[len(b)-pointerSize:]))
+		defer pager.UnpinByPointer(of.GetPageId(), false)
 		d := of.GetData()
 		size, readBytes := binary.Uvarint(d)
 
