@@ -7,11 +7,6 @@ import (
 	"helin/disk/pages"
 )
 
-/*
-	TODO: tuple might be an interface for TableHeap which implements size and data methods. Table heap does not
-	need to now about internals of the heap such as its schema etc..
-*/
-
 type Rid btree.SlotPointer
 
 func NewRid(pageID, slotIdx int) Rid {

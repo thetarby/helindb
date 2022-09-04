@@ -12,13 +12,23 @@ import (
 
 type IBufferPool interface {
 	GetPage(pageId int) (*pages.RawPage, error)
-	pin(pageId int) error
+	pin(pageId int)
 	Unpin(pageId int, isDirty bool) bool
 	Flush(pageId int) error
 	FlushAll() error
+
+	// NewPage creates a new page
 	NewPage() (page *pages.RawPage, err error)
+
+	// FreePage deletes a page from the buffer pool. Returns error if the page exists but could not be deleted and
+	// panics if page does not exist
+	FreePage(pageId int) error
+
+	// EmptyFrameSize returns the number empty frames which does not hold data of any physical page
 	EmptyFrameSize() int
 }
+
+var _ IBufferPool = &BufferPool{}
 
 type BufferPool struct {
 	poolSize    int
@@ -30,21 +40,9 @@ type BufferPool struct {
 	lock        sync.Mutex
 }
 
-func NewBufferPool(dbFile string, poolSize int) *BufferPool {
-	emptyFrames := make([]int, poolSize)
-	for i := 0; i < poolSize; i++ {
-		emptyFrames[i] = i
-	}
-	d, _ := disk.NewDiskManager(dbFile)
-	return &BufferPool{
-		poolSize:    poolSize,
-		frames:      make([]*pages.RawPage, poolSize),
-		pageMap:     map[int]int{},
-		emptyFrames: emptyFrames,
-		DiskManager: d,
-		lock:        sync.Mutex{},
-		Replacer:    NewLruReplacer(poolSize),
-	}
+func (b *BufferPool) FreePage(pageId int) error {
+	// TODO: implement this
+	return nil
 }
 
 func (b *BufferPool) GetPage(pageId int) (*pages.RawPage, error) {
@@ -100,7 +98,7 @@ func (b *BufferPool) GetPage(pageId int) (*pages.RawPage, error) {
 	if victim.IsDirty() {
 		data := victim.GetData()
 		if err := b.DiskManager.WritePage(data, victimPageId); err != nil {
-			// TODO: victim should be added to replacer as unpinned again since now it will be impossible to choose it 
+			// TODO: victim should be added to replacer as unpinned again since now it will be impossible to choose it
 			// as victim again and it is a resource leak.
 			log.Print("TODO: resource leak occurred")
 			return nil, err
@@ -109,7 +107,7 @@ func (b *BufferPool) GetPage(pageId int) (*pages.RawPage, error) {
 
 	pageData, err := b.DiskManager.ReadPage(pageId)
 	if err != nil {
-		// TODO: victim should be added to replacer as unpinned again since now it will be impossible to choose it 
+		// TODO: victim should be added to replacer as unpinned again since now it will be impossible to choose it
 		// as victim again and it is a resource leak.
 		log.Print("TODO: resource leak occurred")
 		return nil, err
@@ -260,4 +258,21 @@ func (b *BufferPool) NewPage() (page *pages.RawPage, err error) {
 
 func (b *BufferPool) EmptyFrameSize() int {
 	return len(b.emptyFrames)
+}
+
+func NewBufferPool(dbFile string, poolSize int) *BufferPool {
+	emptyFrames := make([]int, poolSize)
+	for i := 0; i < poolSize; i++ {
+		emptyFrames[i] = i
+	}
+	d, _ := disk.NewDiskManager(dbFile)
+	return &BufferPool{
+		poolSize:    poolSize,
+		frames:      make([]*pages.RawPage, poolSize),
+		pageMap:     map[int]int{},
+		emptyFrames: emptyFrames,
+		DiskManager: d,
+		lock:        sync.Mutex{},
+		Replacer:    NewLruReplacer(poolSize),
+	}
 }

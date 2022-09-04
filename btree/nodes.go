@@ -1,23 +1,27 @@
 package btree
 
 import (
+	"encoding/binary"
 	"helin/common"
-	"sort"
 )
 
-type Pointer int64
+type Pointer uint64
+
+func (p Pointer) Serialize(dest []byte){
+	binary.BigEndian.PutUint64(dest, uint64(p))
+}
+
+func (p Pointer) Bytes() []byte{
+	res := make([]byte, 8)
+	binary.BigEndian.PutUint64(res, uint64(p))
+	return res
+}
+
+func DeserializePointer(dest []byte) Pointer{
+	return Pointer(binary.BigEndian.Uint64(dest))
+}
 
 type Keys []common.Key
-
-func (k Keys) find(item common.Key) (index int, found bool) {
-	i := sort.Search(len(k), func(i int) bool {
-		return item.Less(k[i])
-	})
-	if i > 0 && !k[i-1].Less(item) {
-		return i - 1, true
-	}
-	return i, false
-}
 
 type NodeIndexPair struct {
 	Node  Node
@@ -32,20 +36,12 @@ const (
 	Insert
 )
 
-/*
-	TODO: no need for findAndGetStack in node level. they are only used in tests and can be removed
-*/
-
 type Node interface {
-	findKey(key common.Key) (index int, found bool)
-	shiftKeyValueToRightAt(n int)
-	shiftKeyValueToLeftAt(n int)
 	setKeyAt(idx int, key common.Key)
 	setValueAt(idx int, val interface{})
 	GetKeyAt(idx int) common.Key
 	GetValueAt(idx int) interface{}
 	GetValues() []interface{}
-	SplitNode(index int) (right Pointer, keyAtLeft common.Key, keyAtRight common.Key)
 	PrintNode()
 	IsOverFlow(degree int) bool
 	InsertAt(index int, key common.Key, val interface{})
@@ -53,6 +49,7 @@ type Node interface {
 	GetPageId() Pointer
 	IsLeaf() bool
 	GetHeader() *PersistentNodeHeader
+	SetHeader(*PersistentNodeHeader)
 
 	// IsSafeForSplit returns true if there is at least one empty place in the node meaning it
 	// won't split even one key is inserted
@@ -62,14 +59,8 @@ type Node interface {
 	// one key is deleted
 	IsSafeForMerge(degree int) bool
 
-	/* delete related methods */
-
 	Keylen() int
 	GetRight() Pointer
-
-	// TODO: this should free right node
-	MergeNodes(rightNode Node, parent Node)
-	Redistribute(rightNode_ Node, parent_ Node)
 	IsUnderFlow(degree int) bool
 
 	WLatch()

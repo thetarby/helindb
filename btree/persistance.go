@@ -1,13 +1,8 @@
 package btree
 
-/* InternalNode and SlottedPage structures should extend a PersistentPage implementation to be able to be disk persistent */
-
 type NodePage interface {
 	GetData() []byte
-
-	// GetPageId returns the page_id of the physical page.
 	GetPageId() Pointer
-
 	WLatch()
 	WUnlatch()
 	RLatch()
@@ -39,5 +34,11 @@ type Pager interface {
 	// For an in memory implementation these methods can be noop.
 	Unpin(n Node, isDirty bool)
 
+	Free(p Pointer) error
+	FreeNode(n Node) error
+
 	UnpinByPointer(p Pointer, isDirty bool)
+
+	CreatePage() NodePage
+	GetPage(p Pointer) NodePage
 }

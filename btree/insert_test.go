@@ -2,6 +2,8 @@ package btree
 
 import (
 	"helin/buffer"
+	"io"
+	"log"
 	"math/rand"
 	"os"
 	"strconv"
@@ -35,8 +37,6 @@ func TestInsert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 	tree.Insert(PersistentKey(1), padStr("1"))
 	tree.Insert(PersistentKey(5), padStr("5"))
 	tree.Insert(PersistentKey(3), padStr("3"))
-
-	var stack []NodeIndexPair
 
 	res, stack := tree.FindAndGetStack(PersistentKey(5), Read)
 
@@ -165,6 +165,7 @@ func TestInsert_Internals(t *testing.T) {
 }
 
 func TestInsert_Internals_2(t *testing.T) {
+	log.SetOutput(io.Discard)
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
 	defer os.Remove(dbName)
@@ -185,7 +186,6 @@ func TestInsert_Internals_2(t *testing.T) {
 		if leftMostNode == nil {
 			break
 		}
-		leftMostNode.PrintNode()
 		old := leftMostNode
 		leftMostNode = tree.pager.GetNode(leftMostNode.GetRight(), Read)
 		tree.pager.Unpin(old, false)

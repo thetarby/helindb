@@ -1,5 +1,7 @@
 package common
 
+import "math/rand"
+
 func PanicIfErr(err error) {
 	if err != nil {
 		panic(err)
@@ -37,4 +39,15 @@ func ChunksInt(arr []int, chunkSize int) [][]int{
 	}
 
 	return res
+}
+
+var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func RandStr(min, max uint) string {
+	n := rand.Intn(int(max-min)) + int(min)
+    b := make([]rune, n)
+    for i := range b {
+        b[i] = letters[rand.Intn(len(letters))]
+    }
+    return string(b)
 }

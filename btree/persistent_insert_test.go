@@ -1,6 +1,7 @@
 package btree
 
 import (
+	"fmt"
 	"helin/buffer"
 	"io/ioutil"
 	"log"
@@ -59,7 +60,7 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 	pool := buffer.NewBufferPool(dbName, 32)
 	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
-	n := 1000
+	n := 100000
 	for _, i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
 			PageId:  int64(i),
@@ -80,6 +81,27 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 	}
 	//fmt.Println(buffer.Victims)
 	//fmt.Println(buffer.Accessed)
+}
+
+func TestPersistentEvery_Inserted_Should_Be_Found_VarSized(t *testing.T) {
+	id, _ := uuid.NewUUID()
+	dbName := id.String()
+	defer os.Remove(dbName)
+
+	pool := buffer.NewBufferPool(dbName, 16)
+	tree := NewBtreeWithPager(32, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1}))
+	log.SetOutput(ioutil.Discard)
+	n := 100000
+	for _, i := range rand.Perm(n) {
+		key, val := fmt.Sprintf("sa_%v", i), fmt.Sprintf("as_%v", i)
+		tree.Insert(StringKey(key), val)
+	}
+	
+	for i := 0; i < n; i++ {
+		val := tree.Find(StringKey(fmt.Sprintf("sa_%v", i)))
+
+		assert.Equal(t, fmt.Sprintf("as_%v", i), val.(string))
+	}
 }
 
 func TestPersistent_Pin_Count_Should_Be_Zero_After_Inserts_Are_Complete(t *testing.T) {

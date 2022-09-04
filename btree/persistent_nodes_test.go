@@ -1,11 +1,19 @@
 package btree
 
 import (
-	"github.com/stretchr/testify/assert"
+	"helin/disk/pages"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
+
+func NewMemoryPage(pageId Pointer) NodePage {
+	return &BtreePage{
+		RawPage: *pages.NewRawPage(int(pageId)),
+	}
+}
 
 func TestPersistentLeafNode_SetKeyAt(t *testing.T) {
 	node := PersistentLeafNode{NodePage: NewMemoryPage(1), keySerializer: &PersistentKeySerializer{}, valSerializer: &SlotPointerValueSerializer{}}
@@ -46,7 +54,7 @@ func TestPersistentLeafNode_Should_Insert_To_Correct_Locations(t *testing.T) {
 		SlotIdx: 10,
 	}
 	for i := 0; i < 10; i++ {
-		idx, found := node.findKey(PersistentKey(i))
+		idx, found := node.FindKey(PersistentKey(i))
 		assert.False(t, found)
 		node.InsertAt(idx, PersistentKey(i), slotP)
 	}
@@ -71,7 +79,7 @@ func TestPersistentLeafNode_FindKey_Should_Find_Correct_Locations_When_Keys_Are_
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(a), func(i, j int) { a[i], a[j] = a[j], a[i] })
 	for _, item := range a {
-		idx, found := node.findKey(PersistentKey(item))
+		idx, found := node.FindKey(PersistentKey(item))
 		assert.False(t, found)
 		node.InsertAt(idx, PersistentKey(item), slotP)
 	}
@@ -124,7 +132,7 @@ func TestPersistentInternalNode_Should_Insert_To_Correct_Locations(t *testing.T)
 	node := PersistentInternalNode{NodePage: NewMemoryPage(1), keySerializer: &PersistentKeySerializer{}}
 
 	for i := 1; i < 10; i++ {
-		idx, found := node.findKey(PersistentKey(i))
+		idx, found := node.FindKey(PersistentKey(i))
 		assert.False(t, found)
 		node.InsertAt(idx, PersistentKey(i), Pointer(i))
 	}
@@ -135,30 +143,5 @@ func TestPersistentInternalNode_Should_Insert_To_Correct_Locations(t *testing.T)
 
 		assert.Equal(t, PersistentKey(i+1), key)
 		assert.Equal(t, Pointer(i+1), val.(Pointer))
-	}
-}
-
-func TestPersistentInternalNode_FindKey_Should_Find_Correct_Locations_When_Keys_Are_Inserted_Randomly(t *testing.T) {
-	node := NewPersistentInternalNode(1)
-	node.keySerializer = &PersistentKeySerializer{}
-	a := []int{2, 3, 4, 5, 6, 7, 8, 9, 10} // 1 is inserted when creating
-	rand.Seed(time.Now().UnixNano())
-	rand.Shuffle(len(a), func(i, j int) { a[i], a[j] = a[j], a[i] })
-	for _, item := range a {
-		idx, found := node.findKey(PersistentKey(item))
-		assert.False(t, found)
-		node.InsertAt(idx, PersistentKey(item), Pointer(item))
-	}
-
-	// check first pointer
-	val := node.GetValueAt(0)
-	assert.Equal(t, Pointer(1), val.(Pointer))
-
-	for i := 0; i < 9; i++ {
-		key := node.GetKeyAt(i)
-		val := node.GetValueAt(i + 1)
-
-		assert.Equal(t, PersistentKey(i+2), key)
-		assert.Equal(t, Pointer(i+2), val.(Pointer))
 	}
 }
