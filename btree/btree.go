@@ -24,10 +24,10 @@ func NewBtreeWithPager(degree int, pager Pager) *BTree {
 	defer pager.Unpin(l, true)
 
 	return &BTree{
-		degree:         degree,
-		length:         0,
-		Root:           root.GetPageId(),
-		pager:          pager,
+		degree:        degree,
+		length:        0,
+		Root:          root.GetPageId(),
+		pager:         pager,
 		rootEntryLock: &sync.RWMutex{},
 	}
 }
@@ -54,7 +54,7 @@ func (tree *BTree) GetPager() Pager {
 func (tree *BTree) Insert(key common.Key, value interface{}) {
 	i, stack := tree.FindAndGetStack(key, Insert)
 	rootLocked := false
-	if len(stack) > 0 && stack[0].Index == -1{
+	if len(stack) > 0 && stack[0].Index == -1 {
 		defer tree.rootEntryLock.Unlock()
 		stack = stack[1:]
 		rootLocked = true
@@ -99,7 +99,7 @@ func (tree *BTree) Insert(key common.Key, value interface{}) {
 func (tree *BTree) InsertOrReplace(key common.Key, value interface{}) (isInserted bool) {
 	i, stack := tree.FindAndGetStack(key, Insert)
 	rootLocked := false
-	if len(stack) > 0 && stack[0].Index == -1{
+	if len(stack) > 0 && stack[0].Index == -1 {
 		defer tree.rootEntryLock.Unlock()
 		stack = stack[1:]
 		rootLocked = true
@@ -119,7 +119,6 @@ func (tree *BTree) InsertOrReplace(key common.Key, value interface{}) (isInserte
 
 	for len(stack) > 0 {
 		popped := stack[len(stack)-1].Node
-		defer popped.WUnlatch()
 		stack = stack[:len(stack)-1]
 		i, _ := tree.FindKey(popped, key)
 		popped.InsertAt(i, rightKey, rightNod)
@@ -139,8 +138,10 @@ func (tree *BTree) InsertOrReplace(key common.Key, value interface{}) (isInserte
 			}
 		} else {
 			tree.pager.Unpin(popped, true)
+			popped.WUnlatch()
 			break
 		}
+		popped.WUnlatch()
 	}
 
 	return true
@@ -149,7 +150,7 @@ func (tree *BTree) InsertOrReplace(key common.Key, value interface{}) (isInserte
 func (tree *BTree) Delete(key common.Key) bool {
 	i, stack := tree.FindAndGetStack(key, Delete)
 	rootLocked := false
-	if len(stack) > 0 && stack[0].Index == -1{
+	if len(stack) > 0 && stack[0].Index == -1 {
 		defer tree.rootEntryLock.Unlock()
 		stack = stack[1:]
 		rootLocked = true
@@ -162,7 +163,6 @@ func (tree *BTree) Delete(key common.Key) bool {
 
 	for len(stack) > 0 {
 		popped := stack[len(stack)-1].Node
-		defer popped.WUnlatch()
 		stack = stack[:len(stack)-1]
 		isPoppedDirty := false
 		if popped.IsLeaf() {
@@ -173,6 +173,7 @@ func (tree *BTree) Delete(key common.Key) bool {
 
 		if len(stack) == 0 {
 			// if no parent left in stack(this is correct only if popped is root) it is done
+			popped.WUnlatch()
 			tree.pager.Unpin(popped, false) // NOTE: this one is tricky. But if root is dirty then previous turn in the loop should have already set it dirty
 			return true
 		}
@@ -184,10 +185,10 @@ func (tree *BTree) Delete(key common.Key) bool {
 			// get siblings
 			var rightSibling, leftSibling, merged Node
 			if indexAtParent > 0 {
-				leftSibling = tree.pager.GetNode(parent.GetValueAt(indexAtParent - 1).(Pointer), Delete) //leftSibling = parent.Pointers[indexAtParent-1].(*InternalNode)
+				leftSibling = tree.pager.GetNode(parent.GetValueAt(indexAtParent-1).(Pointer), Delete) //leftSibling = parent.Pointers[indexAtParent-1].(*InternalNode)
 			}
 			if indexAtParent+1 < (parent.Keylen() + 1) { // +1 is the length of pointers
-				rightSibling = tree.pager.GetNode(parent.GetValueAt(indexAtParent + 1).(Pointer), Delete) //rightSibling = parent.Pointers[indexAtParent+1].(*InternalNode)
+				rightSibling = tree.pager.GetNode(parent.GetValueAt(indexAtParent+1).(Pointer), Delete) //rightSibling = parent.Pointers[indexAtParent+1].(*InternalNode)
 			}
 
 			// try redistribute
@@ -196,7 +197,8 @@ func (tree *BTree) Delete(key common.Key) bool {
 					(!popped.IsLeaf() && rightSibling.Keylen()+1 > (tree.degree+1)/2)) { // TODO: second check is actually different for internal and leaf nodes since internal nodes have one more value than they have keys
 				tree.redistribute(popped, rightSibling, parent)
 				rightSibling.WUnlatch()
-				// tree.pager.Unpin(parent, true) will be done by deferred unpinAll
+				// tree.pager.Unpin(parent, true) will be done by deferred
+				popped.WUnlatch()
 				tree.pager.Unpin(popped, true)
 				tree.pager.Unpin(rightSibling, true)
 				if leftSibling != nil {
@@ -210,6 +212,7 @@ func (tree *BTree) Delete(key common.Key) bool {
 				tree.redistribute(leftSibling, popped, parent)
 				leftSibling.WUnlatch()
 				// tree.pager.Unpin(parent, true) will be done by deferred unpinAll
+				popped.WUnlatch()
 				tree.pager.Unpin(popped, true)
 				tree.pager.Unpin(leftSibling, true)
 				if rightSibling != nil {
@@ -225,6 +228,7 @@ func (tree *BTree) Delete(key common.Key) bool {
 				merged = popped
 				rightSibling.WUnlatch()
 				// tree.pager.Unpin(parent, true) will be done by deferred unpinAll
+				popped.WUnlatch()
 				tree.pager.Unpin(popped, true)
 				tree.pager.Unpin(rightSibling, true)
 				if leftSibling != nil {
@@ -237,6 +241,7 @@ func (tree *BTree) Delete(key common.Key) bool {
 						panic("Both siblings are null for an internal Node! This should not be possible except for root")
 					}
 
+					popped.WUnlatch()
 					tree.pager.Unpin(popped, true)
 					// TODO: may be log here? if it is a leaf node its both left and right nodes can be nil
 					return true
@@ -246,6 +251,7 @@ func (tree *BTree) Delete(key common.Key) bool {
 				merged = leftSibling
 
 				// tree.pager.Unpin(parent, true) will be done by deferred unpinAll
+				popped.WUnlatch()
 				tree.pager.Unpin(popped, true)
 				tree.pager.Unpin(leftSibling, true)
 				if rightSibling != nil {
@@ -257,6 +263,7 @@ func (tree *BTree) Delete(key common.Key) bool {
 				tree.Root = merged.GetPageId()
 			}
 		} else {
+			popped.WUnlatch()
 			tree.pager.Unpin(popped, isPoppedDirty)
 			break
 		}
@@ -300,7 +307,7 @@ func (tree *BTree) FindSince(key common.Key) []interface{} {
 
 func (tree *BTree) Height() int {
 	pager := tree.pager
-	var currentNode Node = tree.pager.GetNode(tree.Root, Read)
+	var currentNode = tree.pager.GetNode(tree.Root, Read)
 	acc := 0
 	for {
 		if currentNode.IsLeaf() {
@@ -319,8 +326,8 @@ func (tree *BTree) Count() int {
 	tree.rootEntryLock.RLock()
 	n := tree.GetRoot(Read)
 	tree.rootEntryLock.RUnlock()
-	for{
-		if n.IsLeaf(){
+	for {
+		if n.IsLeaf() {
 			break
 		}
 		old := n
@@ -330,10 +337,10 @@ func (tree *BTree) Count() int {
 	}
 
 	num := 0
-	for{
+	for {
 		num += len(n.GetValues())
 		r := n.GetRight()
-		if r == 0{
+		if r == 0 {
 			n.RUnLatch()
 			tree.pager.Unpin(n, false)
 			break
@@ -343,11 +350,11 @@ func (tree *BTree) Count() int {
 		old.RUnLatch()
 		tree.pager.Unpin(old, false)
 	}
-	
+
 	return num
 }
 
-func (tree BTree) Print() {
+func (tree *BTree) Print() {
 	pager := tree.pager
 	queue := make([]Pointer, 0, 2)
 	queue = append(queue, tree.Root)
@@ -375,15 +382,15 @@ func (tree BTree) Print() {
 	for _, n := range queue {
 		if n != 0 {
 			currNode := pager.GetNode(n, Read)
-			defer currNode.RUnLatch()
 			currNode.PrintNode()
+			currNode.RUnLatch()
 		} else {
 			fmt.Print("\n ### \n")
 		}
 	}
 }
 
-// findAndGetStack is used to recursively find the given key and it also passes a stack object recursively to
+// findAndGetStack is used to recursively find the given key, and it also passes a stack object recursively to
 // keep the path it followed down to leaf node. value is nil when key does not exist.
 func (tree *BTree) findAndGetStack(node Node, key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
 	if node.IsLeaf() {
@@ -417,9 +424,9 @@ func (tree *BTree) findAndGetStack(node Node, key common.Key, stackIn []NodeInde
 			if safe {
 				for len(stackOut) > 0 {
 					n := stackOut[len(stackOut)-1].Node
-					if stackOut[len(stackOut)-1].Index == -1{
+					if stackOut[len(stackOut)-1].Index == -1 {
 						tree.rootEntryLock.Unlock()
-					}else{
+					} else {
 						n.WUnlatch()
 						tree.pager.Unpin(n, false)
 					}
@@ -434,7 +441,7 @@ func (tree *BTree) findAndGetStack(node Node, key common.Key, stackIn []NodeInde
 }
 
 func (tree *BTree) FindAndGetStack(key common.Key, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
-	stack := []NodeIndexPair{}
+	var stack []NodeIndexPair
 	tree.rootEntryLock.Lock()
 	root := tree.GetRoot(mode)
 	if mode == Insert || mode == Delete {
@@ -467,7 +474,8 @@ func (tree *BTree) runlatch(stack []NodeIndexPair) {
 
 func (tree *BTree) mergeInternalNodes(p, rightNode, parent Node) {
 	var i int
-	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {}
+	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {
+	}
 
 	for ii := 0; ii < rightNode.Keylen()+1; ii++ {
 		var k common.Key
@@ -484,7 +492,8 @@ func (tree *BTree) mergeInternalNodes(p, rightNode, parent Node) {
 
 func (tree *BTree) mergeLeafNodes(p, rightNode, parent Node) {
 	var i int
-	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {}
+	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {
+	}
 
 	for i := 0; i < rightNode.Keylen(); i++ {
 		p.InsertAt(p.Keylen(), rightNode.GetKeyAt(i), rightNode.GetValueAt(i))
@@ -499,17 +508,18 @@ func (tree *BTree) mergeLeafNodes(p, rightNode, parent Node) {
 
 func (tree *BTree) mergeNodes(p, rightNode, parent Node) {
 	// TODO: this should free right node
-	if p.IsLeaf(){
+	if p.IsLeaf() {
 		tree.mergeLeafNodes(p, rightNode, parent)
-	}else{
+	} else {
 		tree.mergeInternalNodes(p, rightNode, parent)
 	}
 }
 
 func (tree *BTree) redistributeInternalNodes(p, rightNode, parent Node) {
 	var i int
-	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {}
-	
+	for i = 0; parent.GetValueAt(i).(Pointer) != p.GetPageId(); i++ {
+	}
+
 	numKeysAtLeft := (p.Keylen() + rightNode.Keylen()) / 2
 	numKeysAtRight := (p.Keylen() + rightNode.Keylen()) - numKeysAtLeft
 
@@ -523,7 +533,7 @@ func (tree *BTree) redistributeInternalNodes(p, rightNode, parent Node) {
 		v := rightNode.GetValueAt(ii)
 		p.InsertAt(p.Keylen(), k, v)
 	}
-	
+
 	rightNodeKeyLen := rightNode.Keylen()
 	for i := 0; i < rightNodeKeyLen; i++ {
 		rightNode.DeleteAt(i)
@@ -572,9 +582,9 @@ func (tree *BTree) redistributeLeafNodes(p, rightNode, parent Node) {
 }
 
 func (tree *BTree) redistribute(p, rightNode, parent Node) {
-	if p.IsLeaf(){
+	if p.IsLeaf() {
 		tree.redistributeLeafNodes(p, rightNode, parent)
-	}else{
+	} else {
 		tree.redistributeInternalNodes(p, rightNode, parent)
 	}
 }
@@ -591,7 +601,7 @@ func (tree *BTree) splitInternalNode(p Node, idx int) (right Pointer, keyAtLeft 
 	defer tree.pager.Unpin(rightNode, true)
 	defer rightNode.WUnlatch()
 
-	for i := idx+1; i < p.Keylen(); i++ {
+	for i := idx + 1; i < p.Keylen(); i++ {
 		rightNode.InsertAt(i-(idx+1), p.GetKeyAt(i), p.GetValueAt(i+1))
 	}
 
@@ -633,9 +643,9 @@ func (tree *BTree) splitLeafNode(p Node, idx int) (right Pointer, keyAtLeft comm
 }
 
 func (tree *BTree) splitNode(p Node, idx int) (right Pointer, keyAtLeft common.Key, keyAtRight common.Key) {
-	if p.IsLeaf(){
+	if p.IsLeaf() {
 		return tree.splitLeafNode(p, idx)
-	}else{
+	} else {
 		return tree.splitInternalNode(p, idx)
 	}
 }
@@ -645,7 +655,7 @@ func (tree *BTree) FindKey(p Node, key common.Key) (index int, found bool) {
 	i := sort.Search(int(h.KeyLen), func(i int) bool {
 		return key.Less(p.GetKeyAt(i))
 	})
-	
+
 	if i > 0 && !p.GetKeyAt(i-1).Less(key) {
 		return i - 1, true
 	}

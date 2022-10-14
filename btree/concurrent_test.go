@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"helin/buffer"
 	"helin/common"
-	"io/ioutil"
+	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -25,7 +25,7 @@ func TestConcurrent_Inserts(t *testing.T) {
 
 	pool := buffer.NewBufferPool(dbName, 4096)
 	tree := NewBtreeWithPager(50, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
-	log.SetOutput(ioutil.Discard)
+	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
 	n, chunkSize := 100_000, 10_000 // there will be n/chunkSize parallel routines
@@ -62,7 +62,7 @@ func TestConcurrent_Inserts2(t *testing.T) {
 
 	pool := buffer.NewBufferPool(dbName, 4096)
 	tree := NewBtreeWithPager(50, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
-	log.SetOutput(ioutil.Discard)
+	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
 	n, chunkSize := 100000, 25000 // there will be n/chunkSize parallel routines
@@ -92,7 +92,7 @@ func TestConcurrent_Deletes(t *testing.T) {
 
 	pool := buffer.NewBufferPool(dbName, 100_000)
 	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
-	log.SetOutput(ioutil.Discard)
+	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
 	n, chunkSize := 100_000, 1000 // there will be n/chunkSize parallel routines
@@ -127,12 +127,11 @@ func TestConcurrent_Deletes(t *testing.T) {
 		require.Equal(t, int64(v), p.PageId)
 	}
 
-
 	assert.Equal(t, 50_000, tree.Count())
 }
 
 func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
-	log.SetOutput(ioutil.Discard)
+	log.SetOutput(io.Discard)
 	memPager := NewMemPager(&StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1})
 	tree := NewBtreeWithPager(10, memPager)
 
@@ -170,11 +169,11 @@ func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 }
 
 func TestConcurrent_Hammer(t *testing.T) {
-	log.SetOutput(ioutil.Discard)
+	log.SetOutput(io.Discard)
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
 	defer os.Remove(dbName)
-	
+
 	pool := buffer.NewBufferPool(dbName, 4096)
 	tree := NewBtreeWithPager(50, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1}))
 
@@ -207,7 +206,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 		wg.Add(1)
 		go func(arr []int) {
 			for _, i := range arr {
-				if !tree.Delete(StringKey(fmt.Sprintf("key_%v", i))){
+				if !tree.Delete(StringKey(fmt.Sprintf("key_%v", i))) {
 					t.Error("key not found")
 				}
 			}
@@ -231,14 +230,12 @@ func TestConcurrent_Hammer(t *testing.T) {
 
 		prev = k
 	}
-	
 
 	// assert not found
 	for _, v := range toDelete {
 		assert.Nil(t, tree.Find(StringKey(fmt.Sprintf("key_%v", v))))
 	}
 }
-
 
 // go test -run FuzzConcurrentInserts ./btree -fuzz=Fuzz -fuzztime 10s
 func FuzzConcurrent_Inserts(f *testing.F) {
