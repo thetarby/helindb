@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-// These will be used by noop peristent pager.
+// These will be used by noop persistent pager.
 var memPagerLastPageID Pointer = 0
 var memPagerNodeMapping = make(map[Pointer]Node)
 var memPagerNodeMapping2 = make(map[Pointer]NodePage)

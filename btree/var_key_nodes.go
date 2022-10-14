@@ -13,8 +13,8 @@ var pointerSize = binary.Size(Pointer(0))
 var maxPayloadSize = 128
 
 // maxRequiredSize is maximum size that could be required to insert a payload at the maxPayloadSize. this is bigger than maxPayloadSize
-// because it also has overflow page's pointer, the length of the payload as varint and the SLOT_ARR_ENTRY_SIZE 
-var maxRequiredSize = maxPayloadSize + pointerSize + binary.MaxVarintLen16 + SLOT_ARR_ENTRY_SIZE
+// because it also has overflow page's pointer, the length of the payload as varint and the SlotArrEntrySize
+var maxRequiredSize = maxPayloadSize + pointerSize + binary.MaxVarintLen16 + SlotArrEntrySize
 
 var _ Node = &VarKeyLeafNode{}
 
@@ -38,9 +38,9 @@ func (n *VarKeyLeafNode) SetHeader(h *PersistentNodeHeader) {
 	arr := make([]byte, PersistentNodeHeaderSize)
 	WritePersistentNodeHeader(h, arr)
 	if (n.p.GetHeader().SlotArrSize) == 0 {
-		n.p.InsertAt(0, arr)
+		CheckErr(n.p.InsertAt(0, arr))
 	} else {
-		n.p.SetAt(0, arr)
+		CheckErr(n.p.SetAt(0, arr))
 	}
 }
 
@@ -53,7 +53,7 @@ func (n *VarKeyLeafNode) GetRight() Pointer {
 }
 
 func (n *VarKeyLeafNode) GetKeyAt(idx int) common.Key {
-	b := getAt(n.pager, &n.p,idx + 1)
+	b := getAt(n.pager, &n.p, idx+1)
 	keySize, nn := binary.Uvarint(b)
 
 	key, err := n.keySerializer.Deserialize(b[nn : nn+int(keySize)])
@@ -74,7 +74,7 @@ func (n *VarKeyLeafNode) InsertAt(index int, key common.Key, val interface{}) {
 	copy(buf[nn:], keyb)
 	copy(buf[nn+len(keyb):], valb)
 
-	insertAt(n.pager, &n.p,index+1, buf[:len(valb)+len(keyb)+nn])
+	insertAt(n.pager, &n.p, index+1, buf[:len(valb)+len(keyb)+nn])
 
 	h := n.GetHeader()
 	h.KeyLen++
@@ -82,7 +82,7 @@ func (n *VarKeyLeafNode) InsertAt(index int, key common.Key, val interface{}) {
 }
 
 func (n *VarKeyLeafNode) DeleteAt(index int) {
-	n.p.DeleteAt(index + 1)
+	CheckErr(n.p.DeleteAt(index + 1))
 	n.p.Vacuum()
 	h := n.GetHeader()
 	h.KeyLen--
@@ -90,7 +90,7 @@ func (n *VarKeyLeafNode) DeleteAt(index int) {
 }
 
 func (n *VarKeyLeafNode) GetValueAt(idx int) interface{} {
-	b := getAt(n.pager, &n.p,idx + 1)
+	b := getAt(n.pager, &n.p, idx+1)
 	keySize, nn := binary.Uvarint(b)
 
 	val, err := n.valSerializer.Deserialize(b[nn+int(keySize):])
@@ -100,7 +100,7 @@ func (n *VarKeyLeafNode) GetValueAt(idx int) interface{} {
 }
 
 func (n *VarKeyLeafNode) setKeyAt(idx int, key common.Key) {
-	b := getAt(n.pager, &n.p,idx + 1)
+	b := getAt(n.pager, &n.p, idx+1)
 	keySize, nn := binary.Uvarint(b)
 
 	valb := b[nn+int(keySize):]
@@ -113,11 +113,11 @@ func (n *VarKeyLeafNode) setKeyAt(idx int, key common.Key) {
 	copy(buf[nn:], newKb)
 	copy(buf[nn+len(newKb):], valb)
 
-	setAt(n.pager, &n.p,idx+1, b, buf[:len(newKb)+len(valb)+nn])
+	setAt(n.pager, &n.p, idx+1, b, buf[:len(newKb)+len(valb)+nn])
 }
 
 func (n *VarKeyLeafNode) setValueAt(idx int, val interface{}) {
-	b := getAt(n.pager, &n.p,idx + 1)
+	b := getAt(n.pager, &n.p, idx+1)
 	keySize, nn := binary.Uvarint(b)
 
 	keyb := b[nn : nn+int(keySize)]
@@ -130,11 +130,11 @@ func (n *VarKeyLeafNode) setValueAt(idx int, val interface{}) {
 	copy(buf[nn:], keyb)
 	copy(buf[nn+len(keyb):], newValb)
 
-	setAt(n.pager, &n.p,idx+1, b, buf[:len(keyb)+len(newValb)+nn])
+	setAt(n.pager, &n.p, idx+1, b, buf[:len(keyb)+len(newValb)+nn])
 }
 
 func (n *VarKeyLeafNode) GetValues() []interface{} {
-	keylen := n.Keylen()
+	keylen := n.KeyLen()
 	vals := make([]interface{}, keylen)
 	for i := 0; i < keylen; i++ {
 		v := n.GetValueAt(i)
@@ -144,7 +144,7 @@ func (n *VarKeyLeafNode) GetValues() []interface{} {
 }
 
 // IsOverFlow returns true when either key length size is equal to degree or empty space in underlying page
-// is less than maxRequiredSize. Because then it is not possible to be sure that next key will not throw an
+// is less than maxRequiredSize. Because then it is not possible to be sure that next key will not throw a
 // not enough space error. (This implementation might change later)
 func (n *VarKeyLeafNode) IsOverFlow(degree int) bool {
 	// return n.p.GetFreeSpaceIdeal() < (maxPayloadSize + pointerSize + maxvarint(for slot entry))
@@ -157,13 +157,13 @@ func (n *VarKeyLeafNode) IsSafeForMerge(degree int) bool {
 	// return n.p.FilledSize() - (maxPayloadSize + pointerSize) >= (n.p.Cap() / 2)
 	fit := n.p.Cap() / maxRequiredSize
 	threshold := fit / 4
-	return n.Keylen() > threshold
+	return n.KeyLen() > threshold
 }
 
 func (n *VarKeyLeafNode) IsSafeForSplit(degree int) bool {
 	// return n.p.GetFreeSpaceIdeal() - (maxPayloadSize + pointerSize + maxvarint(for slot entry)) >= (maxPayloadSize + pointerSize + maxvarint(for slot entry))
 	h := n.GetHeader()
-	return int(h.KeyLen) < degree-1 && n.p.EmptySpace() - (maxRequiredSize) >= (maxRequiredSize)
+	return int(h.KeyLen) < degree-1 && n.p.EmptySpace()-(maxRequiredSize) >= (maxRequiredSize)
 }
 
 // IsUnderFlow returns true when key length is less than 1/4 of total keys that could fit with maxPayloadSize.
@@ -174,16 +174,16 @@ func (n *VarKeyLeafNode) IsUnderFlow(degree int) bool {
 	// return n.p.FilledSize() < (n.p.Cap() / 2)
 	fit := n.p.Cap() / maxRequiredSize
 	threshold := fit / 4
-	return n.Keylen() < threshold
+	return n.KeyLen() < threshold
 }
 
-func (n *VarKeyLeafNode) Keylen() int {
+func (n *VarKeyLeafNode) KeyLen() int {
 	return int(n.GetHeader().KeyLen)
 }
 
 func (n *VarKeyLeafNode) PrintNode() {
 	fmt.Printf("LeafNode( ")
-	for i := 0; i < int(n.Keylen()); i++ {
+	for i := 0; i < n.KeyLen(); i++ {
 		fmt.Printf("%v | ", n.GetKeyAt(i))
 	}
 	fmt.Printf(")\n")
@@ -226,9 +226,11 @@ func (n *VarKeyInternalNode) SetHeader(h *PersistentNodeHeader) {
 	arr := make([]byte, PersistentNodeHeaderSize)
 	WritePersistentNodeHeader(h, arr)
 	if (n.p.GetHeader().SlotArrSize) == 0 {
-		n.p.InsertAt(0, arr)
+		// set header operation cannot return error because there must be space for header all the time
+		// hence panicking here makes sense since it means underlying code is not correct.
+		CheckErr(n.p.InsertAt(0, arr))
 	} else {
-		n.p.SetAt(0, arr)
+		CheckErr(n.p.SetAt(0, arr))
 	}
 }
 
@@ -250,7 +252,7 @@ func (n *VarKeyInternalNode) InsertAt(index int, key common.Key, val interface{}
 	copy(buf[nn:], keyb)
 	val.(Pointer).Serialize(buf[nn+len(keyb):])
 
-	insertAt(n.pager, &n.p,index+2, buf[:pointerSize+len(keyb)+nn])
+	insertAt(n.pager, &n.p, index+2, buf[:pointerSize+len(keyb)+nn])
 
 	h := n.GetHeader()
 	h.KeyLen++
@@ -258,7 +260,7 @@ func (n *VarKeyInternalNode) InsertAt(index int, key common.Key, val interface{}
 }
 
 func (n *VarKeyInternalNode) DeleteAt(index int) {
-	n.p.DeleteAt(index + 2)
+	CheckErr(n.p.DeleteAt(index + 2))
 	n.p.Vacuum()
 	h := n.GetHeader()
 	h.KeyLen--
@@ -267,19 +269,19 @@ func (n *VarKeyInternalNode) DeleteAt(index int) {
 
 func (n *VarKeyInternalNode) GetValueAt(idx int) interface{} {
 	if idx == 0 {
-		b := getAt(n.pager, &n.p,1)
+		b := getAt(n.pager, &n.p, 1)
 		p := binary.BigEndian.Uint64(b)
 		return Pointer(p)
 	}
 
-	b := getAt(n.pager, &n.p,idx + 1)
+	b := getAt(n.pager, &n.p, idx+1)
 	keySize, nn := binary.Uvarint(b)
 
 	return DeserializePointer(b[nn+int(keySize):])
 }
 
 func (n *VarKeyInternalNode) GetKeyAt(idx int) common.Key {
-	b := getAt(n.pager, &n.p,idx + 2)
+	b := getAt(n.pager, &n.p, idx+2)
 	keySize, nn := binary.Uvarint(b)
 
 	key, err := n.keySerializer.Deserialize(b[nn : nn+int(keySize)])
@@ -289,7 +291,7 @@ func (n *VarKeyInternalNode) GetKeyAt(idx int) common.Key {
 }
 
 func (n *VarKeyInternalNode) setKeyAt(idx int, key common.Key) {
-	b := getAt(n.pager, &n.p,idx + 2)
+	b := getAt(n.pager, &n.p, idx+2)
 	keySize, nn := binary.Uvarint(b)
 
 	valb := b[nn+int(keySize):]
@@ -302,17 +304,17 @@ func (n *VarKeyInternalNode) setKeyAt(idx int, key common.Key) {
 	copy(buf[nn:], newKb)
 	copy(buf[nn+len(newKb):], valb)
 
-	setAt(n.pager, &n.p,idx+2, b, buf[:len(newKb)+len(valb)+nn])
+	setAt(n.pager, &n.p, idx+2, b, buf[:len(newKb)+len(valb)+nn])
 }
 
 func (n *VarKeyInternalNode) setValueAt(idx int, val interface{}) {
 	valb := val.(Pointer).Bytes()
 	if idx == 0 {
-		setAt(n.pager, &n.p,1, getAt(n.pager, &n.p,0), valb)
+		setAt(n.pager, &n.p, 1, getAt(n.pager, &n.p, 0), valb)
 		return
 	}
 
-	b := getAt(n.pager, &n.p,idx + 1)
+	b := getAt(n.pager, &n.p, idx+1)
 	keySize, nn := binary.Uvarint(b)
 	keyb := b[nn : nn+int(keySize)]
 
@@ -321,11 +323,11 @@ func (n *VarKeyInternalNode) setValueAt(idx int, val interface{}) {
 	copy(buf[nn:], keyb)
 	copy(buf[nn+len(keyb):], valb)
 
-	setAt(n.pager, &n.p,idx+1, b, buf[:len(keyb)+len(valb)+nn])
+	setAt(n.pager, &n.p, idx+1, b, buf[:len(keyb)+len(valb)+nn])
 }
 
 func (n *VarKeyInternalNode) GetValues() []interface{} {
-	keylen := n.Keylen()
+	keylen := n.KeyLen()
 	vals := make([]interface{}, keylen+1)
 	for i := 0; i < keylen+1; i++ {
 		v := n.GetValueAt(i)
@@ -344,29 +346,29 @@ func (n *VarKeyInternalNode) IsSafeForMerge(degree int) bool {
 	// return n.p.FilledSize() - (maxPayloadSize + pointerSize) >= (n.p.Cap() / 2)
 	fit := n.p.Cap() / maxRequiredSize
 	threshold := fit / 4
-	return n.Keylen() > threshold
+	return n.KeyLen() > threshold
 }
 
 func (n *VarKeyInternalNode) IsSafeForSplit(degree int) bool {
 	// return n.p.FilledSize() > ((n.p.Cap() / 2) + maxPayloadSize + pointerSize)
 	h := n.GetHeader()
-	return int(h.KeyLen) < degree-1 && n.p.EmptySpace() - (maxRequiredSize) >= (maxRequiredSize)
+	return int(h.KeyLen) < degree-1 && n.p.EmptySpace()-(maxRequiredSize) >= (maxRequiredSize)
 }
 
 func (n *VarKeyInternalNode) IsUnderFlow(degree int) bool {
 	// return n.p.FilledSize() < (n.p.Cap() / 2)
 	fit := n.p.Cap() / maxRequiredSize
 	threshold := fit / 4
-	return n.Keylen() < threshold
+	return n.KeyLen() < threshold
 }
 
-func (n *VarKeyInternalNode) Keylen() int {
+func (n *VarKeyInternalNode) KeyLen() int {
 	return int(n.GetHeader().KeyLen)
 }
 
 func (n *VarKeyInternalNode) PrintNode() {
 	fmt.Printf("Node( ")
-	for i := 0; i < n.Keylen(); i++ {
+	for i := 0; i < n.KeyLen(); i++ {
 		fmt.Printf("%v | ", n.GetKeyAt(i))
 	}
 	fmt.Printf(")    ")
@@ -402,7 +404,7 @@ func setAt(pager Pager, p *SlottedPage, idx int, old, data []byte) {
 		overflowPage := pager.CreatePage()
 		defer pager.UnpinByPointer(overflowPage.GetPageId(), true)
 
-		newData := make([]byte, len(init) + pointerSize)
+		newData := make([]byte, len(init)+pointerSize)
 		nc := copy(newData, init)
 		overflowPage.GetPageId().Serialize(newData[nc:])
 
@@ -428,7 +430,7 @@ func insertAt(pager Pager, p *SlottedPage, idx int, data []byte) {
 		overflowPage := pager.CreatePage()
 		defer pager.UnpinByPointer(overflowPage.GetPageId(), true)
 
-		newData := make([]byte, len(init) + pointerSize)
+		newData := make([]byte, len(init)+pointerSize)
 		nc := copy(newData, init)
 		overflowPage.GetPageId().Serialize(newData[nc:])
 

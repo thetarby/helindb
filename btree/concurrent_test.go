@@ -57,15 +57,33 @@ func TestConcurrent_Inserts(t *testing.T) {
 
 func TestConcurrent_Inserts2(t *testing.T) {
 	id, _ := uuid.NewUUID()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 	dbName := id.String()
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(50, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
-	n, chunkSize := 100000, 25000 // there will be n/chunkSize parallel routines
+	n, chunkSize := 100000, 10000 // there will be n/chunkSize parallel routines
 	inserted := rand.Perm(n)
 	wg := &sync.WaitGroup{}
 	for _, chunk := range common.ChunksInt(inserted, chunkSize) {

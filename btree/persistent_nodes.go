@@ -72,7 +72,7 @@ func (p *PersistentLeafNode) FindKey(key common.Key) (index int, found bool) {
 	i := sort.Search(int(h.KeyLen), func(i int) bool {
 		return key.Less(p.GetKeyAt(i))
 	})
-	
+
 	if i > 0 && !p.GetKeyAt(i-1).Less(key) {
 		return i - 1, true
 	}
@@ -179,7 +179,7 @@ func (p *PersistentLeafNode) DeleteAt(index int) {
 	p.shiftKeyValueToLeftAt(index + 1) // TODO: handle overflow. overlflow pages maybe?
 }
 
-func (p *PersistentLeafNode) Keylen() int {
+func (p *PersistentLeafNode) KeyLen() int {
 	h := ReadPersistentNodeHeader(p.GetData())
 	return int(h.KeyLen)
 }
@@ -191,7 +191,7 @@ func (p *PersistentLeafNode) GetRight() Pointer {
 
 func (p *PersistentLeafNode) IsUnderFlow(degree int) bool {
 	//return len(n.Values) < (degree)/2
-	return (p.Keylen()) < degree/2 // keylen + 1 is the values length
+	return (p.KeyLen()) < degree/2 // keylen + 1 is the values length
 }
 
 func (p *PersistentLeafNode) GetHeader() *PersistentNodeHeader {
@@ -203,13 +203,13 @@ func (p *PersistentLeafNode) SetHeader(h *PersistentNodeHeader) {
 	WritePersistentNodeHeader(h, p.GetData())
 }
 
-func (n *PersistentLeafNode) IsSafeForSplit(degree int) bool {
-	h := ReadPersistentNodeHeader(n.GetData())
+func (p *PersistentLeafNode) IsSafeForSplit(degree int) bool {
+	h := ReadPersistentNodeHeader(p.GetData())
 	return int(h.KeyLen) < degree-1
 }
 
-func (n *PersistentLeafNode) IsSafeForMerge(degree int) bool {
-	h := ReadPersistentNodeHeader(n.GetData())
+func (p *PersistentLeafNode) IsSafeForMerge(degree int) bool {
+	h := ReadPersistentNodeHeader(p.GetData())
 	return int(h.KeyLen) > (degree+1)/2
 }
 
@@ -364,7 +364,7 @@ func (p *PersistentInternalNode) DeleteAt(index int) {
 	p.shiftKeyValueToLeftAt(index + 1)
 }
 
-func (p *PersistentInternalNode) Keylen() int {
+func (p *PersistentInternalNode) KeyLen() int {
 	h := ReadPersistentNodeHeader(p.GetData())
 	return int(h.KeyLen)
 }
@@ -374,7 +374,7 @@ func (p *PersistentInternalNode) GetRight() Pointer {
 }
 
 func (p *PersistentInternalNode) IsUnderFlow(degree int) bool {
-	return p.Keylen() < degree/2
+	return p.KeyLen() < degree/2
 }
 
 func (p *PersistentInternalNode) GetHeader() *PersistentNodeHeader {
@@ -386,12 +386,12 @@ func (p *PersistentInternalNode) SetHeader(h *PersistentNodeHeader) {
 	WritePersistentNodeHeader(h, p.GetData())
 }
 
-func (n *PersistentInternalNode) IsSafeForMerge(degree int) bool {
-	h := ReadPersistentNodeHeader(n.GetData())
+func (p *PersistentInternalNode) IsSafeForMerge(degree int) bool {
+	h := ReadPersistentNodeHeader(p.GetData())
 	return int(h.KeyLen) > (degree+1)/2
 }
 
-func (n *PersistentInternalNode) IsSafeForSplit(degree int) bool {
-	h := ReadPersistentNodeHeader(n.GetData())
+func (p *PersistentInternalNode) IsSafeForSplit(degree int) bool {
+	h := ReadPersistentNodeHeader(p.GetData())
 	return int(h.KeyLen) < degree-1
 }

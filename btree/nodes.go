@@ -7,17 +7,17 @@ import (
 
 type Pointer uint64
 
-func (p Pointer) Serialize(dest []byte){
+func (p Pointer) Serialize(dest []byte) {
 	binary.BigEndian.PutUint64(dest, uint64(p))
 }
 
-func (p Pointer) Bytes() []byte{
+func (p Pointer) Bytes() []byte {
 	res := make([]byte, 8)
 	binary.BigEndian.PutUint64(res, uint64(p))
 	return res
 }
 
-func DeserializePointer(dest []byte) Pointer{
+func DeserializePointer(dest []byte) Pointer {
 	return Pointer(binary.BigEndian.Uint64(dest))
 }
 
@@ -59,7 +59,7 @@ type Node interface {
 	// one key is deleted
 	IsSafeForMerge(degree int) bool
 
-	Keylen() int
+	KeyLen() int
 	GetRight() Pointer
 	IsUnderFlow(degree int) bool
 
