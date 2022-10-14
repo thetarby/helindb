@@ -10,6 +10,6 @@ func (key MyInt) Less(than common.Key) bool {
 
 func CheckErr(err error) {
 	if err != nil {
-		panic(err.Error())
+		panic(err)
 	}
 }

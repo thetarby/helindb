@@ -245,7 +245,9 @@ func (b *BufferPool) NewPage() (page *pages.RawPage, err error) {
 	victimPageId := victim.GetPageId()
 	if victim.IsDirty() {
 		data := victim.GetData()
-		b.DiskManager.WritePage(data, victimPageId)
+		if err := b.DiskManager.WritePage(data, victimPageId); err != nil {
+			return nil, err
+		}
 	}
 
 	p := pages.NewRawPage(newPageId)

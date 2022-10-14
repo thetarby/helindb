@@ -6,7 +6,7 @@ import (
 	"sort"
 )
 
-var ErrNotEnoughSpace error = errors.New("not enough space")
+var ErrNotEnoughSpace = errors.New("not enough space")
 
 type SlottedPage struct {
 	NodePage
@@ -22,8 +22,8 @@ type SLotArrEntry struct {
 	Offset uint16
 }
 
-var HEADER_SIZE = binary.Size(SlottedPageHeader{})
-var SLOT_ARR_ENTRY_SIZE = binary.Size(SLotArrEntry{})
+var HeaderSize = binary.Size(SlottedPageHeader{})
+var SlotArrEntrySize = binary.Size(SLotArrEntry{})
 
 func (sp *SlottedPage) GetPageId() Pointer {
 	return sp.NodePage.GetPageId()
@@ -37,7 +37,7 @@ func (sp *SlottedPage) Cap() int {
 // UsedSize returns number of used bytes including slot entries and payload. Fragmented bytes are considered empty.
 func (sp *SlottedPage) UsedSize() int {
 	h := sp.GetHeader()
-	return sp.Cap() - int(h.FreeSpacePointer) - int(h.EmptyBytes) + (int(h.SlotArrSize) * SLOT_ARR_ENTRY_SIZE)
+	return sp.Cap() - int(h.FreeSpacePointer) - int(h.EmptyBytes) + (int(h.SlotArrSize) * SlotArrEntrySize)
 }
 
 // PayloadSize returns number of bytes used to store payloads. Fragmented bytes are not included.
@@ -62,7 +62,7 @@ func (sp *SlottedPage) FillFactor() float32 {
 // hence this actually returns number of bytes between slots and payloads when page is vacuumed.
 func (sp *SlottedPage) EmptySpace() int {
 	h := sp.GetHeader()
-	return int(h.FreeSpacePointer) + int(h.EmptyBytes) - (int(h.SlotArrSize)*SLOT_ARR_ENTRY_SIZE + HEADER_SIZE)
+	return int(h.FreeSpacePointer) + int(h.EmptyBytes) - (int(h.SlotArrSize)*SlotArrEntrySize + HeaderSize)
 }
 
 func (sp *SlottedPage) GetHeader() SlottedPageHeader {
@@ -83,7 +83,7 @@ func (sp *SlottedPage) SetHeader(h SlottedPageHeader) {
 
 func (sp *SlottedPage) GetFreeSpace() int {
 	h := sp.GetHeader()
-	startingOffset := HEADER_SIZE + (int(h.SlotArrSize) * SLOT_ARR_ENTRY_SIZE)
+	startingOffset := HeaderSize + (int(h.SlotArrSize) * SlotArrEntrySize)
 	return int(h.FreeSpacePointer) - startingOffset
 }
 
@@ -186,8 +186,8 @@ func (sp *SlottedPage) Vacuum() {
 		valSize, n := binary.Uvarint(d[e.Offset:])
 		size := int(valSize) + n
 
-		shiftSize := newFreeSpace - (int(e.Offset) + int(size))
-		newFreeSpace -= int(size)
+		shiftSize := newFreeSpace - (int(e.Offset) + size)
+		newFreeSpace -= size
 
 		copy(d[int(e.Offset)+shiftSize:], d[e.Offset:e.Offset+uint16(size)])
 		arr[v].Offset = uint16(newFreeSpace)
@@ -206,7 +206,7 @@ func (sp *SlottedPage) insertAt(idx int, data []byte) error {
 	temp := make([]byte, 4)
 	n := binary.PutUvarint(temp, uint64(len(data)))
 	h.FreeSpacePointer -= uint16(len(data) + n)
-	if h.FreeSpacePointer <= uint16(HEADER_SIZE)+(h.SlotArrSize+1)*uint16(SLOT_ARR_ENTRY_SIZE) {
+	if h.FreeSpacePointer <= uint16(HeaderSize)+(h.SlotArrSize+1)*uint16(SlotArrEntrySize) {
 		return ErrNotEnoughSpace
 	}
 
@@ -238,7 +238,7 @@ func (sp *SlottedPage) insertAt(idx int, data []byte) error {
 
 func (sp *SlottedPage) getSlotArr() []SLotArrEntry {
 	h := sp.GetHeader()
-	buf := sp.GetData()[HEADER_SIZE:]
+	buf := sp.GetData()[HeaderSize:]
 	arr := make([]SLotArrEntry, 0)
 	for n := 0; n < int(h.SlotArrSize); n++ {
 		e := SLotArrEntry{}
@@ -251,8 +251,8 @@ func (sp *SlottedPage) getSlotArr() []SLotArrEntry {
 }
 
 func (sp *SlottedPage) getSlotArrAt(idx int) SLotArrEntry {
-	arr := sp.GetData()[HEADER_SIZE:]
-	offset := binary.BigEndian.Uint16(arr[idx*SLOT_ARR_ENTRY_SIZE:])
+	arr := sp.GetData()[HeaderSize:]
+	offset := binary.BigEndian.Uint16(arr[idx*SlotArrEntrySize:])
 
 	return SLotArrEntry{
 		Offset: offset,
@@ -261,13 +261,13 @@ func (sp *SlottedPage) getSlotArrAt(idx int) SLotArrEntry {
 
 func (sp *SlottedPage) setSlotArr(arr []SLotArrEntry) {
 	// OPTIMIZATION: do not serialize whole array each time
-	buf := sp.GetData()[HEADER_SIZE:]
+	buf := sp.GetData()[HeaderSize:]
 	n := 0
 	for _, e := range arr {
 		binary.BigEndian.PutUint16(buf[n:], e.Offset)
 		n += 2 // size of uint16
 	}
-	if n+HEADER_SIZE > int(sp.GetHeader().FreeSpacePointer) {
+	if n+HeaderSize > int(sp.GetHeader().FreeSpacePointer) {
 		panic("") // TODO: check these
 	}
 }
