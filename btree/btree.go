@@ -549,7 +549,7 @@ func (tree *BTree) redistributeInternalNodes(p, rightNode, parent Node) {
 
 	leftNodeKeyLen := p.KeyLen()
 	for i := numKeysAtLeft; i < leftNodeKeyLen; i++ {
-		p.DeleteAt(i)
+		p.DeleteAt(numKeysAtLeft)
 	}
 }
 
@@ -607,7 +607,7 @@ func (tree *BTree) splitInternalNode(p Node, idx int) (right Pointer, keyAtLeft 
 	// delete from left node
 	keylen := p.KeyLen()
 	for i := idx; i < keylen; i++ {
-		p.DeleteAt(i)
+		p.DeleteAt(idx)
 	}
 
 	return rightNode.GetPageId(), keyAtLeft, keyAtRight
@@ -628,7 +628,7 @@ func (tree *BTree) splitLeafNode(p Node, idx int) (right Pointer, keyAtLeft comm
 	// delete from left node
 	keylen := p.KeyLen()
 	for i := idx; i < keylen; i++ {
-		p.DeleteAt(i)
+		p.DeleteAt(idx)
 	}
 
 	leftHeader, rightHeader := p.GetHeader(), rightNode.GetHeader()

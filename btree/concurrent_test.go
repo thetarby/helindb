@@ -57,29 +57,11 @@ func TestConcurrent_Inserts(t *testing.T) {
 
 func TestConcurrent_Inserts2(t *testing.T) {
 	id, _ := uuid.NewUUID()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	dbName := id.String()
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(50, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
 	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
@@ -100,7 +82,6 @@ func TestConcurrent_Inserts2(t *testing.T) {
 	}
 	wg.Wait()
 	println(tree.Height())
-
 }
 
 func TestConcurrent_Deletes(t *testing.T) {
