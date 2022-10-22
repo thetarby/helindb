@@ -275,6 +275,6 @@ func NewBufferPool(dbFile string, poolSize int) *BufferPool {
 		emptyFrames: emptyFrames,
 		DiskManager: d,
 		lock:        sync.Mutex{},
-		Replacer:    NewLruReplacer(poolSize),
+		Replacer:    NewClockReplacer(poolSize),
 	}
 }
