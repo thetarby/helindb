@@ -535,7 +535,7 @@ func (tree *BTree) redistributeInternalNodes(p, rightNode, parent Node) {
 
 	rightNodeKeyLen := rightNode.KeyLen()
 	for i := 0; i < rightNodeKeyLen; i++ {
-		rightNode.DeleteAt(i)
+		rightNode.DeleteAt(0)
 	}
 
 	rightNode.setValueAt(0, p.GetValueAt(numKeysAtLeft+1))
