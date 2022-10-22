@@ -15,22 +15,14 @@ type KeySerializer interface {
 type PersistentKeySerializer struct{}
 
 func (p *PersistentKeySerializer) Serialize(key common.Key) ([]byte, error) {
-	buf := bytes.Buffer{}
-	err := binary.Write(&buf, binary.BigEndian, key.(PersistentKey))
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
+	b := make([]byte, 8, 8)
+	binary.BigEndian.PutUint64(b, uint64(key.(PersistentKey)))
+
+	return b, nil
 }
 
 func (p *PersistentKeySerializer) Deserialize(data []byte) (common.Key, error) {
-	reader := bytes.NewReader(data)
-	var key PersistentKey
-	err := binary.Read(reader, binary.BigEndian, &key)
-	if err != nil {
-		return nil, err
-	}
-	return key, nil
+	return PersistentKey(binary.BigEndian.Uint64(data)), nil
 }
 
 func (p *PersistentKeySerializer) Size() int {
@@ -76,7 +68,7 @@ func (s *StringValueSerializer) Serialize(val interface{}) ([]byte, error) {
 	if s.Len < 0 {
 		return []byte(val.(string)), nil
 	}
-	
+
 	buf := bytes.Buffer{}
 	err := binary.Write(&buf, binary.BigEndian, ([]byte)(val.(string)))
 	if err != nil {

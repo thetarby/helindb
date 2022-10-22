@@ -19,7 +19,7 @@ func (it *TreeIterator) Next() (common.Key, interface{}) {
 	h := it.currNode.GetHeader()
 
 	// if there is no element left in node proceed to next node
-	if h.KeyLen == int16(it.currIdx) {
+	if h.KeyLen == uint16(it.currIdx) {
 		it.pager.Unpin(it.currNode, false)
 		it.currNode.RUnLatch()
 		if h.Right == 0 {
@@ -38,7 +38,7 @@ func (it *TreeIterator) Next() (common.Key, interface{}) {
 }
 
 func (it *TreeIterator) Close() error {
-	if !it.closed{
+	if !it.closed {
 		it.pager.Unpin(it.currNode, false)
 		it.currNode.RUnLatch()
 	}
@@ -68,7 +68,7 @@ func NewTreeIteratorWithKey(txn concurrency.Transaction, key common.Key, tree *B
 	_, stack := tree.FindAndGetStack(key, Read)
 	leaf, idx := stack[len(stack)-1].Node, stack[len(stack)-1].Index
 	tree.unpinAll(stack[:len(stack)-1])
-	
+
 	return &TreeIterator{
 		txn:      txn,
 		tree:     tree,

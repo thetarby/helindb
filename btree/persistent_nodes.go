@@ -37,8 +37,8 @@ const (
 )
 
 type PersistentNodeHeader struct {
-	IsLeaf int8
-	KeyLen int16
+	IsLeaf uint8
+	KeyLen uint16
 	Right  Pointer
 	Left   Pointer
 }
@@ -53,17 +53,21 @@ type PersistentLeafNode struct {
 }
 
 func ReadPersistentNodeHeader(data []byte) *PersistentNodeHeader {
-	reader := bytes.NewReader(data)
-	dest := PersistentNodeHeader{}
-	binary.Read(reader, binary.BigEndian, &dest)
+	dest := PersistentNodeHeader{
+		IsLeaf: data[0],
+		KeyLen: binary.BigEndian.Uint16(data[1:]),
+		Right:  Pointer(binary.BigEndian.Uint64(data[3:])),
+		Left:   Pointer(binary.BigEndian.Uint64(data[11:])),
+	}
+
 	return &dest
 }
 
 func WritePersistentNodeHeader(header *PersistentNodeHeader, dest []byte) {
-	buf := bytes.Buffer{}
-	err := binary.Write(&buf, binary.BigEndian, header)
-	CheckErr(err)
-	copy(dest, buf.Bytes())
+	dest[0] = header.IsLeaf
+	binary.BigEndian.PutUint16(dest[1:], header.KeyLen)
+	binary.BigEndian.PutUint64(dest[3:], uint64(header.Right))
+	binary.BigEndian.PutUint64(dest[11:], uint64(header.Left))
 }
 
 func (p *PersistentLeafNode) FindKey(key common.Key) (index int, found bool) {
@@ -151,7 +155,7 @@ func (p *PersistentLeafNode) PrintNode() {
 
 func (p *PersistentLeafNode) IsOverFlow(degree int) bool {
 	h := ReadPersistentNodeHeader(p.GetData())
-	return h.KeyLen == int16(degree)
+	return h.KeyLen == uint16(degree)
 }
 
 func (p *PersistentLeafNode) InsertAt(index int, key common.Key, val interface{}) {
