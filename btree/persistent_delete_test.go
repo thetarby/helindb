@@ -84,7 +84,7 @@ func TestPersistentPin_Count_Should_Be_Zero_After_Deletes_Succeeds(t *testing.T)
 			PageId:  int64(i),
 			SlotIdx: int16(i),
 		})
-		if pool.Replacer.NumPinnedPages()>0{
+		if pool.Replacer.NumPinnedPages() > 0 {
 			t.Error("# of pinned pages is not 0")
 		}
 	}
@@ -93,7 +93,7 @@ func TestPersistentPin_Count_Should_Be_Zero_After_Deletes_Succeeds(t *testing.T)
 
 	for i := 0; i < n; i++ {
 		tree.Delete(PersistentKey(i))
-		if pool.Replacer.NumPinnedPages()>0{
+		if pool.Replacer.NumPinnedPages() > 0 {
 			t.Errorf("# of pinned pages is not 0, it is :%v", pool.Replacer.NumPinnedPages())
 		}
 	}

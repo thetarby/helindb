@@ -96,7 +96,7 @@ func TestPersistentEvery_Inserted_Should_Be_Found_VarSized(t *testing.T) {
 		key, val := fmt.Sprintf("sa_%v", i), fmt.Sprintf("as_%v", i)
 		tree.Insert(StringKey(key), val)
 	}
-	
+
 	for i := 0; i < n; i++ {
 		val := tree.Find(StringKey(fmt.Sprintf("sa_%v", i)))
 

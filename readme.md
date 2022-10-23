@@ -41,4 +41,4 @@ pool but each buffer pool can have different size)
 
 - [ ] WAL implementation 
 
-- [ ] Clock replacer implementation for buffer pool
+- [x] Clock replacer implementation for buffer pool

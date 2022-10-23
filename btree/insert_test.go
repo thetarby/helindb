@@ -103,7 +103,7 @@ func TestInsert_Internals(t *testing.T) {
 	tree.Insert(PersistentKey(2), "2")
 	val, stack = tree.FindAndGetStack(PersistentKey(2), Read)
 	tree.runlatch(stack)
-	
+
 	assert.Len(t, stack, 2)
 	assert.Equal(t, padStr("2"), val.(string))
 
