@@ -5,9 +5,13 @@ import (
 	"sync"
 )
 
+const (
+	PinnedBit       uint8 = 1 << 7
+	SecondChanceBit uint8 = 1 << 6
+)
+
 type counter struct {
-	pinned  bool
-	counter uint8
+	bits uint8
 }
 
 var _ IReplacer = &ClockReplacer{}
@@ -15,20 +19,26 @@ var _ IReplacer = &ClockReplacer{}
 type ClockReplacer struct {
 	frames         []counter
 	victimIterator int
-	lock           sync.Mutex
+	lock           sync.Mutex // TODO: is this needed? access to buffer pool is already synchronized right now.
 }
 
 func (c *ClockReplacer) Pin(frameId int) {
-	c.frames[frameId].pinned = true
-	c.frames[frameId].counter = 1
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	c.frames[frameId].bits |= PinnedBit
+	c.frames[frameId].bits |= SecondChanceBit
 }
 
 func (c *ClockReplacer) Unpin(frameId int) {
-	if !c.frames[frameId].pinned {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	if (c.frames[frameId].bits & PinnedBit) == 0 {
 		panic("unpinning a page which is already unpinned or not pinned at all")
 	}
 
-	c.frames[frameId].pinned = false
+	c.frames[frameId].bits &= ^PinnedBit
 }
 
 func (c *ClockReplacer) ChooseVictim() (frameId int, err error) {
@@ -39,10 +49,10 @@ func (c *ClockReplacer) ChooseVictim() (frameId int, err error) {
 	pass := 0
 	for {
 		f := c.frames[c.victimIterator]
-		if !f.pinned {
-			if f.counter == 1 {
-				c.frames[c.victimIterator].counter = 0
-			} else if f.counter == 0 {
+		if f.bits&PinnedBit == 0 {
+			if f.bits&SecondChanceBit > 0 {
+				c.frames[c.victimIterator].bits &= ^SecondChanceBit
+			} else if f.bits&SecondChanceBit == 0 {
 				victim := c.victimIterator
 				c.victimIterator = (c.victimIterator + 1) % c.GetSize()
 				return victim, nil
@@ -68,7 +78,7 @@ func (c *ClockReplacer) GetSize() int {
 func (c *ClockReplacer) NumPinnedPages() int {
 	i := 0
 	for _, frame := range c.frames {
-		if frame.pinned {
+		if frame.bits&PinnedBit > 0 {
 			i++
 		}
 	}

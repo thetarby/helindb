@@ -61,21 +61,18 @@ func TestConcurrent_Inserts2(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(50, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(50, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1}))
 	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
-	n, chunkSize := 100000, 10000 // there will be n/chunkSize parallel routines
+	n, chunkSize := 100000, 15000 // there will be n/chunkSize parallel routines
 	inserted := rand.Perm(n)
 	wg := &sync.WaitGroup{}
 	for _, chunk := range common.ChunksInt(inserted, chunkSize) {
 		wg.Add(1)
 		go func(arr []int) {
 			for _, i := range arr {
-				tree.Insert(PersistentKey(i), SlotPointer{
-					PageId:  int64(i),
-					SlotIdx: int16(i),
-				})
+				tree.Insert(StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("val_%v", i))
 			}
 			wg.Done()
 		}(chunk)
@@ -184,7 +181,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 
 	rand.Seed(42)
 
-	n, chunkSize := 500_000, 500_000
+	n, chunkSize := 500_000, 50_000
 	inserted := rand.Perm(n)
 	for i := 0; i < len(inserted); i++ {
 		inserted[i] += toDeleteN
@@ -214,6 +211,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 	}
 	wg.Wait()
 
+	t.Log("validating")
 	assert.Equal(t, len(inserted), tree.Count())
 
 	// assert they are sorted
