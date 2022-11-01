@@ -181,7 +181,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 
 	rand.Seed(42)
 
-	n, chunkSize := 500_000, 500_000
+	n, chunkSize := 500_000, 50_000
 	inserted := rand.Perm(n)
 	for i := 0; i < len(inserted); i++ {
 		inserted[i] += toDeleteN
@@ -211,6 +211,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 	}
 	wg.Wait()
 
+	t.Log("validating")
 	assert.Equal(t, len(inserted), tree.Count())
 
 	// assert they are sorted

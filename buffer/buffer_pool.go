@@ -41,7 +41,22 @@ type BufferPool struct {
 }
 
 func (b *BufferPool) FreePage(pageId int) error {
-	// TODO: implement this
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
+	if frame, ok := b.pageMap[pageId]; ok {
+		p := b.frames[frame]
+		// this check might not be necessary, maybe assert and panic since this will be an internal call
+		if p.PinCount > 0 {
+			return fmt.Errorf("freeing a pinned page, pin count: %v", p.PinCount)
+		}
+
+		// if page is in a frame, clear it
+		delete(b.pageMap, pageId)
+		b.emptyFrames = append(b.emptyFrames, frame)
+	}
+
+	b.DiskManager.FreePage(pageId)
 	return nil
 }
 
@@ -153,8 +168,8 @@ func (b *BufferPool) Unpin(pageId int, isDirty bool) bool {
 	}
 
 	// if pin count is already 0 it is already unpinned. Although that should not happen I guess
-	if page.GetPinCount() == 0 {
-		panic(fmt.Sprintf("buffer.Unpin is called while pin count is already zero. PageId: %v\n", pageId))
+	if page.GetPinCount() <= 0 {
+		panic(fmt.Sprintf("buffer.Unpin is called while pin count is lte zero. PageId: %v, pin count %v\n", pageId, page.GetPinCount()))
 	}
 
 	// decrease pin count and if it is 0 unpin frame in the replacer so that new pages can be read

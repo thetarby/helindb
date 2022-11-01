@@ -48,6 +48,9 @@ func (p *RawPage) IncrPinCount() {
 
 func (p *RawPage) DecrPinCount() {
 	p.PinCount--
+	if p.PinCount < 0 {
+		panic("negative pin count")
+	}
 }
 
 func (p *RawPage) GetData() []byte { // TODO: it would be really good for debugging if this method can recognize whether buffer pool has replaced

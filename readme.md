@@ -37,8 +37,10 @@ pool but each buffer pool can have different size)
 
 - [ ] Write better random load tests for B+ tree index with concurrent inserts and deletes
 
-- [ ] Buffer pool free page implementation
+- [x] Buffer pool free page implementation
 
 - [ ] WAL implementation 
 
 - [x] Clock replacer implementation for buffer pool
+
+- [ ] Use uint as page id instead of int

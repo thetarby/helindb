@@ -226,11 +226,15 @@ func (tree *BTree) Delete(key common.Key) bool {
 			if rightSibling != nil {
 				tree.mergeNodes(popped, rightSibling, parent)
 				merged = popped
+
 				rightSibling.WUnlatch()
+				tree.pager.Unpin(rightSibling, false)
+				CheckErr(tree.pager.FreeNode(rightSibling))
+
 				// tree.pager.Unpin(parent, true) will be done by deferred unpinAll
 				popped.WUnlatch()
 				tree.pager.Unpin(popped, true)
-				tree.pager.Unpin(rightSibling, true)
+
 				if leftSibling != nil {
 					leftSibling.WUnlatch()
 					tree.pager.Unpin(leftSibling, false)
@@ -247,13 +251,16 @@ func (tree *BTree) Delete(key common.Key) bool {
 					return true
 				}
 				tree.mergeNodes(leftSibling, popped, parent)
-				leftSibling.WUnlatch()
 				merged = leftSibling
+
+				leftSibling.WUnlatch()
+				tree.pager.Unpin(leftSibling, true)
 
 				// tree.pager.Unpin(parent, true) will be done by deferred unpinAll
 				popped.WUnlatch()
 				tree.pager.Unpin(popped, true)
-				tree.pager.Unpin(leftSibling, true)
+				CheckErr(tree.pager.FreeNode(popped))
+
 				if rightSibling != nil {
 					rightSibling.WUnlatch()
 					tree.pager.Unpin(rightSibling, false)
@@ -506,7 +513,6 @@ func (tree *BTree) mergeLeafNodes(p, rightNode, parent Node) {
 }
 
 func (tree *BTree) mergeNodes(p, rightNode, parent Node) {
-	// TODO: this should free right node
 	if p.IsLeaf() {
 		tree.mergeLeafNodes(p, rightNode, parent)
 	} else {
