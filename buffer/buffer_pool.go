@@ -61,14 +61,6 @@ func (b *BufferPool) FreePage(pageId int) error {
 }
 
 func (b *BufferPool) GetPage(pageId int) (*pages.RawPage, error) {
-	// if page is already in a frame pin and return it
-	//val, ok := Accessed[pageId]
-	//if !ok{
-	//	Accessed[pageId]=1
-	//}else{
-	//	Accessed[pageId] = val+1
-	//}
-	//fmt.Println(b.pageMap)
 	b.lock.Lock()
 	defer b.lock.Unlock()
 

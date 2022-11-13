@@ -65,6 +65,14 @@ func (sp *SlottedPage) EmptySpace() int {
 	return int(h.FreeSpacePointer) + int(h.EmptyBytes) - (int(h.SlotArrSize)*SlotArrEntrySize + HeaderSize)
 }
 
+// GetFreeSpace returns the number of bytes between free space pointer and the end of slot array. Hence, giving empty
+// space before vacuuming.
+func (sp *SlottedPage) GetFreeSpace() int {
+	h := sp.GetHeader()
+	startingOffset := HeaderSize + (int(h.SlotArrSize) * SlotArrEntrySize)
+	return int(h.FreeSpacePointer) - startingOffset
+}
+
 func (sp *SlottedPage) GetHeader() SlottedPageHeader {
 	d := sp.GetData()
 	return SlottedPageHeader{
@@ -81,18 +89,8 @@ func (sp *SlottedPage) SetHeader(h SlottedPageHeader) {
 	binary.BigEndian.PutUint16(d[4:], h.EmptyBytes)
 }
 
-func (sp *SlottedPage) GetFreeSpace() int {
-	h := sp.GetHeader()
-	startingOffset := HeaderSize + (int(h.SlotArrSize) * SlotArrEntrySize)
-	return int(h.FreeSpacePointer) - startingOffset
-}
-
 func (sp *SlottedPage) GetAt(idx int) []byte {
 	entry := sp.getSlotArrAt(idx)
-
-	if entry.Offset == 0 || isDeleted(entry) {
-		return nil
-	}
 
 	d := sp.GetData()
 	valSize, n := binary.Uvarint(d[entry.Offset:])
@@ -293,8 +291,4 @@ func CastSlottedPage(p NodePage) SlottedPage {
 	return SlottedPage{
 		NodePage: p,
 	}
-}
-
-func isDeleted(entry SLotArrEntry) bool {
-	return false
 }
