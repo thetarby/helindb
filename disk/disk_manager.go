@@ -32,7 +32,6 @@ type DiskManager struct {
 	file       *os.File
 	filename   string
 	lastPageId int
-	freePages  []int
 	mu         sync.Mutex
 	serializer IHeaderSerializer
 	header     *header
@@ -125,18 +124,16 @@ func (d *DiskManager) WritePages(pages [][]byte, pageIds []int) error {
 
 func (d *DiskManager) ReadPage(pageId int) ([]byte, error) {
 	_, err := d.file.Seek((int64(PageSize))*int64(pageId), io.SeekStart)
-
 	if err != nil {
 		return []byte{}, err
 	}
 
 	var data = make([]byte, PageSize)
-	n, err := d.file.Read(data[:])
 
+	n, err := d.file.Read(data[:])
 	if err != nil {
 		return []byte{}, err
 	}
-
 	if n != PageSize {
 		panic(fmt.Sprintf("Partial page encountered this should not happen. Page id: %d", pageId))
 	}
@@ -158,6 +155,7 @@ func (d *DiskManager) NewPage() (pageId int) {
 	return d.lastPageId
 }
 
+// FreePage appends page with given id to freelist and sets it as tail.
 func (d *DiskManager) FreePage(pageId int) {
 	d.mu.Lock()
 	d.mu.Unlock()
@@ -171,6 +169,8 @@ func (d *DiskManager) FreePage(pageId int) {
 		return
 	}
 
+	// freed page may not be synced to file just yet. in that case ReadPage returns io.EOF and for the consistence of
+	// freelist it needs to be written to disk. Hence, empty bytes are initialized and page is flushed.
 	data, err := d.ReadPage(int(h.freeListTail))
 	if err == io.EOF {
 		data = make([]byte, PageSize, PageSize)
