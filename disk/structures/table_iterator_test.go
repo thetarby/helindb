@@ -21,7 +21,7 @@ func TestTableIterator(t *testing.T) {
 
 	pool := buffer.NewBufferPool(dbName, 32)
 	firstPage, _ := pool.NewPage()
-	pages.FormatAsSlottedPage(firstPage)
+	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
 		FirstPageID: firstPage.GetPageId(),

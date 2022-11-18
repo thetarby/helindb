@@ -28,16 +28,9 @@ import (
  *
  */
 
-type ISlottedPage interface {
-	getSlotArr() []SLotArrEntry
-	getFromSlotArr(idx int) SLotArrEntry
-	setInSlotArr(idx int, val SLotArrEntry)
-	appendSlotArr(val SLotArrEntry)
-	GetHeader() SlottedPageHeader
-	SetHeader(h SlottedPageHeader)
-
-	// vacuum push all content of the page to the rightmost to eliminate fragmentation
-	vacuum()
+type IHeapPage interface {
+	GetHeader() HeapPageHeader
+	SetHeader(h HeapPageHeader)
 
 	GetFreeSpace() int
 
@@ -51,14 +44,14 @@ type ISlottedPage interface {
 	GetNextIdx(currIdxAtSlot int) (int, error)
 }
 
-type SlottedPageHeader struct {
+type HeapPageHeader struct {
 	FreeSpacePointer uint32
 	SLotArrLen       uint16
 	NextPageID       int64
 	PrevPageID       int64
 }
 
-type SLotArrEntry struct {
+type HeapPageArrEntry struct {
 	Offset uint32
 	Size   uint32
 }
@@ -75,13 +68,13 @@ const (
 	SLOT_ARRAY_ENTRY_SIZE = 8
 )
 
-var HEADER_SIZE = binary.Size(SlottedPageHeader{})
+var HeapPageHeaderSize = binary.Size(HeapPageHeader{})
 
-type SlottedPage struct {
+type HeapPage struct {
 	RawPage
 }
 
-func (sp *SlottedPage) GetNextIdx(currIdxAtSlot int) (int, error) {
+func (sp *HeapPage) GetNextIdx(currIdxAtSlot int) (int, error) {
 	arr := sp.getSlotArr()
 	if len(arr) <= currIdxAtSlot+1 {
 		return 0, errors.New("")
@@ -97,11 +90,7 @@ func (sp *SlottedPage) GetNextIdx(currIdxAtSlot int) (int, error) {
 	return 0, errors.New("")
 }
 
-func (sp *SlottedPage) vacuum() {
-	panic("implement me")
-}
-
-func (sp *SlottedPage) GetTuple(idxAtSlot int) []byte {
+func (sp *HeapPage) GetTuple(idxAtSlot int) []byte {
 	entry := sp.getFromSlotArr(idxAtSlot)
 	if entry.Size == 0 || isDeleted(entry) {
 		return nil
@@ -110,46 +99,20 @@ func (sp *SlottedPage) GetTuple(idxAtSlot int) []byte {
 	return sp.GetData()[entry.Offset : entry.Offset+entry.Size]
 }
 
-func (sp *SlottedPage) GetFreeSpace() int {
+func (sp *HeapPage) GetFreeSpace() int {
 	h := sp.GetHeader()
-	startingOffset := HEADER_SIZE + int(h.SLotArrLen)*SLOT_ARRAY_ENTRY_SIZE
+	startingOffset := HeapPageHeaderSize + int(h.SLotArrLen)*SLOT_ARRAY_ENTRY_SIZE
 	return int(h.FreeSpacePointer) - startingOffset
 }
 
-func (sp *SlottedPage) getSlotArr() []SLotArrEntry {
-	header := sp.GetHeader()
-	return readSLotArrEntrySliceFromBytes(int(header.SLotArrLen), sp.GetData()[HEADER_SIZE:])
-}
-
-func (sp *SlottedPage) getFromSlotArr(idx int) SLotArrEntry {
-	// TODO: more performant impl.
-	arr := sp.getSlotArr()
-	return arr[idx]
-}
-
-func (sp *SlottedPage) setInSlotArr(idx int, val SLotArrEntry) {
-	offset := int(HEADER_SIZE) + SLOT_ARRAY_ENTRY_SIZE*idx
-	buf := bytes.Buffer{}
-
-	// NOTE: this error is actually the error returned by bytes.Buffer.Write call which always returns nil hence no need to check
-	err := binary.Write(&buf, binary.BigEndian, &val)
-	common.PanicIfErr(err)
-
-	if offset >= disk.PageSize {
-		panic("page overflow error")
-	}
-
-	copy(sp.GetData()[offset:], buf.Bytes())
-}
-
-func (sp *SlottedPage) GetHeader() SlottedPageHeader {
+func (sp *HeapPage) GetHeader() HeapPageHeader {
 	reader := bytes.NewReader(sp.GetData())
-	dest := SlottedPageHeader{}
+	dest := HeapPageHeader{}
 	binary.Read(reader, binary.BigEndian, &dest)
 	return dest
 }
 
-func (sp *SlottedPage) SetHeader(h SlottedPageHeader) {
+func (sp *HeapPage) SetHeader(h HeapPageHeader) {
 	buf := bytes.Buffer{}
 
 	// NOTE: this error is actually the error returned by bytes.Buffer.Write call which always returns nil hence no need to check
@@ -159,7 +122,7 @@ func (sp *SlottedPage) SetHeader(h SlottedPageHeader) {
 	copy(sp.GetData(), buf.Bytes())
 }
 
-func (sp *SlottedPage) InsertTuple(data []byte) (int, error) {
+func (sp *HeapPage) InsertTuple(data []byte) (int, error) {
 	/*
 		first check if there is enough space in the page, if not return error
 		second iterate slot arr to see if there is an empty slot, meaning a slot with size 0
@@ -186,22 +149,14 @@ func (sp *SlottedPage) InsertTuple(data []byte) (int, error) {
 	}
 	copy(sp.GetData()[h.FreeSpacePointer:], data)
 	sp.SetHeader(h)
-	sp.setInSlotArr(i, SLotArrEntry{
+	sp.setInSlotArr(i, HeapPageArrEntry{
 		Offset: h.FreeSpacePointer,
 		Size:   uint32(len(data)),
 	})
 	return i, nil
 }
 
-func (sp *SlottedPage) DeleteTuple(idxAtSlot int) {
-	sp.setInSlotArr(idxAtSlot, SLotArrEntry{
-		Offset: 0,
-		Size:   0,
-	})
-	sp.vacuum()
-}
-
-func (sp *SlottedPage) UpdateTuple(idxAtSlot int, data []byte) error {
+func (sp *HeapPage) UpdateTuple(idxAtSlot int, data []byte) error {
 	oldData := sp.GetTuple(idxAtSlot)
 	if oldData == nil {
 		msg := fmt.Sprintf("tried to update a nonexistent or deleted tuple idxAtSlot: %v, pageID: %v", idxAtSlot, sp.GetPageId())
@@ -220,7 +175,7 @@ func (sp *SlottedPage) UpdateTuple(idxAtSlot int, data []byte) error {
 	h.FreeSpacePointer -= uint32(len(data))
 	copy(sp.GetData()[h.FreeSpacePointer:], data)
 	sp.SetHeader(h)
-	sp.setInSlotArr(idxAtSlot, SLotArrEntry{
+	sp.setInSlotArr(idxAtSlot, HeapPageArrEntry{
 		Offset: h.FreeSpacePointer,
 		Size:   uint32(len(data)),
 	})
@@ -228,7 +183,7 @@ func (sp *SlottedPage) UpdateTuple(idxAtSlot int, data []byte) error {
 	return nil
 }
 
-func (sp *SlottedPage) HardDelete(idxAtSlot int) error {
+func (sp *HeapPage) HardDelete(idxAtSlot int) error {
 	arr := sp.getSlotArr()
 	if idxAtSlot >= len(arr) {
 		return errors.New("slot cannot be found")
@@ -265,7 +220,7 @@ func (sp *SlottedPage) HardDelete(idxAtSlot int) error {
 	return nil
 }
 
-func (sp *SlottedPage) SoftDelete(idxAtSlot int) error {
+func (sp *HeapPage) SoftDelete(idxAtSlot int) error {
 	arr := sp.getSlotArr()
 	if idxAtSlot >= len(arr) {
 		return errors.New("slot cannot be found")
@@ -283,17 +238,43 @@ func (sp *SlottedPage) SoftDelete(idxAtSlot int) error {
 	return nil
 }
 
-func isDeleted(entry SLotArrEntry) bool {
+func (sp *HeapPage) getSlotArr() []HeapPageArrEntry {
+	header := sp.GetHeader()
+	return readEntry(int(header.SLotArrLen), sp.GetData()[HeapPageHeaderSize:])
+}
+
+func (sp *HeapPage) getFromSlotArr(idx int) HeapPageArrEntry {
+	// TODO: more performant impl.
+	arr := sp.getSlotArr()
+	return arr[idx]
+}
+
+func (sp *HeapPage) setInSlotArr(idx int, val HeapPageArrEntry) {
+	offset := int(HeapPageHeaderSize) + SLOT_ARRAY_ENTRY_SIZE*idx
+	buf := bytes.Buffer{}
+
+	// NOTE: this error is actually the error returned by bytes.Buffer.Write call which always returns nil hence no need to check
+	err := binary.Write(&buf, binary.BigEndian, &val)
+	common.PanicIfErr(err)
+
+	if offset >= disk.PageSize {
+		panic("page overflow error")
+	}
+
+	copy(sp.GetData()[offset:], buf.Bytes())
+}
+
+func isDeleted(entry HeapPageArrEntry) bool {
 	size := entry.Size
 	x := entry.Size & DELETE_MASK
 	return x != 0 || size == 0
 }
 
-func readSLotArrEntrySliceFromBytes(count int, data []byte) []SLotArrEntry {
+func readEntry(count int, data []byte) []HeapPageArrEntry {
 	reader := bytes.NewReader(data)
-	res := make([]SLotArrEntry, 0)
+	res := make([]HeapPageArrEntry, 0)
 	for i := 0; i < int(count); i++ {
-		x := SLotArrEntry{}
+		x := HeapPageArrEntry{}
 		err := binary.Read(reader, binary.BigEndian, &x) // TODO: look at possible errors
 		common.PanicIfErr(err)
 		res = append(res, x)
@@ -301,18 +282,18 @@ func readSLotArrEntrySliceFromBytes(count int, data []byte) []SLotArrEntry {
 	return res
 }
 
-func SlottedPageInstanceFromRawPage(page *RawPage) *SlottedPage {
-	return &SlottedPage{
+func AsHeapPage(page *RawPage) *HeapPage {
+	return &HeapPage{
 		RawPage: *page,
 	}
 }
 
-func FormatAsSlottedPage(page *RawPage) *SlottedPage {
-	s := &SlottedPage{
+func InitHeapPage(page *RawPage) *HeapPage {
+	s := &HeapPage{
 		RawPage: *page,
 	}
 
-	s.SetHeader(SlottedPageHeader{
+	s.SetHeader(HeapPageHeader{
 		FreeSpacePointer: uint32(disk.PageSize),
 		SLotArrLen:       0,
 		NextPageID:       0,

@@ -23,7 +23,7 @@ func (it *TableIterator) Next() *Row {
 
 	currPage, err := pool.GetPage(int(it.rid.PageId))
 	common.PanicIfErr(err)
-	sp := pages.SlottedPageInstanceFromRawPage(currPage)
+	sp := pages.AsHeapPage(currPage)
 
 	nextIdx, err := sp.GetNextIdx(int(it.rid.SlotIdx))
 	if err != nil {
@@ -36,7 +36,7 @@ func (it *TableIterator) Next() *Row {
 
 			currPage, err = pool.GetPage(nextPageID)
 			common.PanicIfErr(err)
-			sp = pages.SlottedPageInstanceFromRawPage(currPage)
+			sp = pages.AsHeapPage(currPage)
 			nextIdx, err = sp.GetNextIdx(-1)
 			if err != nil {
 				continue

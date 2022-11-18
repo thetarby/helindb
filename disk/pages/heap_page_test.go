@@ -16,9 +16,9 @@ type SlotIdxOffsetPair struct {
 	idx    int
 }
 
-func newSlottedPageTestInstance() SlottedPage {
-	p := SlottedPage{RawPage: *NewRawPage(1)}
-	p.SetHeader(SlottedPageHeader{
+func newSlottedPageTestInstance() HeapPage {
+	p := HeapPage{RawPage: *NewRawPage(1)}
+	p.SetHeader(HeapPageHeader{
 		FreeSpacePointer: uint32(disk.PageSize),
 		SLotArrLen:       0,
 	})
@@ -206,7 +206,7 @@ func TestSlottedPage_Update_Should_Not_Return_Error_When_There_Is_Enough_Space_I
 }
 
 func TestReadSLotArrEntrySliceFromBytes(t *testing.T) {
-	test := []SLotArrEntry{{
+	test := []HeapPageArrEntry{{
 		Offset: 1,
 		Size:   1,
 	}, {
@@ -218,7 +218,7 @@ func TestReadSLotArrEntrySliceFromBytes(t *testing.T) {
 	err := binary.Write(&buf, binary.BigEndian, &test)
 	assert.NoError(t, err)
 
-	res := readSLotArrEntrySliceFromBytes(len(test), buf.Bytes())
+	res := readEntry(len(test), buf.Bytes())
 
 	assert.ElementsMatch(t, test, res)
 }
