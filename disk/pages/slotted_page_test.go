@@ -1,20 +1,18 @@
-package btree
+package pages
 
 import (
 	"fmt"
-	"helin/disk/pages"
+	"github.com/stretchr/testify/require"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
-func newSp() *SlottedPage{
-	sp :=  &SlottedPage{
-		NodePage: &BtreePage{
-			RawPage: pages.RawPage{
-				PinCount: 0,
-				Data:     make([]byte, 4096),
-			},
+func newSp() *SlottedPage {
+	sp := &SlottedPage{
+		&RawPage{
+			PinCount: 0,
+			Data:     make([]byte, 4096),
 		},
 	}
 
@@ -22,11 +20,23 @@ func newSp() *SlottedPage{
 		FreeSpacePointer: uint16(len(sp.GetData())),
 		SlotArrSize:      0,
 	})
-	
+
 	return sp
 }
 
-func b(s string) []byte{
+func cpy(sp *SlottedPage) *SlottedPage {
+	d := make([]byte, 4096)
+	copy(d, sp.GetData())
+
+	return &SlottedPage{
+		&RawPage{
+			PinCount: 0,
+			Data:     d,
+		},
+	}
+}
+
+func b(s string) []byte {
 	return []byte(s)
 }
 
@@ -49,7 +59,7 @@ func TestSlottedPage(t *testing.T) {
 
 	t.Log(string(sp.values()))
 	assert.Equal(t, b("\x07selam_9\x07selam_8\x07selam_7\x07selam_6\x07selam_5\x07selam_4\x07selam_3\x07selam_2\x07selam_1\x07selam_0"), sp.values())
-	
+
 	sp.Vacuum()
 
 	t.Log(string(sp.values()))
@@ -70,7 +80,6 @@ func TestSlottedPage_Vacuum(t *testing.T) {
 	}
 
 	assert.Equal(t, float32(0), sp.FillFactor())
-
 
 	t.Log(string(sp.values()))
 	assert.Equal(t, b("\x07selam_4\x07selam_3\x07selam_2\x07selam_1\x07selam_0"), sp.values())
@@ -113,9 +122,35 @@ func TestSlottedPage_SetAt_When_New_Data_Cannot_Fit(t *testing.T) {
 
 	assert.Equal(t, b("new_selam_2"), sp.GetAt(2))
 	assert.Equal(t, b("\x0bnew_selam_2\x07selam_4\x07selam_3\x07selam_2\x07selam_1\x07selam_0"), sp.values())
-	
+
 	sp.Vacuum()
 
 	t.Log(string(sp.values()))
 	assert.Equal(t, b("new_selam_2"), sp.GetAt(2))
+}
+
+func TestWAL(t *testing.T) {
+	sp := newSp()
+	for i := 0; i < 10; i++ {
+		require.NoError(t, sp.InsertAt(i, b(fmt.Sprintf("selam_%v", i))))
+	}
+
+	for i := 0; i < 10; i++ {
+		res := sp.GetAt(i)
+		assert.Equal(t, b(fmt.Sprintf("selam_%v", i)), res)
+	}
+
+	t.Logf("value at fifth index: %v", string(sp.GetAt(5)))
+	assert.Equal(t, b("selam_5"), sp.GetAt(5))
+	sp.DeleteAt(5)
+	sp.DeleteAt(5)
+	t.Logf("value at fifth index after deletes: %v", string(sp.GetAt(5)))
+
+	t.Log(string(sp.values()))
+	assert.Equal(t, b("\x07selam_9\x07selam_8\x07selam_7\x07selam_6\x07selam_5\x07selam_4\x07selam_3\x07selam_2\x07selam_1\x07selam_0"), sp.values())
+
+	sp.Vacuum()
+
+	t.Log(string(sp.values()))
+	assert.Equal(t, b("\x07selam_9\x07selam_8\x07selam_7\x07selam_4\x07selam_3\x07selam_2\x07selam_1\x07selam_0"), sp.values())
 }

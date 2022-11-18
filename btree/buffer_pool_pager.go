@@ -38,7 +38,7 @@ func (b *BufferPoolPager) CreatePage() NodePage {
 	bp := &BtreePage{
 		RawPage: *p,
 	}
-	
+
 	return bp
 }
 
@@ -67,7 +67,7 @@ func (b *BufferPoolPager) NewInternalNode(firstPointer Pointer) Node {
 	p.WLatch()
 
 	node := VarKeyInternalNode{
-		p:             InitSlottedPage(&BtreePage{*p}),
+		p:             InitSlottedPage(p),
 		keySerializer: b.keySerializer,
 	}
 	// set header
@@ -90,7 +90,7 @@ func (b *BufferPoolPager) NewLeafNode() Node {
 	p.WLatch()
 
 	node := VarKeyLeafNode{
-		p:             InitSlottedPage(&BtreePage{*p}),
+		p:             InitSlottedPage(p),
 		keySerializer: b.keySerializer,
 		valSerializer: b.valueSerializer,
 	}
@@ -111,7 +111,8 @@ func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 	} else {
 		page.WLatch()
 	}
-	sp := CastSlottedPage(&BtreePage{*page})
+
+	sp := CastSlottedPage(page)
 	h := ReadPersistentNodeHeader(sp.GetAt(0))
 	if h.IsLeaf == 1 {
 		return &VarKeyLeafNode{
