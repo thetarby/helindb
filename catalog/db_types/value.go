@@ -63,3 +63,7 @@ func NewValue(src interface{}) *Value {
 		value:  src,
 	}
 }
+
+func V(src interface{}) *Value {
+	return NewValue(src)
+}

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"helin/catalog"
-	"helin/catalog/db_types"
+	dt "helin/catalog/db_types"
 	"helin/disk/structures"
 	"helin/execution"
 	"helin/execution/expressions"
@@ -25,15 +25,15 @@ func TestSeqScanExecutor_Equal_Comparison(t *testing.T) {
 	columns := []catalog.Column{
 		{
 			Name:   "id",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 		{
 			Name:   "name",
-			TypeId: db_types.CharTypeID,
+			TypeId: dt.CharTypeID,
 		},
 		{
 			Name:   "age",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 	}
 	schema := catalog.NewSchema(columns)
@@ -41,12 +41,12 @@ func TestSeqScanExecutor_Equal_Comparison(t *testing.T) {
 
 	// create raw values to insert
 	n := 1000
-	rows := make([][]*db_types.Value, 0)
+	rows := make([][]*dt.Value, 0)
 	for i := 0; i < n; i++ {
-		values := make([]*db_types.Value, 3) // 3 is number of columns
-		values[0] = db_types.NewValue(int32(i))
-		values[1] = db_types.NewValue(fmt.Sprintf("selam_%04d", i))
-		values[2] = db_types.NewValue(int32(i % 20))
+		values := make([]*dt.Value, 3) // 3 is number of columns
+		values[0] = dt.NewValue(int32(i))
+		values[1] = dt.NewValue(fmt.Sprintf("selam_%04d", i))
+		values[2] = dt.NewValue(int32(i % 20))
 		rows = append(rows, values)
 	}
 
@@ -78,7 +78,7 @@ func TestSeqScanExecutor_Equal_Comparison(t *testing.T) {
 			Children: []expressions.IExpression{
 				&expressions.ConstExpression{
 					BaseExpression: expressions.BaseExpression{Children: []expressions.IExpression{}},
-					Val:            *db_types.NewValue("selam_0010"),
+					Val:            *dt.NewValue("selam_0010"),
 				},
 				&expressions.GetColumnExpression{
 					BaseExpression: expressions.BaseExpression{Children: []expressions.IExpression{}},
@@ -108,15 +108,15 @@ func TestSeqScanExecutor_Greater_Than_Comparison(t *testing.T) {
 	columns := []catalog.Column{
 		{
 			Name:   "id",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 		{
 			Name:   "name",
-			TypeId: db_types.CharTypeID,
+			TypeId: dt.CharTypeID,
 		},
 		{
 			Name:   "age",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 	}
 	schema := catalog.NewSchema(columns)
@@ -124,12 +124,12 @@ func TestSeqScanExecutor_Greater_Than_Comparison(t *testing.T) {
 
 	// create raw values to insert
 	n := 1000
-	rows := make([][]*db_types.Value, 0)
+	rows := make([][]*dt.Value, 0)
 	for i := 0; i < n; i++ {
-		values := make([]*db_types.Value, 3) // 3 is number of columns
-		values[0] = db_types.NewValue(int32(i))
-		values[1] = db_types.NewValue(fmt.Sprintf("selam_%04d", i))
-		values[2] = db_types.NewValue(int32(i % 20))
+		values := make([]*dt.Value, 3) // 3 is number of columns
+		values[0] = dt.NewValue(int32(i))
+		values[1] = dt.NewValue(fmt.Sprintf("selam_%04d", i))
+		values[2] = dt.NewValue(int32(i % 20))
 		rows = append(rows, values)
 	}
 
@@ -161,7 +161,7 @@ func TestSeqScanExecutor_Greater_Than_Comparison(t *testing.T) {
 			Children: []expressions.IExpression{
 				&expressions.ConstExpression{
 					BaseExpression: expressions.BaseExpression{Children: []expressions.IExpression{}},
-					Val:            *db_types.NewValue("selam_0010"),
+					Val:            *dt.NewValue("selam_0010"),
 				},
 				&expressions.GetColumnExpression{
 					BaseExpression: expressions.BaseExpression{Children: []expressions.IExpression{}},
@@ -192,15 +192,15 @@ func TestIndexRangeScanExecutor(t *testing.T) {
 	columns := []catalog.Column{
 		{
 			Name:   "id",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 		{
 			Name:   "name",
-			TypeId: db_types.CharTypeID,
+			TypeId: dt.CharTypeID,
 		},
 		{
 			Name:   "age",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 	}
 	tableSchema := catalog.NewSchema(columns)
@@ -210,13 +210,13 @@ func TestIndexRangeScanExecutor(t *testing.T) {
 
 	// create raw values to insert
 	n := 1000
-	rows := make([][]*db_types.Value, 0)
+	rows := make([][]*dt.Value, 0)
 	for i := 0; i < n; i++ {
-		values := make([]*db_types.Value, 3) // 3 is number of columns
+		values := make([]*dt.Value, 3) // 3 is number of columns
 		age := int32(i % 20)
-		values[0] = db_types.NewValue(int32(i))
-		values[1] = db_types.NewValue(fmt.Sprintf("selam_%04d", age))
-		values[2] = db_types.NewValue(age)
+		values[0] = dt.NewValue(int32(i))
+		values[1] = dt.NewValue(fmt.Sprintf("selam_%04d", age))
+		values[2] = dt.NewValue(age)
 		rows = append(rows, values)
 	}
 
@@ -243,7 +243,7 @@ func TestIndexRangeScanExecutor(t *testing.T) {
 		}
 	}
 
-	min, max := db_types.NewValue(int32(10)), db_types.NewValue(int32(15))
+	min, max := dt.NewValue(int32(10)), dt.NewValue(int32(15))
 	minTk := catalog.TupleKey{
 		Schema: idx.Schema, // NOTE: keySchema is not equal to idx.Schema because idx is not a unique index and internally rid is appended to each key
 		Tuple: catalog.Tuple{
@@ -297,19 +297,19 @@ func TestIndexRangeScanExecutorOnFloat(t *testing.T) {
 	columns := []catalog.Column{
 		{
 			Name:   "id",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 		{
 			Name:   "name",
-			TypeId: db_types.CharTypeID,
+			TypeId: dt.CharTypeID,
 		},
 		{
 			Name:   "age",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 		{
 			Name:   "grade",
-			TypeId: db_types.Float64TypeID,
+			TypeId: dt.Float64TypeID,
 		},
 	}
 	tableSchema := catalog.NewSchema(columns)
@@ -319,14 +319,14 @@ func TestIndexRangeScanExecutorOnFloat(t *testing.T) {
 
 	// create raw values to insert
 	n := 1000
-	rows := make([][]*db_types.Value, 0)
+	rows := make([][]*dt.Value, 0)
 	for i := 0; i < n; i++ {
-		values := make([]*db_types.Value, 4) // 3 is number of columns
+		values := make([]*dt.Value, 4) // 3 is number of columns
 		age := int32(i % 20)
-		values[0] = db_types.NewValue(int32(i))
-		values[1] = db_types.NewValue(fmt.Sprintf("selam_%04d", age))
-		values[2] = db_types.NewValue(age)
-		values[3] = db_types.NewValue(100 * rand2.Float64())
+		values[0] = dt.NewValue(int32(i))
+		values[1] = dt.NewValue(fmt.Sprintf("selam_%04d", age))
+		values[2] = dt.NewValue(age)
+		values[3] = dt.NewValue(100 * rand2.Float64())
 		rows = append(rows, values)
 	}
 
@@ -354,8 +354,8 @@ func TestIndexRangeScanExecutorOnFloat(t *testing.T) {
 	}
 
 	min, max := 7.9, 43.8
-	minTk := catalog.NewTupleKey(idx.BareSchema, db_types.NewValue(min))
-	maxTk := catalog.NewTupleKey(idx.BareSchema, db_types.NewValue(max))
+	minTk := catalog.NewTupleKey(idx.BareSchema, dt.NewValue(min))
+	maxTk := catalog.NewTupleKey(idx.BareSchema, dt.NewValue(max))
 
 	scanPlan := plans.NewIndexRangeScanPlanNode(tableSchema, nil, &minTk, &maxTk, idx.OID)
 	seqExec := NewIndexRangeScanExecutor(&ctx, scanPlan)
@@ -385,15 +385,15 @@ func TestNestedLoopJoinExecutor_Join_With_Self(t *testing.T) {
 	columns := []catalog.Column{
 		{
 			Name:   "id",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 		{
 			Name:   "name",
-			TypeId: db_types.FixedLenCharTypeID(10),
+			TypeId: dt.FixedLenCharTypeID(10),
 		},
 		{
 			Name:   "age",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 	}
 	tableSchema := catalog.NewSchema(columns)
@@ -401,12 +401,12 @@ func TestNestedLoopJoinExecutor_Join_With_Self(t *testing.T) {
 
 	// create raw values to insert
 	n := 60
-	rows := make([][]*db_types.Value, 0)
+	rows := make([][]*dt.Value, 0)
 	for i := 0; i < n; i++ {
-		values := make([]*db_types.Value, 3) // 3 is number of columns
-		values[0] = db_types.NewValue(int32(i))
-		values[1] = db_types.NewValue(fmt.Sprintf("selam_%04d", i))
-		values[2] = db_types.NewValue(int32(i % 20))
+		values := make([]*dt.Value, 3) // 3 is number of columns
+		values[0] = dt.NewValue(int32(i))
+		values[1] = dt.NewValue(fmt.Sprintf("selam_%04d", i))
+		values[2] = dt.NewValue(int32(i % 20))
 		rows = append(rows, values)
 	}
 
@@ -491,11 +491,11 @@ func TestNestedLoopJoinExecutor_Should_Do_Inner_Join(t *testing.T) {
 	columns := []catalog.Column{
 		{
 			Name:   "id",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 		{
 			Name:   "name",
-			TypeId: db_types.CharTypeID,
+			TypeId: dt.CharTypeID,
 		},
 	}
 	namesTableSchema := catalog.NewSchema(columns)
@@ -505,15 +505,15 @@ func TestNestedLoopJoinExecutor_Should_Do_Inner_Join(t *testing.T) {
 	columns2 := []catalog.Column{
 		{
 			Name:   "id",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 		{
 			Name:   "age",
-			TypeId: db_types.IntegerTypeID,
+			TypeId: dt.IntegerTypeID,
 		},
 		{
 			Name:   "grade",
-			TypeId: db_types.Float64TypeID,
+			TypeId: dt.Float64TypeID,
 		},
 	}
 	agesTableSchema := catalog.NewSchema(columns2)
@@ -521,21 +521,21 @@ func TestNestedLoopJoinExecutor_Should_Do_Inner_Join(t *testing.T) {
 
 	// create raw values to insert to names table
 	n := 150
-	namesTableRows := make([][]*db_types.Value, 0)
+	namesTableRows := make([][]*dt.Value, 0)
 	for i := 0; i < n; i++ {
-		values := make([]*db_types.Value, 2) // 2 is number of columns
-		values[0] = db_types.NewValue(int32(i))
-		values[1] = db_types.NewValue(fmt.Sprintf("selam_%v", i))
+		values := make([]*dt.Value, 2) // 2 is number of columns
+		values[0] = dt.NewValue(int32(i))
+		values[1] = dt.NewValue(fmt.Sprintf("selam_%v", i))
 		namesTableRows = append(namesTableRows, values)
 	}
 
 	// create raw values to insert to ages table
-	agesTableRows := make([][]*db_types.Value, 0)
+	agesTableRows := make([][]*dt.Value, 0)
 	for i := 100; i < n+100; i++ {
-		values := make([]*db_types.Value, 3)
-		values[0] = db_types.NewValue(int32(i))
-		values[1] = db_types.NewValue(int32(i % 20))
-		values[2] = db_types.NewValue(float64(i) / 20.0)
+		values := make([]*dt.Value, 3)
+		values[0] = dt.NewValue(int32(i))
+		values[1] = dt.NewValue(int32(i % 20))
+		values[2] = dt.NewValue(float64(i) / 20.0)
 		agesTableRows = append(agesTableRows, values)
 	}
 
