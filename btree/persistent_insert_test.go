@@ -89,7 +89,7 @@ func TestPersistentEvery_Inserted_Should_Be_Found_VarSized(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 16)
-	tree := NewBtreeWithPager(32, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: -1}, &StringValueSerializer{}))
+	tree := NewBtreeWithPager(32, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{}, &StringValueSerializer{}))
 	log.SetOutput(ioutil.Discard)
 	n := 100000
 	for _, i := range rand.Perm(n) {

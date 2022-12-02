@@ -80,10 +80,7 @@ func (tbl *TableInfo) UpdateTuple(rid structures.Rid, values []*db_types.Value, 
 	if err := tbl.Heap.UpdateTuple(newTuple.Row, rid, txn); err == nil {
 		indexes := tbl.GetIndexes()
 		for _, index := range indexes {
-			indexedCol := index.IndexedColIdx
-			key := oldTuple.GetValue(tbl.Schema, indexedCol)
-			index.Index.Delete(key) // TODO: can this return false? should not
-			index.Index.Insert(newTuple.GetValue(tbl.Schema, indexedCol), newTuple.GetRid())
+			index.UpdateTupleKey(&oldTuple, newTuple.GetRid()) // TODO: can this return false? should not
 		}
 		return nil
 	}

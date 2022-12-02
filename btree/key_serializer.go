@@ -60,9 +60,7 @@ func (p StringKey) Less(than common.Key) bool {
 	return p < than.(StringKey)
 }
 
-type StringKeySerializer struct {
-	Len int
-}
+type StringKeySerializer struct{}
 
 func (s *StringKeySerializer) Serialize(key common.Key) ([]byte, error) {
 	buf := bytes.Buffer{}
@@ -74,11 +72,7 @@ func (s *StringKeySerializer) Serialize(key common.Key) ([]byte, error) {
 }
 
 func (s *StringKeySerializer) Deserialize(data []byte) (common.Key, error) {
-	if s.Len < 0 {
-		// then it is varchar
-		return StringKey(data), nil
-	}
-	return StringKey(data[:s.Len]), nil
+	return StringKey(data), nil
 }
 
 type PersistentKey int64

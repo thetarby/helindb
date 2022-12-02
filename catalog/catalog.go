@@ -17,21 +17,24 @@ type TableInfo struct {
 	Name    string
 	Heap    *structures.TableHeap
 	OID     TableOID
-	catalog *Catalog
+	catalog *InMemCatalog
 }
 
+//tree := NewBtreeWithPager(50, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{}, &StringValueSerializer{}))
+
 type IndexInfo struct {
-	Schema     Schema
-	BareSchema Schema
-	// TODO: remove this field
-	IndexedColIdx int // for now an index can be created only on one field. this is that field. When schema IndexInfo.Schema is used this will be useless
-	IndexName     string
+	Index   *btree.BTree
+	catalog *InMemCatalog
+
+	IndexName string
+	OID       IndexOID
+	IsUnique  bool
+
+	// below fields are necessary if this is a managed index
+	Schema        Schema
+	BareSchema    Schema
 	TableName     string
-	OID           IndexOID
-	Index         *btree.BTree
-	catalog       *Catalog
 	ColumnIndexes []int
-	IsUnique      bool
 }
 
 type TableOID uint32
@@ -40,7 +43,7 @@ type IndexOID uint32
 const NullTableOID TableOID = 0
 const NullIndexOID IndexOID = 0
 
-type ICatalog interface {
+type Catalog interface {
 	CreateTable(txn concurrency.Transaction, tableName string, schema Schema) *TableInfo
 	GetTable(name string) *TableInfo
 	GetTableByOID(oid TableOID) *TableInfo
@@ -52,7 +55,7 @@ type ICatalog interface {
 	GetTableIndexes(tableName string) []IndexInfo
 }
 
-type Catalog struct {
+type InMemCatalog struct {
 	tables     map[TableOID]*TableInfo
 	tableNames map[string]TableOID
 
@@ -70,7 +73,7 @@ type Catalog struct {
 	pool *buffer.BufferPool
 }
 
-func (c *Catalog) CreateTable(txn concurrency.Transaction, tableName string, schema Schema) *TableInfo {
+func (c *InMemCatalog) CreateTable(txn concurrency.Transaction, tableName string, schema Schema) *TableInfo {
 	if c.tableNames[tableName] != NullTableOID {
 		return nil
 	}
@@ -93,11 +96,10 @@ func (c *Catalog) CreateTable(txn concurrency.Transaction, tableName string, sch
 	c.tables[tableOID] = &info
 	c.tableNames[tableName] = tableOID
 	c.indexNames[tableName] = map[string]IndexOID{}
-
 	return &info
 }
 
-func (c *Catalog) GetTable(name string) *TableInfo {
+func (c *InMemCatalog) GetTable(name string) *TableInfo {
 	oid, ok := c.tableNames[name]
 	if !ok {
 		return nil
@@ -106,11 +108,11 @@ func (c *Catalog) GetTable(name string) *TableInfo {
 	return c.tables[oid]
 }
 
-func (c *Catalog) GetTableByOID(oid TableOID) *TableInfo {
+func (c *InMemCatalog) GetTableByOID(oid TableOID) *TableInfo {
 	return c.tables[oid]
 }
 
-func (c *Catalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, columnIndexes []int, isUnique bool) (*IndexInfo, error) {
+func (c *InMemCatalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, columnIndexes []int, isUnique bool) (*IndexInfo, error) {
 	// keySchema can be generated from columnIndexes
 	if c.tableNames[tableName] == 0 {
 		return nil, fmt.Errorf("tried to create an index on a nonexistent table: %v", tableName)
@@ -171,7 +173,6 @@ func (c *Catalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string
 	info := IndexInfo{
 		Schema:        keySchema,
 		BareSchema:    bareSchema,
-		IndexedColIdx: 0,
 		IndexName:     indexName,
 		TableName:     tableName,
 		OID:           oid,
@@ -185,38 +186,38 @@ func (c *Catalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string
 	return &info, nil
 }
 
-func (c *Catalog) GetIndex(indexName, tableName string) *IndexInfo {
+func (c *InMemCatalog) GetIndex(indexName, tableName string) *IndexInfo {
 	panic("implement me")
 }
 
-func (c *Catalog) GetIndexByOID(indexOID IndexOID) *IndexInfo {
+func (c *InMemCatalog) GetIndexByOID(indexOID IndexOID) *IndexInfo {
 	return c.indexes[indexOID]
 }
 
-func (c *Catalog) GetIndexByTableOID(indexName, oid TableOID) *IndexInfo {
+func (c *InMemCatalog) GetIndexByTableOID(indexName, oid TableOID) *IndexInfo {
 	panic("implement me")
 }
 
-func (c *Catalog) GetTableIndexes(tableName string) []IndexInfo {
+func (c *InMemCatalog) GetTableIndexes(tableName string) []IndexInfo {
 	panic("implement me")
 }
 
-func (c *Catalog) getNextTableOID() TableOID {
+func (c *InMemCatalog) getNextTableOID() TableOID {
 	c.tableOIDLock.Lock()
 	defer c.tableOIDLock.Unlock()
 	c.nextTableOID++
 	return c.nextTableOID
 }
 
-func (c *Catalog) getNextIndexOID() IndexOID {
+func (c *InMemCatalog) getNextIndexOID() IndexOID {
 	c.indexOIDLock.Lock()
 	defer c.indexOIDLock.Unlock()
 	c.nextIndexOID++
 	return c.nextIndexOID
 }
 
-func NewCatalog(pool *buffer.BufferPool) ICatalog {
-	return &Catalog{
+func NewCatalog(pool *buffer.BufferPool) Catalog {
+	return &InMemCatalog{
 		tables:       make(map[TableOID]*TableInfo),
 		tableNames:   make(map[string]TableOID),
 		indexes:      make(map[IndexOID]*IndexInfo),
