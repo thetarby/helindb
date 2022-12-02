@@ -8,7 +8,7 @@ import (
 func TestCharType_Serialize(t *testing.T) {
 	val := NewValue("this is a char type")
 
-	dest := make([]byte, 100)
+	dest := make([]byte, 19)
 	val.Serialize(dest)
 
 	readVal := Deserialize(val.GetTypeId(), dest)

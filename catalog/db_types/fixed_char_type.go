@@ -38,7 +38,7 @@ func (c *FixedLenCharType) Deserialize(src []byte) *Value {
 	return NewValue(str)
 }
 
-func (c *FixedLenCharType) Length() int {
+func (c *FixedLenCharType) Length(*Value) int {
 	return int(c.Size)
 }
 

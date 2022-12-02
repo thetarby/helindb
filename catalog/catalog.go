@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"fmt"
 	"helin/btree"
 	"helin/buffer"
 	"helin/catalog/db_types"
@@ -20,12 +21,13 @@ type TableInfo struct {
 }
 
 type IndexInfo struct {
-	Schema        Schema
+	Schema     Schema
+	BareSchema Schema
+	// TODO: remove this field
 	IndexedColIdx int // for now an index can be created only on one field. this is that field. When schema IndexInfo.Schema is used this will be useless
 	IndexName     string
 	TableName     string
 	OID           IndexOID
-	KeySize       int
 	Index         *btree.BTree
 	catalog       *Catalog
 	ColumnIndexes []int
@@ -43,7 +45,7 @@ type ICatalog interface {
 	GetTable(name string) *TableInfo
 	GetTableByOID(oid TableOID) *TableInfo
 
-	CreateBtreeIndexWithTuple(txn concurrency.Transaction, indexName string, tableName string, keySchema Schema, columnIndexes []int, keySize int, isUnique bool) *IndexInfo
+	CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, columnIndexes []int, isUnique bool) (*IndexInfo, error)
 	GetIndex(indexName, tableName string) *IndexInfo
 	GetIndexByOID(indexOID IndexOID) *IndexInfo
 	GetIndexByTableOID(indexName, oid TableOID) *IndexInfo
@@ -108,38 +110,37 @@ func (c *Catalog) GetTableByOID(oid TableOID) *TableInfo {
 	return c.tables[oid]
 }
 
-// TODO: keySize should be calculated from schema.
-func (c *Catalog) CreateBtreeIndexWithTuple(txn concurrency.Transaction, indexName string, tableName string, keySchema Schema, columnIndexes []int, keySize int, isUnique bool) *IndexInfo {
+func (c *Catalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, columnIndexes []int, isUnique bool) (*IndexInfo, error) {
+	// keySchema can be generated from columnIndexes
 	if c.tableNames[tableName] == 0 {
-		log.Printf("tried to create an index on a nonexistent table: %v", tableName)
-		return nil
+		return nil, fmt.Errorf("tried to create an index on a nonexistent table: %v", tableName)
 	}
 
 	indexesOnTable := c.indexNames[tableName]
 	if indexesOnTable[indexName] != 0 {
-		log.Printf("an index with the same name is already defined on the table. table: %v, index: %v", tableName, indexName)
-		return nil
+		return nil, fmt.Errorf("an index with the same name is already defined on the table. table: %v, index: %v", tableName, indexName)
 	}
 
-	// TODO: calc degree
+	// generate key schema
 	table := c.GetTable(tableName)
-	it := structures.NewTableIterator(txn, table.Heap)
-	if !isUnique {
-		cols := keySchema.GetColumns()
-		cols = append(cols, Column{
-			Name:   "page_id",
-			TypeId: db_types.IntegerTypeID,
-			Offset: uint16(keySize),
-		}, Column{
-			Name:   "slot_idx",
-			TypeId: db_types.IntegerTypeID,
-			Offset: uint16(keySize) + 4,
-		})
-		keySchema = NewSchema(cols)
-		keySize += 8
+	tableCols := table.Schema.GetColumns()
+	indexCols := make([]Column, 0)
+	for _, index := range columnIndexes {
+		indexCols = append(indexCols, tableCols[index])
 	}
-	serializer := TupleKeySerializer{schema: keySchema, keySize: keySize}
+
+	bareSchema := NewSchema(indexCols)
+	if !isUnique {
+		indexCols = append(indexCols, NewColumn("page_id", db_types.IntegerTypeID),
+			NewColumn("slot_idx", db_types.IntegerTypeID))
+	}
+
+	keySchema := NewSchema(indexCols)
+	serializer := TupleKeySerializer{schema: keySchema}
+
+	// TODO: what should be degree?
 	index := btree.NewBtreeWithPager(50, btree.NewBufferPoolPager(c.pool, &serializer))
+	it := structures.NewTableIterator(txn, table.Heap)
 	for {
 		n := CastRowAsTuple(it.Next())
 		if n == nil {
@@ -169,11 +170,11 @@ func (c *Catalog) CreateBtreeIndexWithTuple(txn concurrency.Transaction, indexNa
 	oid := c.getNextIndexOID()
 	info := IndexInfo{
 		Schema:        keySchema,
+		BareSchema:    bareSchema,
 		IndexedColIdx: 0,
 		IndexName:     indexName,
 		TableName:     tableName,
 		OID:           oid,
-		KeySize:       keySize,
 		Index:         index,
 		catalog:       c,
 		ColumnIndexes: columnIndexes,
@@ -181,7 +182,7 @@ func (c *Catalog) CreateBtreeIndexWithTuple(txn concurrency.Transaction, indexNa
 	}
 	c.indexes[oid] = &info
 	indexesOnTable[indexName] = oid
-	return &info
+	return &info, nil
 }
 
 func (c *Catalog) GetIndex(indexName, tableName string) *IndexInfo {

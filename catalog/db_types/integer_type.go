@@ -37,7 +37,7 @@ func (i *IntegerType) Deserialize(src []byte) *Value {
 	return NewValue(res)
 }
 
-func (i *IntegerType) Length() int {
+func (i *IntegerType) Length(*Value) int {
 	return binary.Size(int32(1))
 }
 

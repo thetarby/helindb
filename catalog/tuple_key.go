@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"helin/catalog/db_types"
 	"helin/common"
 )
 import "fmt"
@@ -54,4 +55,11 @@ func (t *TupleKey) Less(than common.Key) bool {
 	}
 
 	return false
+}
+
+func NewTupleKey(schema Schema, value ...*db_types.Value) TupleKey {
+	t, err := NewTupleWithSchema(value, schema)
+	common.PanicIfErr(err)
+
+	return TupleKey{Schema: schema, Tuple: *t}
 }

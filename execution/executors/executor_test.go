@@ -11,6 +11,7 @@ import (
 	"helin/execution/plans"
 	"io"
 	"log"
+	rand2 "math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -25,17 +26,14 @@ func TestSeqScanExecutor_Equal_Comparison(t *testing.T) {
 		{
 			Name:   "id",
 			TypeId: db_types.IntegerTypeID,
-			Offset: 0,
 		},
 		{
 			Name:   "name",
 			TypeId: db_types.CharTypeID,
-			Offset: 4,
 		},
 		{
 			Name:   "age",
 			TypeId: db_types.IntegerTypeID,
-			Offset: 24, // char type length it is fixed and 20. for now at least
 		},
 	}
 	schema := catalog.NewSchema(columns)
@@ -111,17 +109,14 @@ func TestSeqScanExecutor_Greater_Than_Comparison(t *testing.T) {
 		{
 			Name:   "id",
 			TypeId: db_types.IntegerTypeID,
-			Offset: 0,
 		},
 		{
 			Name:   "name",
 			TypeId: db_types.CharTypeID,
-			Offset: 4,
 		},
 		{
 			Name:   "age",
 			TypeId: db_types.IntegerTypeID,
-			Offset: 24, // char type length it is fixed and 20. for now at least
 		},
 	}
 	schema := catalog.NewSchema(columns)
@@ -198,29 +193,20 @@ func TestIndexRangeScanExecutor(t *testing.T) {
 		{
 			Name:   "id",
 			TypeId: db_types.IntegerTypeID,
-			Offset: 0,
 		},
 		{
 			Name:   "name",
 			TypeId: db_types.CharTypeID,
-			Offset: 4,
 		},
 		{
 			Name:   "age",
 			TypeId: db_types.IntegerTypeID,
-			Offset: 24, // char type length it is fixed and 20. for now at least
 		},
 	}
 	tableSchema := catalog.NewSchema(columns)
 	table := ctg.CreateTable("", "myTable", tableSchema)
 
-	keyColumns := []catalog.Column{{
-		Name:   "age",
-		TypeId: db_types.IntegerTypeID,
-		Offset: 0,
-	}}
-	keySchema := catalog.NewSchema(keyColumns)
-	idx := ctg.CreateBtreeIndexWithTuple(nil, "idx", "myTable", keySchema, []int{2}, 4, false)
+	idx, _ := ctg.CreateBtreeIndex(nil, "idx", "myTable", []int{2}, false)
 
 	// create raw values to insert
 	n := 1000
@@ -302,6 +288,95 @@ func TestIndexRangeScanExecutor(t *testing.T) {
 	})
 }
 
+func TestIndexRangeScanExecutorOnFloat(t *testing.T) {
+	pool, ctg, closer := poolAndCatalog()
+	defer closer()
+	log.SetOutput(io.Discard)
+
+	// create a table in catalog
+	columns := []catalog.Column{
+		{
+			Name:   "id",
+			TypeId: db_types.IntegerTypeID,
+		},
+		{
+			Name:   "name",
+			TypeId: db_types.CharTypeID,
+		},
+		{
+			Name:   "age",
+			TypeId: db_types.IntegerTypeID,
+		},
+		{
+			Name:   "grade",
+			TypeId: db_types.Float64TypeID,
+		},
+	}
+	tableSchema := catalog.NewSchema(columns)
+	table := ctg.CreateTable("", "myTable", tableSchema)
+
+	idx, _ := ctg.CreateBtreeIndex(nil, "idx", "myTable", []int{3}, false)
+
+	// create raw values to insert
+	n := 1000
+	rows := make([][]*db_types.Value, 0)
+	for i := 0; i < n; i++ {
+		values := make([]*db_types.Value, 4) // 3 is number of columns
+		age := int32(i % 20)
+		values[0] = db_types.NewValue(int32(i))
+		values[1] = db_types.NewValue(fmt.Sprintf("selam_%04d", age))
+		values[2] = db_types.NewValue(age)
+		values[3] = db_types.NewValue(100 * rand2.Float64())
+		rows = append(rows, values)
+	}
+
+	// create context and the plan
+	ctx := execution.ExecutorContext{
+		Txn:         nil,
+		Catalog:     ctg,
+		Pool:        pool,
+		LockManager: nil,
+		TxnManager:  nil,
+	}
+	plan := plans.NewRawInsertPlanNode(rows, table.OID)
+
+	// create and run executor
+	exec := NewInsertExecutor(&ctx, plan, nil)
+	exec.Init()
+
+	tup := catalog.Tuple{}
+	rid := structures.Rid{}
+	for {
+		if err := exec.Next(&tup, &rid); err != nil {
+			require.ErrorIs(t, err, ErrNoTuple{})
+			break
+		}
+	}
+
+	min, max := 7.9, 43.8
+	minTk := catalog.NewTupleKey(idx.BareSchema, db_types.NewValue(min))
+	maxTk := catalog.NewTupleKey(idx.BareSchema, db_types.NewValue(max))
+
+	scanPlan := plans.NewIndexRangeScanPlanNode(tableSchema, nil, &minTk, &maxTk, idx.OID)
+	seqExec := NewIndexRangeScanExecutor(&ctx, scanPlan)
+	seqExec.Init()
+	readTuples := make([]catalog.Tuple, 0)
+	for {
+		if err := seqExec.Next(&tup, &rid); err != nil {
+			require.ErrorIs(t, err, ErrNoTuple{})
+			break
+		}
+		t.Logf("%v %v %v %v", tup.GetValue(tableSchema, 0), tup.GetValue(tableSchema, 1), tup.GetValue(tableSchema, 2), tup.GetValue(tableSchema, 3))
+		readTuples = append(readTuples, tup)
+	}
+
+	for _, tuple := range readTuples {
+		grade := tuple.GetValue(tableSchema, 3).GetAsInterface().(float64)
+		assert.Less(t, grade, max)
+		assert.Greater(t, grade, min)
+	}
+}
+
 func TestNestedLoopJoinExecutor_Join_With_Self(t *testing.T) {
 	pool, ctg, closer := poolAndCatalog()
 	defer closer()
@@ -311,17 +386,14 @@ func TestNestedLoopJoinExecutor_Join_With_Self(t *testing.T) {
 		{
 			Name:   "id",
 			TypeId: db_types.IntegerTypeID,
-			Offset: 0,
 		},
 		{
 			Name:   "name",
 			TypeId: db_types.FixedLenCharTypeID(10),
-			Offset: 4,
 		},
 		{
 			Name:   "age",
 			TypeId: db_types.IntegerTypeID,
-			Offset: 14,
 		},
 	}
 	tableSchema := catalog.NewSchema(columns)
@@ -333,7 +405,7 @@ func TestNestedLoopJoinExecutor_Join_With_Self(t *testing.T) {
 	for i := 0; i < n; i++ {
 		values := make([]*db_types.Value, 3) // 3 is number of columns
 		values[0] = db_types.NewValue(int32(i))
-		values[1] = db_types.NewValue([]byte(fmt.Sprintf("selam_%04d", i)))
+		values[1] = db_types.NewValue(fmt.Sprintf("selam_%04d", i))
 		values[2] = db_types.NewValue(int32(i % 20))
 		rows = append(rows, values)
 	}
@@ -420,12 +492,10 @@ func TestNestedLoopJoinExecutor_Should_Do_Inner_Join(t *testing.T) {
 		{
 			Name:   "id",
 			TypeId: db_types.IntegerTypeID,
-			Offset: 0,
 		},
 		{
 			Name:   "name",
-			TypeId: db_types.FixedLenCharTypeID(10),
-			Offset: 4,
+			TypeId: db_types.CharTypeID,
 		},
 	}
 	namesTableSchema := catalog.NewSchema(columns)
@@ -436,12 +506,14 @@ func TestNestedLoopJoinExecutor_Should_Do_Inner_Join(t *testing.T) {
 		{
 			Name:   "id",
 			TypeId: db_types.IntegerTypeID,
-			Offset: 0,
 		},
 		{
 			Name:   "age",
 			TypeId: db_types.IntegerTypeID,
-			Offset: 4,
+		},
+		{
+			Name:   "grade",
+			TypeId: db_types.Float64TypeID,
 		},
 	}
 	agesTableSchema := catalog.NewSchema(columns2)
@@ -453,16 +525,17 @@ func TestNestedLoopJoinExecutor_Should_Do_Inner_Join(t *testing.T) {
 	for i := 0; i < n; i++ {
 		values := make([]*db_types.Value, 2) // 2 is number of columns
 		values[0] = db_types.NewValue(int32(i))
-		values[1] = db_types.NewValue([]byte(fmt.Sprintf("selam_%04d", i)))
+		values[1] = db_types.NewValue(fmt.Sprintf("selam_%v", i))
 		namesTableRows = append(namesTableRows, values)
 	}
 
 	// create raw values to insert to ages table
 	agesTableRows := make([][]*db_types.Value, 0)
 	for i := 100; i < n+100; i++ {
-		values := make([]*db_types.Value, 2) // 2 is number of columns
+		values := make([]*db_types.Value, 3)
 		values[0] = db_types.NewValue(int32(i))
 		values[1] = db_types.NewValue(int32(i % 20))
+		values[2] = db_types.NewValue(float64(i) / 20.0)
 		agesTableRows = append(agesTableRows, values)
 	}
 
@@ -530,7 +603,7 @@ func TestNestedLoopJoinExecutor_Should_Do_Inner_Join(t *testing.T) {
 		// uncomment below to print join result
 		for i, col := range joinExec.GetOutSchema().GetColumns() {
 			val := tup.GetValue(joinExec.GetOutSchema(), i)
-			fmt.Printf("%v : %v, ", col.Name, val.GetAsInterface())
+			fmt.Printf("%v: %v, ", col.Name, val.GetAsInterface())
 		}
 		fmt.Println()
 
@@ -544,7 +617,7 @@ func TestNestedLoopJoinExecutor_Should_Do_Inner_Join(t *testing.T) {
 		assert.Equal(t, id1, id2)
 
 		name := tup.GetValue(joinExec.GetOutSchema(), 1).GetAsInterface().(string)
-		assert.Equal(t, fmt.Sprintf("selam_%04d", id1), name)
+		assert.Equal(t, fmt.Sprintf("selam_%v", id1), name)
 
 		age := tup.GetValue(joinExec.GetOutSchema(), 3).GetAsInterface().(int32)
 		assert.Equal(t, id1%20, age)
