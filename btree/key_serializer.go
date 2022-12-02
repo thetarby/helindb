@@ -9,24 +9,55 @@ import (
 type KeySerializer interface {
 	Serialize(key common.Key) ([]byte, error)
 	Deserialize([]byte) (common.Key, error)
-	Size() int
 }
 
-type PersistentKeySerializer struct{}
-
-func (p *PersistentKeySerializer) Serialize(key common.Key) ([]byte, error) {
-	b := make([]byte, 8, 8)
-	binary.BigEndian.PutUint64(b, uint64(key.(PersistentKey)))
-
-	return b, nil
+type ValueSerializer interface {
+	Serialize(val interface{}) ([]byte, error)
+	Deserialize([]byte) (interface{}, error)
 }
 
-func (p *PersistentKeySerializer) Deserialize(data []byte) (common.Key, error) {
-	return PersistentKey(binary.BigEndian.Uint64(data)), nil
+type SlotPointer struct {
+	PageId  int64
+	SlotIdx int16
 }
 
-func (p *PersistentKeySerializer) Size() int {
-	return 10
+type SlotPointerValueSerializer struct{}
+
+func (s *SlotPointerValueSerializer) Serialize(val interface{}) ([]byte, error) {
+	buf := bytes.Buffer{}
+	err := binary.Write(&buf, binary.BigEndian, val)
+	if err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (s *SlotPointerValueSerializer) Deserialize(data []byte) (interface{}, error) {
+	reader := bytes.NewReader(data)
+	var val SlotPointer
+	err := binary.Read(reader, binary.BigEndian, &val)
+
+	return val, err
+}
+
+type StringValueSerializer struct{}
+
+func (s *StringValueSerializer) Serialize(val interface{}) ([]byte, error) {
+	return []byte(val.(string)), nil
+}
+
+func (s *StringValueSerializer) Deserialize(data []byte) (interface{}, error) {
+	return string(data[:]), nil
+}
+
+type StringKey string
+
+func (p StringKey) String() string {
+	return string(p)
+}
+
+func (p StringKey) Less(than common.Key) bool {
+	return p < than.(StringKey)
 }
 
 type StringKeySerializer struct {
@@ -50,66 +81,21 @@ func (s *StringKeySerializer) Deserialize(data []byte) (common.Key, error) {
 	return StringKey(data[:s.Len]), nil
 }
 
-func (s *StringKeySerializer) Size() int {
-	return s.Len
+type PersistentKey int64
+
+func (p PersistentKey) Less(than common.Key) bool {
+	return p < than.(PersistentKey)
 }
 
-type ValueSerializer interface {
-	Serialize(val interface{}) ([]byte, error)
-	Deserialize([]byte) (interface{}, error)
-	Size() int
+type PersistentKeySerializer struct{}
+
+func (p *PersistentKeySerializer) Serialize(key common.Key) ([]byte, error) {
+	b := make([]byte, 8, 8)
+	binary.BigEndian.PutUint64(b, uint64(key.(PersistentKey)))
+
+	return b, nil
 }
 
-type StringValueSerializer struct {
-	Len int
-}
-
-func (s *StringValueSerializer) Serialize(val interface{}) ([]byte, error) {
-	if s.Len < 0 {
-		return []byte(val.(string)), nil
-	}
-
-	buf := bytes.Buffer{}
-	err := binary.Write(&buf, binary.BigEndian, ([]byte)(val.(string)))
-	if err != nil {
-		return nil, err
-	}
-	res := make([]byte, s.Len)
-	copy(res, buf.Bytes())
-	return res, nil
-}
-
-func (s *StringValueSerializer) Deserialize(data []byte) (interface{}, error) {
-	if s.Len < 0 {
-		return string(data[:]), nil
-	}
-	return string(data[:s.Len]), nil
-}
-
-func (s *StringValueSerializer) Size() int {
-	return s.Len
-}
-
-type SlotPointerValueSerializer struct {
-}
-
-func (s *SlotPointerValueSerializer) Serialize(val interface{}) ([]byte, error) {
-	buf := bytes.Buffer{}
-	err := binary.Write(&buf, binary.BigEndian, val)
-	if err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-func (s *SlotPointerValueSerializer) Deserialize(data []byte) (interface{}, error) {
-	reader := bytes.NewReader(data)
-	var val SlotPointer
-	err := binary.Read(reader, binary.BigEndian, &val)
-
-	return val, err
-}
-
-func (s *SlotPointerValueSerializer) Size() int {
-	return 10
+func (p *PersistentKeySerializer) Deserialize(data []byte) (common.Key, error) {
+	return PersistentKey(binary.BigEndian.Uint64(data)), nil
 }

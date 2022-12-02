@@ -89,7 +89,7 @@ func TestPersistentEvery_Inserted_Should_Be_Found_VarSized(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 16)
-	tree := NewBtreeWithPager(32, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1}))
+	tree := NewBtreeWithPager(32, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: -1}, &StringValueSerializer{}))
 	log.SetOutput(ioutil.Discard)
 	n := 100000
 	for _, i := range rand.Perm(n) {
@@ -127,7 +127,7 @@ func TestPersistent_Pin_Count_Should_Be_Zero_After_Inserts_Are_Complete(t *testi
 }
 
 func TestPersistentInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), strconv.Itoa(i))
 	}

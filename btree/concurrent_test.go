@@ -61,7 +61,7 @@ func TestConcurrent_Inserts2(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(50, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1}))
+	tree := NewBtreeWithPager(50, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: -1}, &StringValueSerializer{}))
 	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
@@ -128,7 +128,7 @@ func TestConcurrent_Deletes(t *testing.T) {
 
 func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 	log.SetOutput(io.Discard)
-	memPager := NewMemPager(&StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1})
+	memPager := NewMemPager(&StringKeySerializer{Len: -1}, &StringValueSerializer{})
 	tree := NewBtreeWithPager(10, memPager)
 
 	rand.Seed(42)
@@ -171,7 +171,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(50, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1}))
+	tree := NewBtreeWithPager(50, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: -1}, &StringValueSerializer{}))
 
 	toDeleteN := 10_000
 	toDelete := rand.Perm(toDeleteN)
@@ -241,7 +241,7 @@ func FuzzConcurrent_Inserts(f *testing.F) {
 		f.Add(tc)
 	}
 
-	memPager := NewMemPager(&StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1})
+	memPager := NewMemPager(&StringKeySerializer{Len: -1}, &StringValueSerializer{})
 	tree := NewBtreeWithPager(10, memPager)
 	f.Fuzz(func(t *testing.T, key string) {
 		if len(key) > 1000 || key == "" {
@@ -270,7 +270,7 @@ func FuzzConcurrent_Inserts(f *testing.F) {
 
 // go test -run FuzzConcurrentInserts ./btree -fuzz=Fuzz -fuzztime 10s
 func TestConcurrent_Insertsasd(t *testing.T) {
-	memPager := NewMemPager(&StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1})
+	memPager := NewMemPager(&StringKeySerializer{Len: -1}, &StringValueSerializer{})
 	tree := NewBtreeWithPager(50, memPager)
 
 	m := sync.Mutex{}

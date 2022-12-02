@@ -7,7 +7,7 @@ import (
 )
 
 func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty(t *testing.T) {
-	tree := NewBtreeWithPager(4, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 5}))
+	tree := NewBtreeWithPager(4, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{}))
 	for _, val := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10} {
 		tree.Insert(PersistentKey(val), "selam")
 	}
@@ -24,7 +24,7 @@ func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty(t *testing.T) {
 }
 
 func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_2(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 5}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{}))
 	for _, val := range []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10} {
 		tree.Insert(PersistentKey(val), "selam")
 	}
