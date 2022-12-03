@@ -24,7 +24,7 @@ func TestInsert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 
 	assert.Len(t, stack, 2)
 	assert.Equal(t, "5", res)
-	assert.Equal(t, PersistentKey(3), tree.pager.GetNode(tree.Root, Read).GetKeyAt(0))
+	assert.Equal(t, PersistentKey(3), tree.GetRoot(Read).GetKeyAt(0))
 }
 
 func TestInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"sort"
 )
 
@@ -109,27 +110,31 @@ func (sp *SlottedPage) InsertAt(idx int, data []byte) error {
 }
 
 func (sp *SlottedPage) SetAt(idx int, data []byte) error {
-	// TODO: optimize this. try directly to put same place as old data
 	arr := sp.getSlotArr()
 	if len(arr) <= idx {
 		return sp.InsertAt(idx, data) // TODO: bad impl.
 	}
-	offset := arr[idx].Offset
-	d := sp.GetData()
-	valSize, n := binary.Uvarint(d[offset:])
-	if n <= 0 {
-		return errors.New("binary.Uvarint failed")
+
+	// NOTE: actually this check is not necessary when insert at fails on overflow
+	// instead of automatically expanding its size
+	if offset := arr[idx].Offset; offset > 0 {
+		d := sp.GetData()
+		valSize, n := binary.Uvarint(d[offset:])
+		if n <= 0 {
+			return errors.New("binary.Uvarint failed")
+		}
+
+		// no need to account for uvarint valsize because if new data is smaller its uvarint valsize must be of equal
+		// length or shorter
+		if int(valSize) >= len(data) {
+			newValSize := len(data)
+			n := binary.PutUvarint(d[offset:], uint64(newValSize))
+			copy(d[int(offset)+n:], data)
+			return nil
+		}
 	}
 
-	// no need to account for uvarint valsize because if new data is smaller its uvarint valsize must be of equal
-	// length or shorter
-	if int(valSize) >= len(data) {
-		newValSize := len(data)
-		n := binary.PutUvarint(d[offset:], uint64(newValSize))
-		copy(d[int(offset)+n:], data)
-		return nil
-	}
-
+	// TODO: vacuum might be delayed
 	sp.Vacuum()
 	if sp.GetFreeSpace() < len(data)+binary.MaxVarintLen16 {
 		return ErrNotEnoughSpace
@@ -230,14 +235,12 @@ func (sp *SlottedPage) insertAt(idx int, data []byte) error {
 	copy(sp.GetData()[h.FreeSpacePointer+uint16(n):], data)
 	arr := sp.getSlotArr()
 
-	if len(arr) <= idx {
-		for len(arr) <= idx {
-			if len(arr) == idx {
-				arr = append(arr, SLotArrEntry{Offset: h.FreeSpacePointer})
-			} else {
-				arr = append(arr, SLotArrEntry{})
-			}
-		}
+	if len(arr) < idx {
+		return fmt.Errorf("overflow error, page len: %v, insert index: %v", len(arr), idx)
+	}
+
+	if len(arr) == idx {
+		arr = append(arr, SLotArrEntry{Offset: h.FreeSpacePointer})
 	} else {
 		arr = append(arr[:idx+1], arr[idx:]...)
 		arr[idx] = SLotArrEntry{

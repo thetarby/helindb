@@ -41,18 +41,15 @@ func (memPager *MemPager) CreatePage() NodePage {
 	defer memPager.lock.Unlock()
 	memPagerLastPageID++
 	newID := memPagerLastPageID
-	p := &BtreePage{*pages.NewRawPage(int(newID))}
-	memPagerNodeMapping2[newID] = p
-	return p
+	sp := InitSlottedPage(pages.NewRawPage(int(newID)))
+	memPagerNodeMapping2[newID] = &sp
+	return &sp
 }
 
 func (memPager *MemPager) GetPage(p Pointer) NodePage {
 	memPager.lock.Lock()
 	node := memPagerNodeMapping2[p]
 	memPager.lock.Unlock()
-	if node == nil {
-		print("")
-	}
 
 	return node
 }

@@ -35,20 +35,17 @@ func (b *BufferPoolPager) FreeNode(n Node) error {
 func (b *BufferPoolPager) CreatePage() NodePage {
 	p, err := b.pool.NewPage()
 	common.PanicIfErr(err)
-	bp := &BtreePage{
-		RawPage: *p,
-	}
 
-	return bp
+	sp := InitSlottedPage(p)
+	return &sp
 }
 
 func (b *BufferPoolPager) GetPage(p Pointer) NodePage {
 	pg, err := b.pool.GetPage(int(p))
 	common.PanicIfErr(err)
 
-	return &BtreePage{
-		RawPage: *pg,
-	}
+	sp := CastSlottedPage(pg)
+	return &sp
 }
 
 func (b *BufferPoolPager) UnpinByPointer(p Pointer, isDirty bool) {

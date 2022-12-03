@@ -1,6 +1,7 @@
 package btree
 
 import (
+	"encoding/binary"
 	"fmt"
 	"helin/common"
 	"sort"
@@ -8,47 +9,126 @@ import (
 )
 
 type BTree struct {
-	degree        int
-	Root          Pointer
+	// degree is actually stored in metaPage, but it is cached here. since it is a constant value it is safe
+	// to set it once when opening btree and use until closing.
+	degree int
+
+	// metaPID is the page id of the metadata page of btree. it cannot change and is used to store
+	// information such as tree's root node pointer, degree etc... db schema must keep track of metaPID
+	// to reconstruct btree after db is closed and reopened.
+	metaPID Pointer
+
 	pager         Pager
 	rootEntryLock *sync.RWMutex
+}
+
+// metaPage is a wrapper around NodePage that is used to store btree meta info.
+type metaPage struct {
+	NodePage
+}
+
+func (m *metaPage) getRoot() Pointer {
+	return Pointer(binary.BigEndian.Uint64(m.GetAt(0)))
+}
+
+func (m *metaPage) setRoot(p Pointer) {
+	err := m.SetAt(0, p.Bytes())
+	CheckErr(err)
+}
+
+func (m *metaPage) getDegree() int {
+	return int(binary.BigEndian.Uint16(m.GetAt(1)))
+}
+
+func (m *metaPage) setDegree(degree int) {
+	dest := make([]byte, 2)
+	binary.BigEndian.PutUint16(dest, uint16(degree))
+	err := m.SetAt(1, dest)
+	CheckErr(err)
 }
 
 func NewBtreeWithPager(degree int, pager Pager) *BTree {
 	l := pager.NewLeafNode()
 	root := pager.NewInternalNode(l.GetPageId())
+	meta := metaPage{pager.CreatePage()}
+	meta.WLatch()
+	meta.setRoot(root.GetPageId())
+	meta.setDegree(degree)
+
+	defer meta.WUnlatch()
 	defer root.WUnlatch()
 	defer l.WUnlatch()
 	defer pager.Unpin(root, true)
 	defer pager.Unpin(l, true)
+	defer pager.UnpinByPointer(meta.GetPageId(), true)
 
 	return &BTree{
 		degree:        degree,
-		Root:          root.GetPageId(),
 		pager:         pager,
 		rootEntryLock: &sync.RWMutex{},
+		metaPID:       meta.GetPageId(),
 	}
 }
 
-func ConstructBtreeFromRootPointer(rootPage Pointer, degree int, pager Pager) *BTree {
-	// print(1)
+func ConstructBtreeByMeta(metaPID Pointer, pager Pager) *BTree {
+	meta := metaPage{pager.GetPage(metaPID)}
+	meta.RLatch()
+	defer meta.RUnLatch()
+	defer pager.UnpinByPointer(meta.GetPageId(), false)
 	return &BTree{
-		degree:        degree,
-		Root:          rootPage,
+		degree:        meta.getDegree(),
 		pager:         pager,
 		rootEntryLock: &sync.RWMutex{},
+		metaPID:       metaPID,
 	}
 }
 
 func (tree *BTree) GetRoot(mode TraverseMode) Node {
-	return tree.pager.GetNode(tree.Root, mode)
+	return tree.pager.GetNode(tree.getRoot(), mode)
+}
+
+func (tree *BTree) meta() *metaPage {
+	meta := tree.pager.GetPage(tree.metaPID)
+	return &metaPage{meta}
+}
+
+func (tree *BTree) getRoot() Pointer {
+	meta := tree.meta()
+	meta.RLatch()
+	defer meta.RUnLatch()
+	defer tree.pager.UnpinByPointer(meta.GetPageId(), false)
+	return meta.getRoot()
+}
+
+func (tree *BTree) setRoot(p Pointer) {
+	meta := tree.meta()
+	meta.RLatch()
+	defer meta.RUnLatch()
+	defer tree.pager.UnpinByPointer(meta.GetPageId(), true)
+	meta.setRoot(p)
+}
+
+func (tree *BTree) getDegree() int {
+	meta := tree.meta()
+	meta.RLatch()
+	defer meta.RUnLatch()
+	defer tree.pager.UnpinByPointer(meta.GetPageId(), false)
+	return meta.getDegree()
+}
+
+func (tree *BTree) setDegree(deg int) {
+	meta := tree.meta()
+	meta.RLatch()
+	defer meta.RUnLatch()
+	defer tree.pager.UnpinByPointer(meta.GetPageId(), true)
+	meta.setDegree(deg)
 }
 
 func (tree *BTree) GetPager() Pager {
 	return tree.pager
 }
 
-func (tree *BTree) Insert(key common.Key, value interface{}) {
+func (tree *BTree) Insert(key common.Key, value any) {
 	i, stack := tree.FindAndGetStack(key, Insert)
 	rootLocked := false
 	if len(stack) > 0 && stack[0].Index == -1 {
@@ -74,12 +154,12 @@ func (tree *BTree) Insert(key common.Key, value interface{}) {
 
 		if popped.IsOverFlow(tree.degree) {
 			rightNod, _, rightKey = tree.splitNode(popped, popped.KeyLen()/2)
-			if rootLocked && popped.GetPageId() == tree.Root {
+			if rootLocked && popped.GetPageId() == tree.getRoot() {
 				leftNode := popped
 
 				newRoot := tree.pager.NewInternalNode(leftNode.GetPageId())
 				newRoot.InsertAt(0, rightKey, rightNod.(Pointer))
-				tree.Root = newRoot.GetPageId()
+				tree.setRoot(newRoot.GetPageId())
 				tree.pager.Unpin(newRoot, true)
 				newRoot.WUnlatch()
 			}
@@ -93,7 +173,7 @@ func (tree *BTree) Insert(key common.Key, value interface{}) {
 	}
 }
 
-func (tree *BTree) InsertOrReplace(key common.Key, value interface{}) (isInserted bool) {
+func (tree *BTree) InsertOrReplace(key common.Key, value any) (isInserted bool) {
 	i, stack := tree.FindAndGetStack(key, Insert)
 	rootLocked := false
 	if len(stack) > 0 && stack[0].Index == -1 {
@@ -124,12 +204,12 @@ func (tree *BTree) InsertOrReplace(key common.Key, value interface{}) (isInserte
 		if popped.IsOverFlow(tree.degree) {
 			rightNod, _, rightKey = tree.splitNode(popped, popped.KeyLen()/2)
 			tree.pager.Unpin(popped, true)
-			if rootLocked && popped.GetPageId() == tree.Root {
+			if rootLocked && popped.GetPageId() == tree.getRoot() {
 				leftNode := popped
 
 				newRoot := tree.pager.NewInternalNode(leftNode.GetPageId())
 				newRoot.InsertAt(0, rightKey, rightNod.(Pointer))
-				tree.Root = newRoot.GetPageId()
+				tree.setRoot(newRoot.GetPageId())
 				tree.pager.Unpin(newRoot, true)
 				newRoot.WUnlatch()
 			}
@@ -263,8 +343,8 @@ func (tree *BTree) Delete(key common.Key) bool {
 					tree.pager.Unpin(rightSibling, false)
 				}
 			}
-			if rootLocked && parent.GetPageId() == tree.Root && parent.KeyLen() == 0 {
-				tree.Root = merged.GetPageId()
+			if rootLocked && parent.GetPageId() == tree.getRoot() && parent.KeyLen() == 0 {
+				tree.setRoot(merged.GetPageId())
 			}
 		} else {
 			popped.WUnlatch()
@@ -285,7 +365,7 @@ func (tree *BTree) Find(key common.Key) interface{} {
 	return res
 }
 
-func (tree *BTree) FindSince(key common.Key) []interface{} {
+func (tree *BTree) FindSince(key common.Key) []any {
 	_, stack := tree.FindAndGetStack(key, Read)
 
 	node := stack[len(stack)-1].Node
@@ -311,7 +391,7 @@ func (tree *BTree) FindSince(key common.Key) []interface{} {
 
 func (tree *BTree) Height() int {
 	pager := tree.pager
-	var currentNode = tree.pager.GetNode(tree.Root, Read)
+	var currentNode = tree.GetRoot(Read)
 	acc := 0
 	for {
 		if currentNode.IsLeaf() {
@@ -361,7 +441,7 @@ func (tree *BTree) Count() int {
 func (tree *BTree) Print() {
 	pager := tree.pager
 	queue := make([]Pointer, 0, 2)
-	queue = append(queue, tree.Root)
+	queue = append(queue, tree.getRoot())
 	queue = append(queue, 0)
 	for i := 0; i < len(queue); i++ {
 		node := tree.pager.GetNode(queue[i], Read)
@@ -396,7 +476,7 @@ func (tree *BTree) Print() {
 
 // findAndGetStack is used to recursively find the given key, and it also passes a stack object recursively to
 // keep the path it followed down to leaf node. value is nil when key does not exist.
-func (tree *BTree) findAndGetStack(node Node, key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
+func (tree *BTree) findAndGetStack(node Node, key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value any, stackOut []NodeIndexPair) {
 	if node.IsLeaf() {
 		i, found := tree.FindKey(node, key)
 		stackOut = append(stackIn, NodeIndexPair{node, i})
@@ -443,7 +523,7 @@ func (tree *BTree) findAndGetStack(node Node, key common.Key, stackIn []NodeInde
 	}
 }
 
-func (tree *BTree) FindAndGetStack(key common.Key, mode TraverseMode) (value interface{}, stackOut []NodeIndexPair) {
+func (tree *BTree) FindAndGetStack(key common.Key, mode TraverseMode) (value any, stackOut []NodeIndexPair) {
 	var stack []NodeIndexPair
 	tree.rootEntryLock.Lock()
 	root := tree.GetRoot(mode)

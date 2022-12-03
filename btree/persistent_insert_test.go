@@ -28,7 +28,7 @@ func TestPersistent_Insert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 	res, stack := tree.FindAndGetStack(PersistentKey(5), Read)
 	assert.Len(t, stack, 2)
 	assert.Equal(t, p, res.(SlotPointer))
-	assert.Equal(t, PersistentKey(3), tree.pager.GetNode(tree.Root, Read).GetKeyAt(0))
+	assert.Equal(t, PersistentKey(3), tree.GetRoot(Read).GetKeyAt(0))
 }
 
 func TestPersistentInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {
@@ -165,7 +165,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 	err := tree.pager.(*BufferPoolPager).pool.DiskManager.Close()
 	assert.NoError(t, err)
 	newPool := buffer.NewBufferPool(dbName, poolSize)
-	newTreeReference := ConstructBtreeFromRootPointer(tree.Root, 80, NewBufferPoolPager(newPool, &PersistentKeySerializer{}))
+	newTreeReference := ConstructBtreeByMeta(tree.metaPID, NewBufferPoolPager(newPool, &PersistentKeySerializer{}))
 
 	rand.Shuffle(len(v), func(i, j int) {
 		t := v[i]

@@ -268,8 +268,7 @@ func FuzzConcurrent_Inserts(f *testing.F) {
 	})
 }
 
-// go test -run FuzzConcurrentInserts ./btree -fuzz=Fuzz -fuzztime 10s
-func TestConcurrent_Insertsasd(t *testing.T) {
+func TestConcurrent_Inserts3(t *testing.T) {
 	memPager := NewMemPager(&StringKeySerializer{}, &StringValueSerializer{})
 	tree := NewBtreeWithPager(50, memPager)
 
@@ -303,7 +302,7 @@ func TestConcurrent_Insertsasd(t *testing.T) {
 		prev = k
 		i++
 	}
-	it.Close()
+	require.NoError(t, it.Close())
 
 	// assert inserted keys
 	t.Logf("inserted %v keys", len(inserted))
