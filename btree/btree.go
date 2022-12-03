@@ -9,7 +9,6 @@ import (
 
 type BTree struct {
 	degree        int
-	length        int
 	Root          Pointer
 	pager         Pager
 	rootEntryLock *sync.RWMutex
@@ -25,7 +24,6 @@ func NewBtreeWithPager(degree int, pager Pager) *BTree {
 
 	return &BTree{
 		degree:        degree,
-		length:        0,
 		Root:          root.GetPageId(),
 		pager:         pager,
 		rootEntryLock: &sync.RWMutex{},
@@ -36,7 +34,6 @@ func ConstructBtreeFromRootPointer(rootPage Pointer, degree int, pager Pager) *B
 	// print(1)
 	return &BTree{
 		degree:        degree,
-		length:        0,
 		Root:          rootPage,
 		pager:         pager,
 		rootEntryLock: &sync.RWMutex{},
