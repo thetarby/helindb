@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"encoding/json"
 	"fmt"
 	"helin/btree"
 	"helin/buffer"
@@ -20,8 +21,6 @@ type TableInfo struct {
 	catalog *InMemCatalog
 }
 
-//tree := NewBtreeWithPager(50, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{}, &StringValueSerializer{}))
-
 type IndexInfo struct {
 	Index   *btree.BTree
 	catalog *InMemCatalog
@@ -37,6 +36,25 @@ type IndexInfo struct {
 	ColumnIndexes []int
 }
 
+type StoreInfo struct {
+	Name                string
+	KeySerializerType   uint8
+	ValueSerializerType uint8
+	Degree              uint8
+	MetaPID             int64
+}
+
+func (s *StoreInfo) Serialize() []byte {
+	b, err := json.Marshal(s)
+	common.PanicIfErr(err)
+	return b
+}
+
+func (s *StoreInfo) Deserialize(b []byte) {
+	err := json.Unmarshal(b, s)
+	common.PanicIfErr(err)
+}
+
 type TableOID uint32
 type IndexOID uint32
 
@@ -49,11 +67,14 @@ type Catalog interface {
 	GetTableByOID(oid TableOID) *TableInfo
 
 	CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, columnIndexes []int, isUnique bool) (*IndexInfo, error)
-	GetIndex(indexName, tableName string) *IndexInfo
 	GetIndexByOID(indexOID IndexOID) *IndexInfo
-	GetIndexByTableOID(indexName, oid TableOID) *IndexInfo
 	GetTableIndexes(tableName string) []IndexInfo
+
+	CreateStore(txn concurrency.Transaction, name string) (*StoreInfo, error)
+	GetStore(txn concurrency.Transaction, name string) *btree.BTree
 }
+
+var _ Catalog = &InMemCatalog{}
 
 type InMemCatalog struct {
 	tables     map[TableOID]*TableInfo
@@ -141,7 +162,7 @@ func (c *InMemCatalog) CreateBtreeIndex(txn concurrency.Transaction, indexName s
 	serializer := TupleKeySerializer{schema: keySchema}
 
 	// TODO: what should be degree?
-	index := btree.NewBtreeWithPager(50, btree.NewBufferPoolPager(c.pool, &serializer))
+	index := btree.NewBtreeWithPager(50, btree.NewDefaultBPP(c.pool, &serializer))
 	it := structures.NewTableIterator(txn, table.Heap)
 	for {
 		n := CastRowAsTuple(it.Next())
@@ -186,19 +207,21 @@ func (c *InMemCatalog) CreateBtreeIndex(txn concurrency.Transaction, indexName s
 	return &info, nil
 }
 
-func (c *InMemCatalog) GetIndex(indexName, tableName string) *IndexInfo {
-	panic("implement me")
-}
-
 func (c *InMemCatalog) GetIndexByOID(indexOID IndexOID) *IndexInfo {
 	return c.indexes[indexOID]
 }
 
-func (c *InMemCatalog) GetIndexByTableOID(indexName, oid TableOID) *IndexInfo {
+func (c *InMemCatalog) GetTableIndexes(tableName string) []IndexInfo {
 	panic("implement me")
 }
 
-func (c *InMemCatalog) GetTableIndexes(tableName string) []IndexInfo {
+func (c *InMemCatalog) CreateStore(txn concurrency.Transaction, name string) (*StoreInfo, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *InMemCatalog) GetStore(txn concurrency.Transaction, name string) *btree.BTree {
+	//TODO implement me
 	panic("implement me")
 }
 

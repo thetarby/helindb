@@ -11,7 +11,7 @@ import (
 type BTree struct {
 	// degree is actually stored in metaPage, but it is cached here. since it is a constant value it is safe
 	// to set it once when opening btree and use until closing.
-	degree int
+	degree int // TODO: make this uint8
 
 	// metaPID is the page id of the metadata page of btree. it cannot change and is used to store
 	// information such as tree's root node pointer, degree etc... db schema must keep track of metaPID
@@ -48,9 +48,9 @@ func (m *metaPage) setDegree(degree int) {
 }
 
 func NewBtreeWithPager(degree int, pager Pager) *BTree {
+	meta := metaPage{pager.CreatePage()}
 	l := pager.NewLeafNode()
 	root := pager.NewInternalNode(l.GetPageId())
-	meta := metaPage{pager.CreatePage()}
 	meta.WLatch()
 	meta.setRoot(root.GetPageId())
 	meta.setDegree(degree)
@@ -81,6 +81,10 @@ func ConstructBtreeByMeta(metaPID Pointer, pager Pager) *BTree {
 		rootEntryLock: &sync.RWMutex{},
 		metaPID:       metaPID,
 	}
+}
+
+func (tree *BTree) GetMetaPID() Pointer {
+	return tree.metaPID
 }
 
 func (tree *BTree) GetRoot(mode TraverseMode) Node {
@@ -188,6 +192,9 @@ func (tree *BTree) InsertOrReplace(key common.Key, value any) (isInserted bool) 
 		topOfStack := stack[len(stack)-1]
 		leafNode := topOfStack.Node
 		leafNode.setValueAt(topOfStack.Index, value)
+		stack = stack[:len(stack)-1]
+		topOfStack.Node.WUnlatch()
+		tree.pager.Unpin(topOfStack.Node, true)
 		return false
 	}
 
@@ -324,7 +331,7 @@ func (tree *BTree) Delete(key common.Key) bool {
 
 					popped.WUnlatch()
 					tree.pager.Unpin(popped, true)
-					// TODO: may be log here? if it is a leaf node its both left and right nodes can be nil
+					// TODO: maybe log here? if it is a leaf node its both left and right nodes can be nil
 					return true
 				}
 				tree.mergeNodes(leftSibling, popped, parent)
@@ -356,7 +363,7 @@ func (tree *BTree) Delete(key common.Key) bool {
 	return true
 }
 
-func (tree *BTree) Find(key common.Key) interface{} {
+func (tree *BTree) Find(key common.Key) any {
 	res, stack := tree.FindAndGetStack(key, Read)
 	for _, pair := range stack {
 		tree.pager.Unpin(pair.Node, false)

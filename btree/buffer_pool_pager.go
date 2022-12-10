@@ -128,7 +128,7 @@ func (b *BufferPoolPager) Unpin(n Node, isDirty bool) {
 	b.pool.Unpin(int(n.GetPageId()), isDirty)
 }
 
-func NewBufferPoolPager(pool *buffer.BufferPool, serializer KeySerializer) *BufferPoolPager {
+func NewDefaultBPP(pool *buffer.BufferPool, serializer KeySerializer) *BufferPoolPager {
 	return &BufferPoolPager{
 		pool:            pool,
 		keySerializer:   serializer,
@@ -136,7 +136,7 @@ func NewBufferPoolPager(pool *buffer.BufferPool, serializer KeySerializer) *Buff
 	}
 }
 
-func NewBufferPoolPagerWithValueSerializer(pool *buffer.BufferPool, serializer KeySerializer, valSerializer ValueSerializer) *BufferPoolPager {
+func NewBPP(pool *buffer.BufferPool, serializer KeySerializer, valSerializer ValueSerializer) *BufferPoolPager {
 	return &BufferPoolPager{
 		pool:            pool,
 		keySerializer:   serializer,

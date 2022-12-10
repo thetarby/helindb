@@ -24,7 +24,7 @@ func TestConcurrent_Inserts(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(50, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(50, NewDefaultBPP(pool, &PersistentKeySerializer{}))
 	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
@@ -61,7 +61,7 @@ func TestConcurrent_Inserts2(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(50, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{}, &StringValueSerializer{}))
+	tree := NewBtreeWithPager(50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}))
 	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
@@ -87,7 +87,7 @@ func TestConcurrent_Deletes(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 100_000)
-	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(10, NewDefaultBPP(pool, &PersistentKeySerializer{}))
 	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
@@ -171,7 +171,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(50, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{}, &StringValueSerializer{}))
+	tree := NewBtreeWithPager(50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}))
 
 	toDeleteN := 10_000
 	toDelete := rand.Perm(toDeleteN)

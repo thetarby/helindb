@@ -41,7 +41,7 @@ func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 	dbFile := uuid.New().String() + ".helin"
 	pool := buffer.NewBufferPool(dbFile, 64)
 	defer os.Remove(dbFile)
-	tree := NewBtreeWithPager(100, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(100, NewDefaultBPP(pool, &PersistentKeySerializer{}))
 
 	n := 10000
 	for _, i := range rand.Perm(n) {
@@ -75,7 +75,7 @@ func TestPersistentPin_Count_Should_Be_Zero_After_Deletes_Succeeds(t *testing.T)
 	dbFile := uuid.New().String() + ".helin"
 	pool := buffer.NewBufferPool(dbFile, 16)
 	defer os.Remove(dbFile)
-	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(10, NewDefaultBPP(pool, &PersistentKeySerializer{}))
 
 	n := 1000
 	rand.Seed(42)

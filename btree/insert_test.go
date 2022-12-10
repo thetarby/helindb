@@ -152,7 +152,7 @@ func TestInsert_Internals_2(t *testing.T) {
 	dbName := id.String()
 	defer os.Remove(dbName)
 	pool := buffer.NewBufferPool(dbName, 8)
-	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(10, NewDefaultBPP(pool, &PersistentKeySerializer{}))
 
 	n := 10000
 	for i := range rand.Perm(n) {

@@ -17,6 +17,8 @@ type IDiskManager interface {
 	ReadPage(pageId int) ([]byte, error)
 	NewPage() (pageId int)
 	FreePage(pageId int)
+	GetCatalogPID() uint64
+	SetCatalogPID(pid uint64)
 	Close() error
 }
 
@@ -37,14 +39,14 @@ type DiskManager struct {
 	header     *header
 }
 
-func NewDiskManager(file string) (IDiskManager, error) {
+func NewDiskManager(file string) (IDiskManager, bool, error) {
 	d := DiskManager{}
 	d.serializer = jsonSerializer{}
 	d.filename = file
 
 	f, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, os.ModePerm)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	d.file = f
@@ -54,14 +56,16 @@ func NewDiskManager(file string) (IDiskManager, error) {
 	log.Printf("db is initalizing, file size is %d \n", filesize)
 
 	d.lastPageId = (int(filesize) / PageSize) - 1
+	created := false
 	if d.lastPageId == -1 {
 		// if it is a new db file
+		created = true
 		d.lastPageId = 1 // first page is reserved, so start from 1
 
 		d.initHeader()
 	}
 
-	return &d, nil
+	return &d, created, nil
 }
 
 func (d *DiskManager) WritePage(data []byte, pageId int) error {
@@ -191,6 +195,21 @@ func (d *DiskManager) Close() error {
 	return d.file.Close()
 }
 
+func (d *DiskManager) GetCatalogPID() uint64 {
+	d.mu.Lock()
+	h := d.getHeader()
+	d.mu.Unlock()
+	return h.catalogPID
+}
+
+func (d *DiskManager) SetCatalogPID(pid uint64) {
+	d.mu.Lock()
+	h := d.getHeader()
+	h.catalogPID = pid
+	d.setHeader(h)
+	d.mu.Unlock()
+}
+
 func (d *DiskManager) writePages(pages [][]byte, startingPageId int) error {
 	_, err := d.file.Seek((int64(PageSize))*int64(startingPageId), io.SeekStart)
 
@@ -276,22 +295,26 @@ func (d *DiskManager) initHeader() {
 	d.setHeader(header{
 		freeListHead: 0,
 		freeListTail: 0,
+		catalogPID:   0,
 	})
 }
 
 type header struct {
 	freeListHead uint64
 	freeListTail uint64
+	catalogPID   uint64
 }
 
 func readHeader(data []byte) header {
 	return header{
 		freeListHead: binary.BigEndian.Uint64(data),
 		freeListTail: binary.BigEndian.Uint64(data[8:]),
+		catalogPID:   binary.BigEndian.Uint64(data[16:]),
 	}
 }
 
 func writeHeader(h header, dest []byte) {
 	binary.BigEndian.PutUint64(dest, h.freeListHead)
 	binary.BigEndian.PutUint64(dest[8:], h.freeListTail)
+	binary.BigEndian.PutUint64(dest[16:], h.catalogPID)
 }

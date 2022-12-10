@@ -3,6 +3,7 @@ package buffer
 import (
 	"errors"
 	"fmt"
+	"helin/common"
 	"helin/disk"
 	"helin/disk/pages"
 	"log"
@@ -274,13 +275,31 @@ func NewBufferPool(dbFile string, poolSize int) *BufferPool {
 	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i
 	}
-	d, _ := disk.NewDiskManager(dbFile)
+	d, _, err := disk.NewDiskManager(dbFile)
+	common.PanicIfErr(err)
 	return &BufferPool{
 		poolSize:    poolSize,
 		frames:      make([]*pages.RawPage, poolSize),
 		pageMap:     map[int]int{},
 		emptyFrames: emptyFrames,
 		DiskManager: d,
+		lock:        sync.Mutex{},
+		Replacer:    NewClockReplacer(poolSize),
+	}
+}
+
+func NewBufferPoolWithDM(poolSize int, dm disk.IDiskManager) *BufferPool {
+	emptyFrames := make([]int, poolSize)
+	for i := 0; i < poolSize; i++ {
+		emptyFrames[i] = i
+	}
+
+	return &BufferPool{
+		poolSize:    poolSize,
+		frames:      make([]*pages.RawPage, poolSize),
+		pageMap:     map[int]int{},
+		emptyFrames: emptyFrames,
+		DiskManager: dm,
 		lock:        sync.Mutex{},
 		Replacer:    NewClockReplacer(poolSize),
 	}
