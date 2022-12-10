@@ -53,7 +53,7 @@ func TestCatalog_Create_Index_On_Unpopulated_Table_2_Nonunique_Index(t *testing.
 		}
 
 		sp := btree.SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(age),
 		}
 		index.Insert(&tk, sp)

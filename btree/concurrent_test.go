@@ -36,7 +36,7 @@ func TestConcurrent_Inserts(t *testing.T) {
 		go func(arr []int) {
 			for _, i := range arr {
 				tree.Insert(PersistentKey(i), SlotPointer{
-					PageId:  int64(i),
+					PageId:  uint64(i),
 					SlotIdx: int16(i),
 				})
 			}
@@ -47,10 +47,10 @@ func TestConcurrent_Inserts(t *testing.T) {
 
 	assert.Equal(t, len(inserted), tree.Count())
 	// assert they are sorted
-	vals := tree.FindSince(PersistentKey(1))
-	prev := -1
+	vals := tree.FindSince(PersistentKey(10))
+	prev := 9
 	for _, v := range vals {
-		require.Less(t, int64(prev), v.(SlotPointer).PageId)
+		require.Less(t, uint64(prev), v.(SlotPointer).PageId)
 		prev = int(v.(SlotPointer).PageId)
 	}
 }
@@ -95,7 +95,7 @@ func TestConcurrent_Deletes(t *testing.T) {
 	inserted := rand.Perm(n)
 	for _, i := range inserted {
 		tree.Insert(PersistentKey(i), SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		})
 	}
@@ -120,7 +120,7 @@ func TestConcurrent_Deletes(t *testing.T) {
 	}
 	for _, v := range inserted[50_000:] {
 		p := tree.Find(PersistentKey(v)).(SlotPointer)
-		require.Equal(t, int64(v), p.PageId)
+		require.Equal(t, uint64(v), p.PageId)
 	}
 
 	assert.Equal(t, 50_000, tree.Count())

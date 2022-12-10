@@ -34,7 +34,7 @@ func TestTableHeap(t *testing.T) {
 	}, "")
 
 	assert.NoError(t, err)
-	assert.Equal(t, firstPage.GetPageId(), int(rid.PageId))
+	assert.Equal(t, firstPage.GetPageId(), rid.PageId)
 }
 
 func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_Found(t *testing.T) {

@@ -11,7 +11,7 @@ type IPage interface {
 	GetData() []byte
 
 	// GetPageId returns the page_id of the physical page.
-	GetPageId() int
+	GetPageId() uint64
 	GetPinCount() int
 	IsDirty() bool
 	SetDirty()
@@ -25,14 +25,14 @@ type IPage interface {
 }
 
 type RawPage struct {
-	pageId   int
+	pageId   uint64
 	isDirty  bool
 	rwLatch  *sync.RWMutex
 	PinCount int
 	Data     []byte
 }
 
-func NewRawPage(pageId int) *RawPage {
+func NewRawPage(pageId uint64) *RawPage {
 	return &RawPage{
 		pageId:   pageId,
 		isDirty:  false,
@@ -59,7 +59,7 @@ func (p *RawPage) GetData() []byte { // TODO: it would be really good for debugg
 	return p.Data
 }
 
-func (p *RawPage) GetPageId() int {
+func (p *RawPage) GetPageId() uint64 {
 	return p.pageId
 }
 

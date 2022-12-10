@@ -27,7 +27,7 @@ type SLotArrEntry struct {
 var HeaderSize = binary.Size(SlottedPageHeader{})
 var SlotArrEntrySize = binary.Size(SLotArrEntry{})
 
-func (sp *SlottedPage) GetPageId() int {
+func (sp *SlottedPage) GetPageId() uint64 {
 	return sp.IPage.GetPageId()
 }
 

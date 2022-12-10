@@ -39,13 +39,13 @@ func TestPersistentInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *test
 	tree := NewBtreeWithPager(80, NewDefaultBPP(pool, &PersistentKeySerializer{}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		})
 	}
 
 	isInserted := tree.InsertOrReplace(PersistentKey(500), SlotPointer{
-		PageId:  int64(1500),
+		PageId:  uint64(1500),
 		SlotIdx: int16(1500),
 	})
 
@@ -63,7 +63,7 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 	n := 100000
 	for _, i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		})
 	}
@@ -75,7 +75,7 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 			val = tree.Find(PersistentKey(i))
 		}
 		assert.Equal(t, SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		}, val.(SlotPointer))
 	}
@@ -115,7 +115,7 @@ func TestPersistent_Pin_Count_Should_Be_Zero_After_Inserts_Are_Complete(t *testi
 	n := 1000
 	for _, i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		})
 		if pool.Replacer.NumPinnedPages() != 0 {
@@ -156,7 +156,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 
 	for _, i := range v {
 		tree.Insert(i, SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		})
 	}
@@ -175,7 +175,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 	for _, i := range v {
 		val := newTreeReference.Find(i)
 		assert.Equal(t, SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		}, val.(SlotPointer))
 	}
@@ -193,7 +193,7 @@ func TestPersistent_Find_Should_Unpin_All_Nodes_It_Pinned(t *testing.T) {
 	n := 1000
 	for _, i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		})
 		if pool.Replacer.NumPinnedPages() != 0 {

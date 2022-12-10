@@ -23,7 +23,7 @@ func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
 
 	// write 50 pages with 2 sized buffer pool
-	pageIDs := make([]int, 0)
+	pageIDs := make([]uint64, 0)
 	for i := 0; i < 50; i++ {
 		x := teststruct{Num: i, Val: "selam"}
 		json, _ := json.Marshal(x)
@@ -78,7 +78,7 @@ func TestBuffer_Pool_Should_Not_Corrupt_Pages(t *testing.T) {
 	}
 
 	// write random pages with 10 sized buffer pool
-	pageIDs := make([]int, 0)
+	pageIDs := make([]uint64, 0)
 	for i := 0; i < numPagesToTest; i++ {
 		p, err := b.NewPage()
 		pageIDs = append(pageIDs, p.GetPageId())

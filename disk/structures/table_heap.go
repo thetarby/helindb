@@ -9,9 +9,9 @@ import (
 
 type Rid btree.SlotPointer
 
-func NewRid(pageID, slotIdx int) Rid {
+func NewRid(pageID uint64, slotIdx int) Rid {
 	return Rid{
-		PageId:  int64(pageID),
+		PageId:  pageID,
 		SlotIdx: int16(slotIdx),
 	}
 }
@@ -35,12 +35,12 @@ type ITableHeap interface {
 
 type TableHeap struct {
 	Pool        *buffer.BufferPool
-	FirstPageID int
-	LastPageID  int
+	FirstPageID uint64
+	LastPageID  uint64
 }
 
 func (t *TableHeap) HardDeleteTuple(rid Rid, txn concurrency.Transaction) error {
-	page, err := t.Pool.GetPage(int(rid.PageId))
+	page, err := t.Pool.GetPage(rid.PageId)
 	if err != nil {
 		return err
 	}
@@ -88,7 +88,7 @@ func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, er
 			}
 
 			h := currPage.GetHeader()
-			h.NextPageID = int64(page.GetPageId())
+			h.NextPageID = page.GetPageId()
 			currPage.SetHeader(h)
 
 			currPage.WUnlatch()
@@ -100,7 +100,7 @@ func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, er
 		currPage.WUnlatch()
 		// if next page id is set move on to that page
 		t.Pool.Unpin(currPage.GetPageId(), false)
-		raw, err := t.Pool.GetPage(int(currPage.GetHeader().NextPageID))
+		raw, err := t.Pool.GetPage(currPage.GetHeader().NextPageID)
 		if err != nil {
 			return Rid{}, err
 		}
@@ -109,7 +109,7 @@ func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, er
 }
 
 func (t *TableHeap) UpdateTuple(tuple Row, rid Rid, txn concurrency.Transaction) error {
-	page, err := t.Pool.GetPage(int(rid.PageId))
+	page, err := t.Pool.GetPage(rid.PageId)
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func (t *TableHeap) UpdateTuple(tuple Row, rid Rid, txn concurrency.Transaction)
 }
 
 func (t *TableHeap) ReadTuple(rid Rid, dest *Row, txn concurrency.Transaction) error {
-	p, err := t.Pool.GetPage(int(rid.PageId))
+	p, err := t.Pool.GetPage(rid.PageId)
 	if err != nil {
 		return err
 	}
@@ -168,7 +168,7 @@ func (t *TableHeap) GetFirstPage() (*pages.HeapPage, error) {
 	return pages.AsHeapPage(rawPage), nil
 }
 
-func NewTableHeap(pool *buffer.BufferPool, firstPageId int) *TableHeap {
+func NewTableHeap(pool *buffer.BufferPool, firstPageId uint64) *TableHeap {
 	return &TableHeap{
 		Pool:        pool,
 		FirstPageID: firstPageId,

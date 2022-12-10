@@ -17,7 +17,7 @@ type ValueSerializer interface {
 }
 
 type SlotPointer struct {
-	PageId  int64
+	PageId  uint64
 	SlotIdx int16
 }
 

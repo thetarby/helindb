@@ -25,11 +25,11 @@ type BufferPoolPager struct {
 }
 
 func (b *BufferPoolPager) Free(p Pointer) error {
-	return b.pool.FreePage(int(p))
+	return b.pool.FreePage(uint64(p))
 }
 
 func (b *BufferPoolPager) FreeNode(n Node) error {
-	return b.pool.FreePage(int(n.GetPageId()))
+	return b.pool.FreePage(uint64(n.GetPageId()))
 }
 
 func (b *BufferPoolPager) CreatePage() NodePage {
@@ -41,7 +41,7 @@ func (b *BufferPoolPager) CreatePage() NodePage {
 }
 
 func (b *BufferPoolPager) GetPage(p Pointer) NodePage {
-	pg, err := b.pool.GetPage(int(p))
+	pg, err := b.pool.GetPage(uint64(p))
 	common.PanicIfErr(err)
 
 	sp := CastSlottedPage(pg)
@@ -49,7 +49,7 @@ func (b *BufferPoolPager) GetPage(p Pointer) NodePage {
 }
 
 func (b *BufferPoolPager) UnpinByPointer(p Pointer, isDirty bool) {
-	b.pool.Unpin(int(p), isDirty)
+	b.pool.Unpin(uint64(p), isDirty)
 }
 
 // NewInternalNode Caller should call unpin with dirty is set
@@ -101,7 +101,7 @@ func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 	if p == 0 {
 		return nil
 	}
-	page, err := b.pool.GetPage(int(p))
+	page, err := b.pool.GetPage(uint64(p))
 	common.PanicIfErr(err)
 	if mode == Read {
 		page.RLatch()
@@ -125,7 +125,7 @@ func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 }
 
 func (b *BufferPoolPager) Unpin(n Node, isDirty bool) {
-	b.pool.Unpin(int(n.GetPageId()), isDirty)
+	b.pool.Unpin(uint64(n.GetPageId()), isDirty)
 }
 
 func NewDefaultBPP(pool *buffer.BufferPool, serializer KeySerializer) *BufferPoolPager {

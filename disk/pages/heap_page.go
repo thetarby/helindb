@@ -47,8 +47,8 @@ type IHeapPage interface {
 type HeapPageHeader struct {
 	FreeSpacePointer uint32
 	SLotArrLen       uint16
-	NextPageID       int64
-	PrevPageID       int64
+	NextPageID       uint64
+	PrevPageID       uint64
 }
 
 type HeapPageArrEntry struct {

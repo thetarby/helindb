@@ -157,7 +157,7 @@ func TestInsert_Internals_2(t *testing.T) {
 	n := 10000
 	for i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		})
 	}

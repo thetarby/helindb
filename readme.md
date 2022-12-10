@@ -45,4 +45,4 @@ pool but each buffer pool can have different size)
 
 - [ ] Use uint as page id instead of int
 
-- [ ] Define page_id type and use it everywhere instead of int64, uint64 and Pointer types
+- [ ] Define page_id type and use it everywhere instead of uint64
