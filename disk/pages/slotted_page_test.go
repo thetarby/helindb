@@ -16,7 +16,7 @@ func newSp() *SlottedPage {
 		},
 	}
 
-	sp.SetHeader(SlottedPageHeader{
+	sp.setHeader(SlottedPageHeader{
 		FreeSpacePointer: uint16(len(sp.GetData())),
 		SlotArrSize:      0,
 	})

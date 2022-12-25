@@ -18,6 +18,8 @@ type SlottedPageHeader struct {
 	FreeSpacePointer uint16
 	SlotArrSize      uint16
 	EmptyBytes       uint16
+	recLSN           LSN
+	pageLSN          LSN
 }
 
 type SLotArrEntry struct {
@@ -81,14 +83,38 @@ func (sp *SlottedPage) GetHeader() SlottedPageHeader {
 		FreeSpacePointer: binary.BigEndian.Uint16(d),
 		SlotArrSize:      binary.BigEndian.Uint16(d[2:]),
 		EmptyBytes:       binary.BigEndian.Uint16(d[4:]),
+		recLSN:           ReadLSN(d[6:]),
+		pageLSN:          ReadLSN(d[14:]),
 	}
 }
 
-func (sp *SlottedPage) SetHeader(h SlottedPageHeader) {
+func (sp *SlottedPage) setHeader(h SlottedPageHeader) {
 	d := sp.GetData()
 	binary.BigEndian.PutUint16(d, h.FreeSpacePointer)
 	binary.BigEndian.PutUint16(d[2:], h.SlotArrSize)
 	binary.BigEndian.PutUint16(d[4:], h.EmptyBytes)
+	PutLSN(d[6:], h.recLSN)
+	PutLSN(d[14:], h.pageLSN)
+}
+
+func (sp *SlottedPage) SetPageLSN(l LSN) {
+	h := sp.GetHeader()
+	h.pageLSN = l
+	sp.setHeader(h)
+}
+
+func (sp *SlottedPage) GetPageLSN() LSN {
+	return sp.GetHeader().pageLSN
+}
+
+func (sp *SlottedPage) SetRecLSN(l LSN) {
+	h := sp.GetHeader()
+	h.recLSN = l
+	sp.setHeader(h)
+}
+
+func (sp *SlottedPage) GetRecLSN() LSN {
+	return sp.GetHeader().recLSN
 }
 
 func (sp *SlottedPage) GetAt(idx int) []byte {
@@ -162,7 +188,7 @@ func (sp *SlottedPage) DeleteAt(idx int) error {
 	h.EmptyBytes += uint16(valSize) + uint16(n)
 
 	sp.setSlotArr(arr)
-	sp.SetHeader(h)
+	sp.setHeader(h)
 
 	return nil
 }
@@ -200,7 +226,7 @@ func (sp *SlottedPage) Vacuum() {
 	h := sp.GetHeader()
 	h.FreeSpacePointer = uint16(newFreeSpace)
 	h.EmptyBytes = 0
-	sp.SetHeader(h)
+	sp.setHeader(h)
 	sp.setSlotArr(arr)
 }
 
@@ -250,7 +276,7 @@ func (sp *SlottedPage) insertAt(idx int, data []byte) error {
 
 	h.SlotArrSize = uint16(len(arr))
 	sp.setSlotArr(arr)
-	sp.SetHeader(h)
+	sp.setHeader(h)
 
 	return nil
 }
@@ -298,7 +324,7 @@ func (sp *SlottedPage) values() []byte {
 func InitSlottedPage(p IPage) SlottedPage {
 	sp := SlottedPage{p}
 
-	sp.SetHeader(SlottedPageHeader{
+	sp.setHeader(SlottedPageHeader{
 		FreeSpacePointer: uint16(len(sp.GetData())),
 		SlotArrSize:      0,
 	})
