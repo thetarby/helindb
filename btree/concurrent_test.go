@@ -173,7 +173,8 @@ func TestConcurrent_Hammer(t *testing.T) {
 	pool := buffer.NewBufferPool(dbName, 4096)
 	tree := NewBtreeWithPager(50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}))
 
-	toDeleteN := 10_000
+	// first insert some items later to be deleted
+	toDeleteN := 100_000
 	toDelete := rand.Perm(toDeleteN)
 	for _, i := range toDelete {
 		tree.Insert(StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("key_%v_val_%v", i, i))
@@ -181,14 +182,18 @@ func TestConcurrent_Hammer(t *testing.T) {
 
 	rand.Seed(42)
 
+	// now generate items that will be inserted in parallel while other goroutines will delete previously inserted
+	// items again in parallel.
 	n, chunkSize := 500_000, 50_000
-	inserted := rand.Perm(n)
-	for i := 0; i < len(inserted); i++ {
-		inserted[i] += toDeleteN
+	toInsert := rand.Perm(n)
+	for i := 0; i < len(toInsert); i++ {
+		toInsert[i] += toDeleteN
 	}
 
 	wg := &sync.WaitGroup{}
-	for _, chunk := range common.ChunksInt(inserted, chunkSize) {
+
+	// initiate insert routines
+	for _, chunk := range common.ChunksInt(toInsert, chunkSize) {
 		wg.Add(1)
 		go func(arr []int) {
 			for _, i := range arr {
@@ -198,6 +203,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 		}(chunk)
 	}
 
+	// initiate delete routines
 	for _, chunk := range common.ChunksInt(toDelete, 1000) {
 		wg.Add(1)
 		go func(arr []int) {
@@ -212,7 +218,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 	wg.Wait()
 
 	t.Log("validating")
-	assert.Equal(t, len(inserted), tree.Count())
+	assert.Len(t, toInsert, tree.Count())
 
 	// assert they are sorted
 	it := NewTreeIterator(nil, tree, tree.pager)
@@ -264,7 +270,8 @@ func FuzzConcurrent_Inserts(f *testing.F) {
 			prev = k
 			i++
 		}
-		it.Close()
+
+		require.NoError(t, it.Close())
 	})
 }
 
