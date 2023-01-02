@@ -30,6 +30,7 @@ type RawPage struct {
 	rwLatch  *sync.RWMutex
 	PinCount int
 	Data     []byte
+	trace    bool
 }
 
 func NewRawPage(pageId uint64) *RawPage {

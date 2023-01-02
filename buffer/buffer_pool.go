@@ -159,7 +159,9 @@ func (b *BufferPool) Unpin(pageId uint64, isDirty bool) bool {
 	if isDirty {
 		page.SetDirty()
 	}
-
+	if page.GetPageId() != pageId {
+		panic("page id is not same")
+	}
 	// if pin count is already 0 it is already unpinned. Although that should not happen I guess
 	if page.GetPinCount() <= 0 {
 		panic(fmt.Sprintf("buffer.Unpin is called while pin count is lte zero. PageId: %v, pin count %v\n", pageId, page.GetPinCount()))

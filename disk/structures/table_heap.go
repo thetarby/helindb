@@ -75,8 +75,8 @@ func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, er
 				return Rid{}, err
 			}
 
-			currPage.WUnlatch()
 			t.Pool.Unpin(currPage.GetPageId(), true)
+			currPage.WUnlatch()
 			return NewRid(currPage.GetPageId(), idx), nil
 		}
 
@@ -91,15 +91,15 @@ func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, er
 			h.NextPageID = page.GetPageId()
 			currPage.SetHeader(h)
 
-			currPage.WUnlatch()
 			t.Pool.Unpin(currPage.GetPageId(), true)
+			currPage.WUnlatch()
 			currPage = pages.InitHeapPage(page)
 			continue
 		}
 
-		currPage.WUnlatch()
 		// if next page id is set move on to that page
 		t.Pool.Unpin(currPage.GetPageId(), false)
+		currPage.WUnlatch()
 		raw, err := t.Pool.GetPage(currPage.GetHeader().NextPageID)
 		if err != nil {
 			return Rid{}, err
