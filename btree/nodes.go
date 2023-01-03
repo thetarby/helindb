@@ -68,3 +68,33 @@ type Node interface {
 	RLatch()
 	RUnLatch()
 }
+
+const (
+	PersistentNodeHeaderSize = 3 + 2*NodePointerSize
+	NodePointerSize          = 8 // Pointer is int64 which is 8 bytes
+)
+
+type PersistentNodeHeader struct {
+	IsLeaf uint8
+	KeyLen uint16
+	Right  Pointer
+	Left   Pointer
+}
+
+func ReadPersistentNodeHeader(data []byte) *PersistentNodeHeader {
+	dest := PersistentNodeHeader{
+		IsLeaf: data[0],
+		KeyLen: binary.BigEndian.Uint16(data[1:]),
+		Right:  Pointer(binary.BigEndian.Uint64(data[3:])),
+		Left:   Pointer(binary.BigEndian.Uint64(data[11:])),
+	}
+
+	return &dest
+}
+
+func WritePersistentNodeHeader(header *PersistentNodeHeader, dest []byte) {
+	dest[0] = header.IsLeaf
+	binary.BigEndian.PutUint16(dest[1:], header.KeyLen)
+	binary.BigEndian.PutUint64(dest[3:], uint64(header.Right))
+	binary.BigEndian.PutUint64(dest[11:], uint64(header.Left))
+}

@@ -21,7 +21,7 @@ func TestTableHeap(t *testing.T) {
 
 	pool := buffer.NewBufferPool(dbName, 2)
 	firstPage, _ := pool.NewPage()
-	pages.FormatAsSlottedPage(firstPage)
+	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
 		FirstPageID: firstPage.GetPageId(),
@@ -34,7 +34,7 @@ func TestTableHeap(t *testing.T) {
 	}, "")
 
 	assert.NoError(t, err)
-	assert.Equal(t, firstPage.GetPageId(), int(rid.PageId))
+	assert.Equal(t, firstPage.GetPageId(), rid.PageId)
 }
 
 func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_Found(t *testing.T) {
@@ -45,7 +45,7 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 
 	pool := buffer.NewBufferPool(dbName, 32)
 	firstPage, _ := pool.NewPage()
-	pages.FormatAsSlottedPage(firstPage)
+	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
 		FirstPageID: firstPage.GetPageId(),
@@ -80,7 +80,7 @@ func TestTableHeap_Delete(t *testing.T) {
 
 	pool := buffer.NewBufferPool(dbName, 32)
 	firstPage, _ := pool.NewPage()
-	pages.FormatAsSlottedPage(firstPage)
+	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
 		FirstPageID: firstPage.GetPageId(),
@@ -125,7 +125,7 @@ func TestTableHeap_Delete_Last_Inserted_Item(t *testing.T) {
 
 	pool := buffer.NewBufferPool(dbName, 32)
 	firstPage, _ := pool.NewPage()
-	pages.FormatAsSlottedPage(firstPage)
+	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
 		FirstPageID: firstPage.GetPageId(),
@@ -169,7 +169,7 @@ func TestTableHeap_Delete_First_Inserted_Item(t *testing.T) {
 
 	pool := buffer.NewBufferPool(dbName, 32)
 	firstPage, _ := pool.NewPage()
-	pages.FormatAsSlottedPage(firstPage)
+	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
 		FirstPageID: firstPage.GetPageId(),
@@ -214,7 +214,7 @@ func TestTableHeap_Update(t *testing.T) {
 
 	pool := buffer.NewBufferPool(dbName, 32)
 	firstPage, _ := pool.NewPage()
-	pages.FormatAsSlottedPage(firstPage)
+	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
 		FirstPageID: firstPage.GetPageId(),

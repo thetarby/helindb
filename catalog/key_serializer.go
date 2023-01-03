@@ -19,9 +19,7 @@ func (p *CharTypeKeySerializer) Serialize(key common.Key) ([]byte, error) {
 }
 
 func (p *CharTypeKeySerializer) Deserialize(data []byte) (common.Key, error) {
-	var val = db_types.Deserialize(db_types.TypeID{
-		KindID: 2,
-	}, data)
+	var val = db_types.Deserialize(db_types.CharTypeID, data)
 	return val, nil
 }
 
@@ -33,31 +31,20 @@ func (p *CharTypeKeySerializer) Size() int {
 // serialized to binary all TupleKeySerializer has to do is to get each column from tuple
 // and serialize in order
 type TupleKeySerializer struct {
-	schema  Schema
-	keySize int
+	schema Schema
 }
 
 func (p *TupleKeySerializer) Serialize(key common.Key) ([]byte, error) {
 	tupleKey := key.(*TupleKey)
 
-	dest := make([]byte, 0)
-	for i, _ := range tupleKey.Schema.GetColumns() {
-		val := tupleKey.GetValue(tupleKey.Schema, i)
-		size := val.Size()
-		temp := make([]byte, size)
-		val.Serialize(temp)
-		dest = append(dest, temp...)
-	}
-
-	return dest, nil
+	return tupleKey.GetData(), nil
 }
 
 func (p *TupleKeySerializer) Deserialize(data []byte) (common.Key, error) {
 	copied := make([]byte, len(data))
 	copy(copied, data)
 	row := structures.Row{
-		Data: copied[:p.keySize],
-		Rid:  structures.Rid{},
+		Data: copied,
 	}
 
 	tuple := CastRowAsTuple(&row)
@@ -69,5 +56,5 @@ func (p *TupleKeySerializer) Deserialize(data []byte) (common.Key, error) {
 }
 
 func (p *TupleKeySerializer) Size() int {
-	return p.keySize
+	return -1
 }

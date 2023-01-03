@@ -21,14 +21,14 @@ func (it *TableIterator) Next() *Row {
 	pool := it.heap.Pool
 	dest := Row{}
 
-	currPage, err := pool.GetPage(int(it.rid.PageId))
+	currPage, err := pool.GetPage(it.rid.PageId)
 	common.PanicIfErr(err)
-	sp := pages.SlottedPageInstanceFromRawPage(currPage)
+	sp := pages.AsHeapPage(currPage)
 
 	nextIdx, err := sp.GetNextIdx(int(it.rid.SlotIdx))
 	if err != nil {
 		for {
-			nextPageID := int(sp.GetHeader().NextPageID)
+			nextPageID := sp.GetHeader().NextPageID
 			if nextPageID == 0 {
 				// we come to the end of heap
 				return nil
@@ -36,7 +36,7 @@ func (it *TableIterator) Next() *Row {
 
 			currPage, err = pool.GetPage(nextPageID)
 			common.PanicIfErr(err)
-			sp = pages.SlottedPageInstanceFromRawPage(currPage)
+			sp = pages.AsHeapPage(currPage)
 			nextIdx, err = sp.GetNextIdx(-1)
 			if err != nil {
 				continue
@@ -46,7 +46,7 @@ func (it *TableIterator) Next() *Row {
 	}
 
 	nextRid := Rid{
-		PageId:  int64(sp.GetPageId()),
+		PageId:  sp.GetPageId(),
 		SlotIdx: int16(nextIdx),
 	}
 	if err := it.heap.ReadTuple(nextRid, &dest, it.txn); err != nil {
@@ -61,7 +61,7 @@ func NewTableIterator(txn concurrency.Transaction, heap *TableHeap) *TableIterat
 	return &TableIterator{
 		txn: txn,
 		rid: Rid{
-			PageId:  int64(heap.FirstPageID),
+			PageId:  heap.FirstPageID,
 			SlotIdx: -1,
 		},
 		heap: heap,

@@ -31,6 +31,13 @@ func (s *SchemaImpl) GetColumn(idx int) *Column {
 }
 
 func NewSchema(cols []Column) Schema {
+	// set offsets of each column
+	var offset uint32 = 0
+	for i := 0; i < len(cols); i++ {
+		cols[i].Offset = offset
+		offset += cols[i].InlinedSize()
+	}
+
 	return &SchemaImpl{
 		columns: cols,
 	}

@@ -7,6 +7,11 @@ type NodePage interface {
 	WUnlatch()
 	RLatch()
 	RUnLatch()
+
+	GetAt(idx int) []byte
+	InsertAt(idx int, data []byte) error
+	SetAt(idx int, data []byte) error
+	DeleteAt(idx int) error
 }
 
 type Pager interface {

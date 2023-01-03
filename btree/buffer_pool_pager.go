@@ -25,34 +25,31 @@ type BufferPoolPager struct {
 }
 
 func (b *BufferPoolPager) Free(p Pointer) error {
-	return b.pool.FreePage(int(p))
+	return b.pool.FreePage(uint64(p))
 }
 
 func (b *BufferPoolPager) FreeNode(n Node) error {
-	return b.pool.FreePage(int(n.GetPageId()))
+	return b.pool.FreePage(uint64(n.GetPageId()))
 }
 
 func (b *BufferPoolPager) CreatePage() NodePage {
 	p, err := b.pool.NewPage()
 	common.PanicIfErr(err)
-	bp := &BtreePage{
-		RawPage: *p,
-	}
-	
-	return bp
+
+	sp := InitSlottedPage(p)
+	return &sp
 }
 
 func (b *BufferPoolPager) GetPage(p Pointer) NodePage {
-	pg, err := b.pool.GetPage(int(p))
+	pg, err := b.pool.GetPage(uint64(p))
 	common.PanicIfErr(err)
 
-	return &BtreePage{
-		RawPage: *pg,
-	}
+	sp := CastSlottedPage(pg)
+	return &sp
 }
 
 func (b *BufferPoolPager) UnpinByPointer(p Pointer, isDirty bool) {
-	b.pool.Unpin(int(p), isDirty)
+	b.pool.Unpin(uint64(p), isDirty)
 }
 
 // NewInternalNode Caller should call unpin with dirty is set
@@ -67,7 +64,7 @@ func (b *BufferPoolPager) NewInternalNode(firstPointer Pointer) Node {
 	p.WLatch()
 
 	node := VarKeyInternalNode{
-		p:             InitSlottedPage(&BtreePage{*p}),
+		p:             InitSlottedPage(p),
 		keySerializer: b.keySerializer,
 	}
 	// set header
@@ -90,7 +87,7 @@ func (b *BufferPoolPager) NewLeafNode() Node {
 	p.WLatch()
 
 	node := VarKeyLeafNode{
-		p:             InitSlottedPage(&BtreePage{*p}),
+		p:             InitSlottedPage(p),
 		keySerializer: b.keySerializer,
 		valSerializer: b.valueSerializer,
 	}
@@ -104,14 +101,15 @@ func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 	if p == 0 {
 		return nil
 	}
-	page, err := b.pool.GetPage(int(p))
+	page, err := b.pool.GetPage(uint64(p))
 	common.PanicIfErr(err)
 	if mode == Read {
 		page.RLatch()
 	} else {
 		page.WLatch()
 	}
-	sp := CastSlottedPage(&BtreePage{*page})
+
+	sp := CastSlottedPage(page)
 	h := ReadPersistentNodeHeader(sp.GetAt(0))
 	if h.IsLeaf == 1 {
 		return &VarKeyLeafNode{
@@ -127,10 +125,10 @@ func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 }
 
 func (b *BufferPoolPager) Unpin(n Node, isDirty bool) {
-	b.pool.Unpin(int(n.GetPageId()), isDirty)
+	b.pool.Unpin(uint64(n.GetPageId()), isDirty)
 }
 
-func NewBufferPoolPager(pool *buffer.BufferPool, serializer KeySerializer) *BufferPoolPager {
+func NewDefaultBPP(pool *buffer.BufferPool, serializer KeySerializer) *BufferPoolPager {
 	return &BufferPoolPager{
 		pool:            pool,
 		keySerializer:   serializer,
@@ -138,7 +136,7 @@ func NewBufferPoolPager(pool *buffer.BufferPool, serializer KeySerializer) *Buff
 	}
 }
 
-func NewBufferPoolPagerWithValueSerializer(pool *buffer.BufferPool, serializer KeySerializer, valSerializer ValueSerializer) *BufferPoolPager {
+func NewBPP(pool *buffer.BufferPool, serializer KeySerializer, valSerializer ValueSerializer) *BufferPoolPager {
 	return &BufferPoolPager{
 		pool:            pool,
 		keySerializer:   serializer,

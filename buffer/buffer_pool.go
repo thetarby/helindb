@@ -3,6 +3,7 @@ package buffer
 import (
 	"errors"
 	"fmt"
+	"helin/common"
 	"helin/disk"
 	"helin/disk/pages"
 	"log"
@@ -11,10 +12,10 @@ import (
 )
 
 type IBufferPool interface {
-	GetPage(pageId int) (*pages.RawPage, error)
-	pin(pageId int)
-	Unpin(pageId int, isDirty bool) bool
-	Flush(pageId int) error
+	GetPage(pageId uint64) (*pages.RawPage, error)
+	pin(pageId uint64)
+	Unpin(pageId uint64, isDirty bool) bool
+	Flush(pageId uint64) error
 	FlushAll() error
 
 	// NewPage creates a new page
@@ -22,7 +23,7 @@ type IBufferPool interface {
 
 	// FreePage deletes a page from the buffer pool. Returns error if the page exists but could not be deleted and
 	// panics if page does not exist
-	FreePage(pageId int) error
+	FreePage(pageId uint64) error
 
 	// EmptyFrameSize returns the number empty frames which does not hold data of any physical page
 	EmptyFrameSize() int
@@ -33,14 +34,14 @@ var _ IBufferPool = &BufferPool{}
 type BufferPool struct {
 	poolSize    int
 	frames      []*pages.RawPage
-	pageMap     map[int]int // physical page_id => frame index which keeps that page
-	emptyFrames []int       // list of indexes that points to empty frames in the pool
+	pageMap     map[uint64]int // physical page_id => frame index which keeps that page
+	emptyFrames []int          // list of indexes that points to empty frames in the pool
 	Replacer    IReplacer
 	DiskManager disk.IDiskManager
 	lock        sync.Mutex
 }
 
-func (b *BufferPool) FreePage(pageId int) error {
+func (b *BufferPool) FreePage(pageId uint64) error {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
@@ -60,7 +61,7 @@ func (b *BufferPool) FreePage(pageId int) error {
 	return nil
 }
 
-func (b *BufferPool) GetPage(pageId int) (*pages.RawPage, error) {
+func (b *BufferPool) GetPage(pageId uint64) (*pages.RawPage, error) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
@@ -131,7 +132,7 @@ func (b *BufferPool) GetPage(pageId int) (*pages.RawPage, error) {
 }
 
 // pin increments page's pin count and pins the frame that keeps the page to avoid it being chosen as victim
-func (b *BufferPool) pin(pageId int) {
+func (b *BufferPool) pin(pageId uint64) {
 	frameIdx, ok := b.pageMap[pageId]
 	if !ok {
 		// TODO: is panic ok here? this method is private and should not be called with a non existent
@@ -144,7 +145,7 @@ func (b *BufferPool) pin(pageId int) {
 	b.Replacer.Pin(frameIdx)
 }
 
-func (b *BufferPool) Unpin(pageId int, isDirty bool) bool {
+func (b *BufferPool) Unpin(pageId uint64, isDirty bool) bool {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
@@ -158,7 +159,9 @@ func (b *BufferPool) Unpin(pageId int, isDirty bool) bool {
 	if isDirty {
 		page.SetDirty()
 	}
-
+	if page.GetPageId() != pageId {
+		panic("page id is not same")
+	}
 	// if pin count is already 0 it is already unpinned. Although that should not happen I guess
 	if page.GetPinCount() <= 0 {
 		panic(fmt.Sprintf("buffer.Unpin is called while pin count is lte zero. PageId: %v, pin count %v\n", pageId, page.GetPinCount()))
@@ -173,7 +176,7 @@ func (b *BufferPool) Unpin(pageId int, isDirty bool) bool {
 	return false
 }
 
-func (b *BufferPool) Flush(pageId int) error {
+func (b *BufferPool) Flush(pageId uint64) error {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 	frameIdx, ok := b.pageMap[pageId]
@@ -274,13 +277,31 @@ func NewBufferPool(dbFile string, poolSize int) *BufferPool {
 	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i
 	}
-	d, _ := disk.NewDiskManager(dbFile)
+	d, _, err := disk.NewDiskManager(dbFile)
+	common.PanicIfErr(err)
 	return &BufferPool{
 		poolSize:    poolSize,
 		frames:      make([]*pages.RawPage, poolSize),
-		pageMap:     map[int]int{},
+		pageMap:     map[uint64]int{},
 		emptyFrames: emptyFrames,
 		DiskManager: d,
+		lock:        sync.Mutex{},
+		Replacer:    NewClockReplacer(poolSize),
+	}
+}
+
+func NewBufferPoolWithDM(poolSize int, dm disk.IDiskManager) *BufferPool {
+	emptyFrames := make([]int, poolSize)
+	for i := 0; i < poolSize; i++ {
+		emptyFrames[i] = i
+	}
+
+	return &BufferPool{
+		poolSize:    poolSize,
+		frames:      make([]*pages.RawPage, poolSize),
+		pageMap:     map[uint64]int{},
+		emptyFrames: emptyFrames,
+		DiskManager: dm,
 		lock:        sync.Mutex{},
 		Replacer:    NewClockReplacer(poolSize),
 	}

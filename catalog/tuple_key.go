@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"helin/catalog/db_types"
 	"helin/common"
 )
 import "fmt"
@@ -27,9 +28,16 @@ func (t *TupleKey) String() string {
 
 func (t *TupleKey) Less(than common.Key) bool {
 	thanAsTupleKey := than.(*TupleKey)
-	for idx, _ := range t.Schema.GetColumns() {
-		val1 := t.GetValue(t.Schema, idx)
-		val2 := thanAsTupleKey.GetValue(t.Schema, idx)
+
+	// find the longest schema, since one of them might be partial
+	schema := t.Schema
+	if len(t.Schema.GetColumns()) < len(thanAsTupleKey.Schema.GetColumns()) {
+		schema = thanAsTupleKey.Schema
+	}
+
+	for idx, _ := range schema.GetColumns() {
+		val1 := t.GetValue(schema, idx)
+		val2 := thanAsTupleKey.GetValue(schema, idx)
 
 		if val1 == nil || val2 == nil {
 			if val1 == nil && val2 != nil {
@@ -47,4 +55,11 @@ func (t *TupleKey) Less(than common.Key) bool {
 	}
 
 	return false
+}
+
+func NewTupleKey(schema Schema, value ...*db_types.Value) TupleKey {
+	t, err := NewTupleWithSchema(value, schema)
+	common.PanicIfErr(err)
+
+	return TupleKey{Schema: schema, Tuple: *t}
 }

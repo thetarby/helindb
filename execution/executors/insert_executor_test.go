@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func poolAndCatalog() (*buffer.BufferPool, catalog.ICatalog, func()) {
+func poolAndCatalog() (*buffer.BufferPool, catalog.Catalog, func()) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
 

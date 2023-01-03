@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"helin/common"
+	"helin/disk/pages"
 )
 
 // pointer size is the byte size of a page pointer
@@ -14,7 +15,7 @@ var maxPayloadSize = 128
 
 // maxRequiredSize is maximum size that could be required to insert a payload at the maxPayloadSize. this is bigger than maxPayloadSize
 // because it also has overflow page's pointer, the length of the payload as varint and the SlotArrEntrySize
-var maxRequiredSize = maxPayloadSize + pointerSize + binary.MaxVarintLen16 + SlotArrEntrySize
+var maxRequiredSize = maxPayloadSize + pointerSize + binary.MaxVarintLen16 + pages.SlotArrEntrySize
 
 var _ Node = &VarKeyLeafNode{}
 

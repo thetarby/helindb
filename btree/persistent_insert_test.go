@@ -28,7 +28,7 @@ func TestPersistent_Insert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 	res, stack := tree.FindAndGetStack(PersistentKey(5), Read)
 	assert.Len(t, stack, 2)
 	assert.Equal(t, p, res.(SlotPointer))
-	assert.Equal(t, PersistentKey(3), tree.pager.GetNode(tree.Root, Read).GetKeyAt(0))
+	assert.Equal(t, PersistentKey(3), tree.GetRoot(Read).GetKeyAt(0))
 }
 
 func TestPersistentInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {
@@ -36,16 +36,16 @@ func TestPersistentInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *test
 	dbName := id.String()
 	defer os.Remove(dbName)
 	pool := buffer.NewBufferPool(dbName, 8)
-	tree := NewBtreeWithPager(80, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(80, NewDefaultBPP(pool, &PersistentKeySerializer{}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		})
 	}
 
 	isInserted := tree.InsertOrReplace(PersistentKey(500), SlotPointer{
-		PageId:  int64(1500),
+		PageId:  uint64(1500),
 		SlotIdx: int16(1500),
 	})
 
@@ -58,12 +58,12 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 32)
-	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(10, NewDefaultBPP(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
 	n := 100000
 	for _, i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		})
 	}
@@ -75,7 +75,7 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 			val = tree.Find(PersistentKey(i))
 		}
 		assert.Equal(t, SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		}, val.(SlotPointer))
 	}
@@ -89,7 +89,7 @@ func TestPersistentEvery_Inserted_Should_Be_Found_VarSized(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 16)
-	tree := NewBtreeWithPager(32, NewBufferPoolPagerWithValueSerializer(pool, &StringKeySerializer{Len: -1}, &StringValueSerializer{Len: -1}))
+	tree := NewBtreeWithPager(32, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}))
 	log.SetOutput(ioutil.Discard)
 	n := 100000
 	for _, i := range rand.Perm(n) {
@@ -110,12 +110,12 @@ func TestPersistent_Pin_Count_Should_Be_Zero_After_Inserts_Are_Complete(t *testi
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 5)
-	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(10, NewDefaultBPP(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
 	n := 1000
 	for _, i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		})
 		if pool.Replacer.NumPinnedPages() != 0 {
@@ -127,7 +127,7 @@ func TestPersistent_Pin_Count_Should_Be_Zero_After_Inserts_Are_Complete(t *testi
 }
 
 func TestPersistentInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
-	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{Len: 10}))
+	tree := NewBtreeWithPager(3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{}))
 	for i := 0; i < 1000; i++ {
 		tree.Insert(PersistentKey(i), strconv.Itoa(i))
 	}
@@ -145,7 +145,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 
 	poolSize := 64
 	pool := buffer.NewBufferPool(dbName, poolSize)
-	tree := NewBtreeWithPager(80, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(80, NewDefaultBPP(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
 
 	n := 10_000
@@ -156,7 +156,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 
 	for _, i := range v {
 		tree.Insert(i, SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		})
 	}
@@ -165,7 +165,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 	err := tree.pager.(*BufferPoolPager).pool.DiskManager.Close()
 	assert.NoError(t, err)
 	newPool := buffer.NewBufferPool(dbName, poolSize)
-	newTreeReference := ConstructBtreeFromRootPointer(tree.Root, 80, NewBufferPoolPager(newPool, &PersistentKeySerializer{}))
+	newTreeReference := ConstructBtreeByMeta(tree.metaPID, NewDefaultBPP(newPool, &PersistentKeySerializer{}))
 
 	rand.Shuffle(len(v), func(i, j int) {
 		t := v[i]
@@ -175,7 +175,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 	for _, i := range v {
 		val := newTreeReference.Find(i)
 		assert.Equal(t, SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		}, val.(SlotPointer))
 	}
@@ -188,12 +188,12 @@ func TestPersistent_Find_Should_Unpin_All_Nodes_It_Pinned(t *testing.T) {
 	defer os.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 5)
-	tree := NewBtreeWithPager(10, NewBufferPoolPager(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(10, NewDefaultBPP(pool, &PersistentKeySerializer{}))
 	log.SetOutput(ioutil.Discard)
 	n := 1000
 	for _, i := range rand.Perm(n) {
 		tree.Insert(PersistentKey(i), SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(i),
 		})
 		if pool.Replacer.NumPinnedPages() != 0 {

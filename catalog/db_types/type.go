@@ -11,12 +11,14 @@ type DbType interface {
 	Add(right *Value, left *Value) *Value
 	Serialize(dest []byte, src *Value)
 	Deserialize(src []byte) *Value
-	Length() int
+
+	// Length should return the size of the bytes when value is serialized
+	Length(val *Value) int
 
 	TypeId() TypeID
 }
 
-func GetInstance(typeID TypeID) DbType {
+func GetType(typeID TypeID) DbType {
 	switch typeID.KindID {
 	case 1:
 		return &IntegerType{}
@@ -26,6 +28,8 @@ func GetInstance(typeID TypeID) DbType {
 		return &FixedLenCharType{
 			Size: typeID.Size,
 		}
+	case 4:
+		return &Float64Type{}
 	default:
 		return nil
 	}

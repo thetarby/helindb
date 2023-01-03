@@ -44,3 +44,5 @@ pool but each buffer pool can have different size)
 - [x] Clock replacer implementation for buffer pool
 
 - [ ] Use uint as page id instead of int
+
+- [ ] Define page_id type and use it everywhere instead of uint64

@@ -34,8 +34,8 @@ func TestCatalog_Create_Index_On_Unpopulated_Table_2_Nonunique_Index(t *testing.
 		},
 	}
 	keySchema := NewSchema(keyColumns)
-	serializer := TupleKeySerializer{schema: keySchema, keySize: 8}
-	index := btree.NewBtreeWithPager(50, btree.NewBufferPoolPager(pool, &serializer))
+	serializer := TupleKeySerializer{schema: keySchema}
+	index := btree.NewBtreeWithPager(50, btree.NewDefaultBPP(pool, &serializer))
 
 	ageToFind := 16
 	toFind := make([]int, 0)
@@ -53,7 +53,7 @@ func TestCatalog_Create_Index_On_Unpopulated_Table_2_Nonunique_Index(t *testing.
 		}
 
 		sp := btree.SlotPointer{
-			PageId:  int64(i),
+			PageId:  uint64(i),
 			SlotIdx: int16(age),
 		}
 		index.Insert(&tk, sp)

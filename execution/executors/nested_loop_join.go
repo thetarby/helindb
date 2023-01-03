@@ -3,6 +3,7 @@ package executors
 import (
 	"errors"
 	"helin/catalog"
+	"helin/catalog/db_types"
 	"helin/disk/structures"
 	"helin/execution"
 	"helin/execution/plans"
@@ -54,9 +55,12 @@ func (e *NestedLoopJoinExecutor) Next(t *catalog.Tuple, rid *structures.Rid) err
 				continue
 			}
 
-			nr := concatRows(lt.Row, rt.Row)
-			nt := catalog.Tuple{Row: nr}
-			*t = nt
+			concat, err := concatTuple(lt, rt, ls, rs)
+			if err != nil {
+				return err
+			}
+
+			*t = *concat
 			return nil
 		}
 
@@ -87,27 +91,25 @@ func concatSchemas(s1 catalog.Schema, s2 catalog.Schema) catalog.Schema {
 	newColumns := make([]catalog.Column, 0, len(s1.GetColumns())+len(s2.GetColumns()))
 	newColumns = append(newColumns, s1.GetColumns()...)
 
-	last := s1.GetColumns()[len(s1.GetColumns())-1]
-
 	for _, column := range s2.GetColumns() {
 		newColumns = append(newColumns, catalog.Column{
 			Name:   column.Name,
 			TypeId: column.TypeId,
-			Offset: column.Offset + last.Offset + uint16(last.TypeId.Size),
 		})
 	}
 
 	return catalog.NewSchema(newColumns)
 }
 
-func concatRows(r1 structures.Row, r2 structures.Row) structures.Row {
-	d1, d2 := r1.GetData(), r2.GetData()
-	newData := make([]byte, 0, len(d1)+len(d2))
-	newData = append(newData, d1...)
-	newData = append(newData, d2...)
-
-	return structures.Row{
-		Data: newData,
-		Rid:  structures.Rid{},
+func concatTuple(t1, t2 catalog.Tuple, s1, s2 catalog.Schema) (*catalog.Tuple, error) {
+	vals := make([]*db_types.Value, 0)
+	for i := range s1.GetColumns() {
+		vals = append(vals, t1.GetValue(s1, i))
 	}
+
+	for i := range s2.GetColumns() {
+		vals = append(vals, t2.GetValue(s2, i))
+	}
+
+	return catalog.NewTupleWithSchema(vals, concatSchemas(s1, s2))
 }

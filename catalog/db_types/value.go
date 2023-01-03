@@ -1,6 +1,7 @@
 package db_types
 
 import (
+	"fmt"
 	"helin/common"
 )
 
@@ -14,7 +15,7 @@ func (v *Value) Less(than common.Key) bool {
 }
 
 func (v *Value) LessThanValue(than *Value) bool {
-	return GetInstance(v.GetTypeId()).Less(v, than)
+	return GetType(v.GetTypeId()).Less(v, than)
 }
 
 func (v *Value) GetTypeId() TypeID {
@@ -22,15 +23,20 @@ func (v *Value) GetTypeId() TypeID {
 }
 
 func (v *Value) Serialize(dest []byte) {
-	GetInstance(v.GetTypeId()).Serialize(dest, v)
+	GetType(v.GetTypeId()).Serialize(dest, v)
 }
 
+// Size returns the size of the value when it is serialized.
 func (v *Value) Size() int {
-	return GetInstance(v.GetTypeId()).Length()
+	return GetType(v.GetTypeId()).Length(v)
+}
+
+func (v *Value) String() string {
+	return fmt.Sprintf("%v", v.value)
 }
 
 func Deserialize(typeID TypeID, src []byte) *Value {
-	return GetInstance(typeID).Deserialize(src)
+	return GetType(typeID).Deserialize(src)
 }
 
 func (v *Value) GetAsInterface() interface{} {
@@ -41,25 +47,13 @@ func NewValue(src interface{}) *Value {
 	var typeID TypeID
 	switch src.(type) {
 	case int32:
-		typeID = TypeID{
-			KindID: 1,
-			Size:   4,
-		}
+		typeID = IntegerTypeID
 	case string:
-		typeID = TypeID{
-			KindID: 2,
-			Size:   0,
-		}
-	case []byte:
-		typeID = TypeID{
-			KindID: 3,
-			Size:   uint32(len(src.([]byte))),
-		}
+		typeID = CharTypeID
+	case float64:
+		typeID = Float64TypeID
 	case bool:
-		typeID = TypeID{
-			KindID: 4,
-			Size:   1,
-		}
+		typeID = BoolTypeID
 	default:
 		panic("not supported type")
 	}
@@ -68,4 +62,8 @@ func NewValue(src interface{}) *Value {
 		typeID: typeID,
 		value:  src,
 	}
+}
+
+func V(src interface{}) *Value {
+	return NewValue(src)
 }

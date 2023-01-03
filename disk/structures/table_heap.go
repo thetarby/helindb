@@ -9,9 +9,9 @@ import (
 
 type Rid btree.SlotPointer
 
-func NewRid(pageID, slotIdx int) Rid {
+func NewRid(pageID uint64, slotIdx int) Rid {
 	return Rid{
-		PageId:  int64(pageID),
+		PageId:  pageID,
 		SlotIdx: int16(slotIdx),
 	}
 }
@@ -35,30 +35,30 @@ type ITableHeap interface {
 
 type TableHeap struct {
 	Pool        *buffer.BufferPool
-	FirstPageID int
-	LastPageID  int
+	FirstPageID uint64
+	LastPageID  uint64
 }
 
 func (t *TableHeap) HardDeleteTuple(rid Rid, txn concurrency.Transaction) error {
-	page, err := t.Pool.GetPage(int(rid.PageId))
+	page, err := t.Pool.GetPage(rid.PageId)
 	if err != nil {
 		return err
 	}
 
-	slottedPage := pages.SlottedPageInstanceFromRawPage(page)
-	slottedPage.WLatch()
-	defer slottedPage.WUnlatch()
-	defer t.Pool.Unpin(slottedPage.GetPageId(), true)
-	
-	if err := slottedPage.HardDelete(int(rid.SlotIdx)); err != nil {
+	heapPage := pages.AsHeapPage(page)
+	heapPage.WLatch()
+	defer heapPage.WUnlatch()
+	defer t.Pool.Unpin(heapPage.GetPageId(), true)
+
+	if err := heapPage.HardDelete(int(rid.SlotIdx)); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// TODO: does not set rid in row
 func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, error) {
+	// TODO: does not set rid in row
 	// TODO: unpin pages
 	currPage, err := t.GetFirstPage()
 	if err != nil {
@@ -75,8 +75,8 @@ func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, er
 				return Rid{}, err
 			}
 
-			currPage.WUnlatch()
 			t.Pool.Unpin(currPage.GetPageId(), true)
+			currPage.WUnlatch()
 			return NewRid(currPage.GetPageId(), idx), nil
 		}
 
@@ -88,37 +88,37 @@ func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, er
 			}
 
 			h := currPage.GetHeader()
-			h.NextPageID = int64(page.GetPageId())
+			h.NextPageID = page.GetPageId()
 			currPage.SetHeader(h)
 
-			currPage.WUnlatch()
 			t.Pool.Unpin(currPage.GetPageId(), true)
-			currPage = pages.FormatAsSlottedPage(page)
+			currPage.WUnlatch()
+			currPage = pages.InitHeapPage(page)
 			continue
 		}
 
-		currPage.WUnlatch()
 		// if next page id is set move on to that page
 		t.Pool.Unpin(currPage.GetPageId(), false)
-		raw, err := t.Pool.GetPage(int(currPage.GetHeader().NextPageID))
+		currPage.WUnlatch()
+		raw, err := t.Pool.GetPage(currPage.GetHeader().NextPageID)
 		if err != nil {
 			return Rid{}, err
 		}
-		currPage = pages.SlottedPageInstanceFromRawPage(raw)
+		currPage = pages.AsHeapPage(raw)
 	}
 }
 
 func (t *TableHeap) UpdateTuple(tuple Row, rid Rid, txn concurrency.Transaction) error {
-	page, err := t.Pool.GetPage(int(rid.PageId))
+	page, err := t.Pool.GetPage(rid.PageId)
 	if err != nil {
 		return err
 	}
 
-	slottedPage := pages.SlottedPageInstanceFromRawPage(page)
+	heapPage := pages.AsHeapPage(page)
 	page.WLatch()
 	defer page.WUnlatch()
 	defer t.Pool.Unpin(page.GetPageId(), true)
-	if err := slottedPage.UpdateTuple(int(rid.SlotIdx), tuple.GetData()); err != nil {
+	if err := heapPage.UpdateTuple(int(rid.SlotIdx), tuple.GetData()); err != nil {
 		// if error is because of tuple does not have enough space then update should do delete-insert
 		return err
 	}
@@ -127,18 +127,18 @@ func (t *TableHeap) UpdateTuple(tuple Row, rid Rid, txn concurrency.Transaction)
 }
 
 func (t *TableHeap) ReadTuple(rid Rid, dest *Row, txn concurrency.Transaction) error {
-	p, err := t.Pool.GetPage(int(rid.PageId))
+	p, err := t.Pool.GetPage(rid.PageId)
 	if err != nil {
 		return err
 	}
 
-	slottedPage := pages.SlottedPageInstanceFromRawPage(p)
+	heapPage := pages.AsHeapPage(p)
 
-	slottedPage.RLatch()
-	defer slottedPage.RUnLatch()
-	defer t.Pool.Unpin(slottedPage.GetPageId(), false)
-	
-	data := slottedPage.GetTuple(int(rid.SlotIdx))
+	heapPage.RLatch()
+	defer heapPage.RUnLatch()
+	defer t.Pool.Unpin(heapPage.GetPageId(), false)
+
+	data := heapPage.GetTuple(int(rid.SlotIdx))
 	dest.Data = data
 	dest.Rid = rid
 	return nil
@@ -150,27 +150,25 @@ func (t *TableHeap) Vacuum() error {
 	panic("implement me")
 }
 
-func (t *TableHeap) GetLastPage() (*pages.SlottedPage, error) {
+func (t *TableHeap) GetLastPage() (*pages.HeapPage, error) {
 	rawPage, err := t.Pool.GetPage(t.LastPageID)
 	if err != nil {
 		return nil, err
 	}
-	slottedPage := pages.SlottedPageInstanceFromRawPage(rawPage)
 
-	return slottedPage, nil
+	return pages.AsHeapPage(rawPage), nil
 }
 
-func (t *TableHeap) GetFirstPage() (*pages.SlottedPage, error) {
+func (t *TableHeap) GetFirstPage() (*pages.HeapPage, error) {
 	rawPage, err := t.Pool.GetPage(t.FirstPageID)
 	if err != nil {
 		return nil, err
 	}
-	slottedPage := pages.SlottedPageInstanceFromRawPage(rawPage)
 
-	return slottedPage, nil
+	return pages.AsHeapPage(rawPage), nil
 }
 
-func NewTableHeap(pool *buffer.BufferPool, firstPageId int) *TableHeap {
+func NewTableHeap(pool *buffer.BufferPool, firstPageId uint64) *TableHeap {
 	return &TableHeap{
 		Pool:        pool,
 		FirstPageID: firstPageId,
@@ -183,7 +181,7 @@ func NewTableHeapWithTxn(pool *buffer.BufferPool, txn concurrency.Transaction) (
 		return nil, err
 	}
 	defer pool.Unpin(p.GetPageId(), true)
-	sp := pages.FormatAsSlottedPage(p)
+	sp := pages.InitHeapPage(p)
 
 	return &TableHeap{
 		Pool:        pool,

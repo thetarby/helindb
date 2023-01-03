@@ -41,18 +41,15 @@ func (memPager *MemPager) CreatePage() NodePage {
 	defer memPager.lock.Unlock()
 	memPagerLastPageID++
 	newID := memPagerLastPageID
-	p := &BtreePage{*pages.NewRawPage(int(newID))}
-	memPagerNodeMapping2[newID] = p
-	return p
+	sp := InitSlottedPage(pages.NewRawPage(uint64(newID)))
+	memPagerNodeMapping2[newID] = &sp
+	return &sp
 }
 
 func (memPager *MemPager) GetPage(p Pointer) NodePage {
 	memPager.lock.Lock()
 	node := memPagerNodeMapping2[p]
 	memPager.lock.Unlock()
-	if node == nil {
-		print("")
-	}
 
 	return node
 }
@@ -73,7 +70,7 @@ func (memPager *MemPager) NewInternalNode(firstPointer Pointer) Node {
 	newID := memPagerLastPageID
 	memPager.lock.Unlock()
 	node := VarKeyInternalNode{
-		p:             InitSlottedPage(&BtreePage{*pages.NewRawPage(int(newID))}),
+		p:             InitSlottedPage(pages.NewRawPage(uint64(newID))),
 		keySerializer: memPager.KeySerializer,
 		pager:         memPager,
 	}
@@ -102,7 +99,7 @@ func (memPager *MemPager) NewLeafNode() Node {
 	newID := memPagerLastPageID
 	memPager.lock.Unlock()
 	node := VarKeyLeafNode{
-		p:             InitSlottedPage(&BtreePage{*pages.NewRawPage(int(newID))}),
+		p:             InitSlottedPage(pages.NewRawPage(uint64(newID))),
 		keySerializer: memPager.KeySerializer,
 		valSerializer: memPager.ValueSerializer,
 		pager:         memPager,

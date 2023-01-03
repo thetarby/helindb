@@ -25,32 +25,21 @@ func (c *CharType) Add(right *Value, left *Value) *Value {
 func (c *CharType) Serialize(dest []byte, src *Value) {
 	buf := bytes.Buffer{}
 	str := src.GetAsInterface().(string)
-	l := uint32(len(str))
-
-	// first write size
-	err := binary.Write(&buf, binary.BigEndian, l)
-	common.PanicIfErr(err)
 
 	// then write str itself
-	err = binary.Write(&buf, binary.BigEndian, []byte(str))
+	err := binary.Write(&buf, binary.BigEndian, []byte(str))
 	common.PanicIfErr(err)
 	copy(dest, buf.Bytes())
 }
 
 func (c *CharType) Deserialize(src []byte) *Value {
-	reader := bytes.NewReader(src)
-	var l uint32
-	err := binary.Read(reader, binary.BigEndian, &l)
-	common.PanicIfErr(err)
-	uint32Size := binary.Size(l)
-	str := string(src[uint32Size : uint32Size+int(l)])
+	str := string(src)
 	return NewValue(str)
 }
 
-func (c *CharType) Length() int {
-	//return c.Size
-	// TODO: char'ı daha güzel hallet
-	return 20
+func (c *CharType) Length(v *Value) int {
+	s := v.value.(string)
+	return len([]byte(s))
 }
 
 func (c *CharType) TypeId() TypeID {

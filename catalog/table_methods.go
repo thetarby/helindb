@@ -2,7 +2,6 @@ package catalog
 
 import (
 	"helin/catalog/db_types"
-	"helin/common"
 	"helin/concurrency"
 	"helin/disk/structures"
 )
@@ -21,7 +20,7 @@ func (tbl *TableInfo) InsertTupleViaValues(values []*db_types.Value, txn concurr
 
 	indexes := tbl.GetIndexes()
 	for _, index := range indexes {
-		index.InsertViaTuple(tuple, rid)
+		index.InsertTupleKey(tuple, rid)
 	}
 
 	return &rid, nil
@@ -36,7 +35,7 @@ func (tbl *TableInfo) InsertTuple(tuple *Tuple, txn concurrency.Transaction) (*s
 
 	indexes := tbl.GetIndexes()
 	for _, index := range indexes {
-		index.InsertViaTuple(tuple, rid)
+		index.InsertTupleKey(tuple, rid)
 	}
 
 	return &rid, nil
@@ -52,9 +51,7 @@ func (tbl *TableInfo) DeleteTuple(rid structures.Rid, txn concurrency.Transactio
 
 	indexes := tbl.GetIndexes()
 	for _, index := range indexes {
-		indexedCol := index.IndexedColIdx
-		key := oldTuple.GetValue(tbl.Schema, indexedCol)
-		index.Index.Delete(key)
+		index.DeleteTupleKey(&oldTuple)
 	}
 
 	if err := tbl.Heap.HardDeleteTuple(rid, txn); err != nil {
@@ -83,10 +80,7 @@ func (tbl *TableInfo) UpdateTuple(rid structures.Rid, values []*db_types.Value, 
 	if err := tbl.Heap.UpdateTuple(newTuple.Row, rid, txn); err == nil {
 		indexes := tbl.GetIndexes()
 		for _, index := range indexes {
-			indexedCol := index.IndexedColIdx
-			key := oldTuple.GetValue(tbl.Schema, indexedCol)
-			index.Index.Delete(key) // TODO: can this return false? should not
-			index.Index.Insert(newTuple.GetValue(tbl.Schema, indexedCol), newTuple.GetRid())
+			index.UpdateTupleKey(&oldTuple, newTuple.GetRid()) // TODO: can this return false? should not
 		}
 		return nil
 	}
@@ -95,7 +89,7 @@ func (tbl *TableInfo) UpdateTuple(rid structures.Rid, values []*db_types.Value, 
 	if err := tbl.DeleteTuple(rid, txn); err != nil {
 		return err
 	}
-	newRid ,err := tbl.InsertTupleViaValues(values, txn)
+	newRid, err := tbl.InsertTupleViaValues(values, txn)
 	if err != nil {
 		return err
 	}
@@ -103,10 +97,7 @@ func (tbl *TableInfo) UpdateTuple(rid structures.Rid, values []*db_types.Value, 
 	// update all indexes as well
 	indexes := tbl.GetIndexes()
 	for _, index := range indexes {
-		indexedCol := index.IndexedColIdx
-		key := oldTuple.GetValue(tbl.Schema, indexedCol)
-		index.Index.Delete(key) // TODO: can this return false? should not
-		index.Index.Insert(newTuple.GetValue(tbl.Schema, indexedCol), newRid)
+		index.UpdateTupleKey(&oldTuple, newRid) // TODO: can this return false? should not
 	}
 
 	return nil
@@ -125,11 +116,10 @@ func (index *IndexInfo) GetTable() *TableInfo {
 	return index.catalog.GetTable(index.TableName)
 }
 
-func (index *IndexInfo) InsertViaTuple(tuple *Tuple, val interface{}){
-	tbl := index.GetTable()
+func (index *IndexInfo) InsertTupleKey(tuple *Tuple, val any) {
 	vals := make([]*db_types.Value, 0)
 	for _, idx := range index.ColumnIndexes {
-		val := tuple.GetValue(tbl.Schema, idx)
+		val := tuple.GetValue(index.GetTable().Schema, idx)
 		vals = append(vals, val)
 	}
 
@@ -137,13 +127,38 @@ func (index *IndexInfo) InsertViaTuple(tuple *Tuple, val interface{}){
 		vals = append(vals, db_types.NewValue(int32(tuple.Rid.PageId)), db_types.NewValue(int32(tuple.Rid.SlotIdx)))
 	}
 
-	t, err := NewTupleWithSchema(vals, index.Schema)
-	common.PanicIfErr(err)
+	tk := NewTupleKey(index.Schema, vals...)
+	index.Index.Insert(&tk, val) // TODO: no need to store a value if rid is in key itself
+}
 
-	tupleKey := TupleKey{
-		Schema: index.Schema,
-		Tuple:  *t,
+func (index *IndexInfo) DeleteTupleKey(tuple *Tuple) {
+	// get columns to construct tuple key
+	vals := make([]*db_types.Value, 0)
+	for _, idx := range index.ColumnIndexes {
+		val := tuple.GetValue(index.GetTable().Schema, idx)
+		vals = append(vals, val)
 	}
 
-	index.Index.Insert(&tupleKey, val) // TODO: no need to store a value if rid is in key itself
+	if !index.IsUnique {
+		vals = append(vals, db_types.NewValue(int32(tuple.Rid.PageId)), db_types.NewValue(int32(tuple.Rid.SlotIdx)))
+	}
+
+	tk := NewTupleKey(index.Schema, vals...)
+	index.Index.Delete(&tk)
+}
+
+func (index *IndexInfo) UpdateTupleKey(tuple *Tuple, val any) {
+	// get columns to construct tuple key
+	vals := make([]*db_types.Value, 0)
+	for _, idx := range index.ColumnIndexes {
+		val := tuple.GetValue(index.GetTable().Schema, idx)
+		vals = append(vals, val)
+	}
+
+	if !index.IsUnique {
+		vals = append(vals, db_types.NewValue(int32(tuple.Rid.PageId)), db_types.NewValue(int32(tuple.Rid.SlotIdx)))
+	}
+
+	tk := NewTupleKey(index.Schema, vals...)
+	index.Index.InsertOrReplace(&tk, val)
 }
