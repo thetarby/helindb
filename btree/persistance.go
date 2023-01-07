@@ -1,5 +1,9 @@
 package btree
 
+import (
+	"helin/transaction"
+)
+
 type NodePage interface {
 	GetData() []byte
 	GetPageId() Pointer
@@ -9,9 +13,9 @@ type NodePage interface {
 	RUnLatch()
 
 	GetAt(idx int) []byte
-	InsertAt(idx int, data []byte) error
-	SetAt(idx int, data []byte) error
-	DeleteAt(idx int) error
+	InsertAt(txn transaction.Transaction, idx int, data []byte) error
+	SetAt(txn transaction.Transaction, idx int, data []byte) error
+	DeleteAt(txn transaction.Transaction, idx int) error
 }
 
 type Pager interface {
@@ -21,13 +25,13 @@ type Pager interface {
 	// NOTE: the node should have a reference(by extending it for example) to the created PersistentPage
 	// so that it can be serialized in the future when its state changes.
 	// NOTE: takes write latch on created node, caller should release it
-	NewInternalNode(p Pointer) Node
+	NewInternalNode(txn transaction.Transaction, p Pointer) Node
 
 	// NewLeafNode first should create an PersistentPage which points to a byte array.
 	// Then initialize a LeafNode structure.
 	// Finally, it should serialize the structure on to pointed byte array
 	// NOTE: takes write latch on created node, caller should release it
-	NewLeafNode() Node
+	NewLeafNode(txn transaction.Transaction) Node
 
 	// GetNode returns a Node given a Pointer. Should be able to deserialize a node from byte arr and should be able to
 	// recognize if it is an InternalNode or LeafNode and return the correct type.
@@ -39,11 +43,11 @@ type Pager interface {
 	// For an in memory implementation these methods can be noop.
 	Unpin(n Node, isDirty bool)
 
-	Free(p Pointer) error
-	FreeNode(n Node) error
+	Free(txn transaction.Transaction, p Pointer) error
+	FreeNode(txn transaction.Transaction, n Node) error
 
 	UnpinByPointer(p Pointer, isDirty bool)
 
-	CreatePage() NodePage
+	CreatePage(txn transaction.Transaction) NodePage
 	GetPage(p Pointer) NodePage
 }

@@ -2,11 +2,11 @@ package btree
 
 import (
 	"helin/common"
-	"helin/concurrency"
+	"helin/transaction"
 )
 
 type TreeIterator struct {
-	txn      concurrency.Transaction
+	txn      transaction.Transaction
 	tree     *BTree
 	curr     Pointer
 	currNode Node
@@ -45,7 +45,7 @@ func (it *TreeIterator) Close() error {
 	return nil
 }
 
-func NewTreeIterator(txn concurrency.Transaction, tree *BTree, pager Pager) *TreeIterator {
+func NewTreeIterator(txn transaction.Transaction, tree *BTree, pager Pager) *TreeIterator {
 	curr := tree.GetRoot(Read)
 	for !curr.IsLeaf() {
 		old := curr
@@ -64,7 +64,7 @@ func NewTreeIterator(txn concurrency.Transaction, tree *BTree, pager Pager) *Tre
 	}
 }
 
-func NewTreeIteratorWithKey(txn concurrency.Transaction, key common.Key, tree *BTree, pager Pager) *TreeIterator {
+func NewTreeIteratorWithKey(txn transaction.Transaction, key common.Key, tree *BTree, pager Pager) *TreeIterator {
 	_, stack := tree.FindAndGetStack(key, Read)
 	leaf, idx := stack[len(stack)-1].Node, stack[len(stack)-1].Index
 	tree.unpinAll(stack[:len(stack)-1])

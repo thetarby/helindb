@@ -1,6 +1,9 @@
 package common
 
-import "math/rand"
+import (
+	"math/rand"
+	"os"
+)
 
 func PanicIfErr(err error) {
 	if err != nil {
@@ -66,4 +69,9 @@ func Reverse[T any](a []T) []T {
 	}
 
 	return r
+}
+
+func Remove(dbName string) {
+	os.Remove(dbName)
+	os.Remove(dbName + ".log")
 }

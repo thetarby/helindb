@@ -6,10 +6,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"helin/buffer"
 	"helin/catalog/db_types"
+	"helin/common"
 	"helin/disk/structures"
+	"helin/transaction"
 	"io"
 	"log"
-	"os"
 	"testing"
 )
 
@@ -17,7 +18,7 @@ func TestCatalog_CreateTable_Should_Create_Table_Successfully(t *testing.T) {
 	log.SetOutput(io.Discard)
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	defer os.Remove(dbName)
+	defer common.Remove(dbName)
 	pool := buffer.NewBufferPool(dbName, 32)
 
 	catalog := NewCatalog(pool)
@@ -35,7 +36,7 @@ func TestCatalog_CreateTable_Should_Create_Table_Successfully(t *testing.T) {
 			},
 		},
 	}
-	table := catalog.CreateTable("", "myTable", &schema)
+	table := catalog.CreateTable(transaction.TxnNoop(), "myTable", &schema)
 
 	assert.Equal(t, *table, *catalog.GetTable("myTable"))
 }
@@ -44,7 +45,7 @@ func TestCatalog(t *testing.T) {
 	log.SetOutput(io.Discard)
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	defer os.Remove(dbName)
+	defer common.Remove(dbName)
 	pool := buffer.NewBufferPool(dbName, 32)
 
 	catalog := NewCatalog(pool)
@@ -62,7 +63,7 @@ func TestCatalog(t *testing.T) {
 			},
 		},
 	}
-	table := catalog.CreateTable("", "myTable", &schema)
+	table := catalog.CreateTable(transaction.TxnNoop(), "myTable", &schema)
 
 	n := 10
 	rids := make([]structures.Rid, n)
@@ -73,14 +74,14 @@ func TestCatalog(t *testing.T) {
 
 		tuple, err := NewTupleWithSchema(values, &schema)
 		require.NoError(t, err)
-		rid, err := table.Heap.InsertTuple(tuple.Row, "")
+		rid, err := table.Heap.InsertTuple(tuple.Row, transaction.TxnNoop())
 		require.NoError(t, err)
 		rids[i] = rid
 	}
 
 	for i, rid := range rids {
 		dest := structures.Row{}
-		err := table.Heap.ReadTuple(rid, &dest, "")
+		err := table.Heap.ReadTuple(rid, &dest, transaction.TxnNoop())
 		require.NoError(t, err)
 		tuple := CastRowAsTuple(&dest)
 		intVal := tuple.GetValue(&schema, 0)

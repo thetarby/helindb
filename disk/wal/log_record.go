@@ -1,11 +1,12 @@
 package wal
 
 import (
+	"errors"
 	"helin/disk/pages"
+	"helin/transaction"
 )
 
 type LogRecordType uint8
-type TxnID uint64
 
 const (
 	TypeInvalid = iota
@@ -14,6 +15,11 @@ const (
 	TypeDelete
 	TypeNewPage
 	TypeFreePage
+	TypeCheckpointBegin
+	TypeCheckpointEnd
+	TypeTxnBegin
+	TypeCommit
+	TypeAbort
 )
 
 const (
@@ -21,39 +27,79 @@ const (
 )
 
 type LogRecord struct {
-	t       LogRecordType
-	txnID   TxnID
-	lsn     pages.LSN
-	prevLsn pages.LSN
+	T       LogRecordType
+	TxnID   transaction.TxnID
+	Lsn     pages.LSN
+	PrevLsn pages.LSN
 
 	// for delete, insert and set
-	idx     uint16
-	payload []byte
+	Idx     uint16
+	Payload []byte
 
 	// for update
-	oldPayload []byte
+	OldPayload []byte
 
 	// for new page
-	pageID     uint64
-	prevPageID uint64
+	PageID     uint64
+	PrevPageID uint64
+
+	// indicates if this is a clr log record
+	IsClr bool
 }
 
-func NewInsertLogRecord(txnID TxnID, idx uint16, payload []byte) *LogRecord {
-	return &LogRecord{t: TypeInsert, txnID: txnID, idx: idx, payload: payload}
+func (l *LogRecord) Type() LogRecordType {
+	return l.T
 }
 
-func NewDeleteLogRecord(txnID TxnID, idx uint16, deleted []byte) *LogRecord {
-	return &LogRecord{t: TypeDelete, txnID: txnID, idx: idx, oldPayload: deleted}
+func (l *LogRecord) GetTxnID() transaction.TxnID {
+	return l.TxnID
 }
 
-func NewSetLogRecord(txnID TxnID, idx uint16, payload, oldPayload []byte) *LogRecord {
-	return &LogRecord{t: TypeSet, txnID: txnID, idx: idx, payload: payload, oldPayload: oldPayload}
+func (l *LogRecord) Clr() (*LogRecord, error) {
+	var clr *LogRecord
+	switch l.T {
+	case TypeDelete:
+		clr = NewInsertLogRecord(l.TxnID, l.Idx, l.OldPayload)
+	case TypeSet:
+		clr = NewSetLogRecord(l.TxnID, l.Idx, l.OldPayload, l.Payload)
+	case TypeInsert:
+		clr = NewDeleteLogRecord(l.TxnID, l.Idx, l.Payload)
+	default:
+		return nil, errors.New("log record cannot be negated")
+	}
+
+	clr.IsClr = true
+	return clr, nil
 }
 
-func NewAllocPageLogRecord(txnID TxnID, pageID uint64) *LogRecord {
-	return &LogRecord{t: TypeNewPage, txnID: txnID, pageID: pageID}
+func NewInsertLogRecord(txnID transaction.TxnID, idx uint16, payload []byte) *LogRecord {
+	return &LogRecord{T: TypeInsert, TxnID: txnID, Idx: idx, Payload: payload}
 }
 
-func NewFreePageLogRecord(txnID TxnID, pageID uint64) *LogRecord {
-	return &LogRecord{t: TypeFreePage, txnID: txnID, pageID: pageID}
+func NewDeleteLogRecord(txnID transaction.TxnID, idx uint16, deleted []byte) *LogRecord {
+	return &LogRecord{T: TypeDelete, TxnID: txnID, Idx: idx, OldPayload: deleted}
+}
+
+func NewSetLogRecord(txnID transaction.TxnID, idx uint16, payload, oldPayload []byte) *LogRecord {
+	return &LogRecord{T: TypeSet, TxnID: txnID, Idx: idx, Payload: payload, OldPayload: oldPayload}
+}
+
+func NewAllocPageLogRecord(txnID transaction.TxnID, pageID uint64) *LogRecord {
+	return &LogRecord{T: TypeNewPage, TxnID: txnID, PageID: pageID}
+}
+
+func NewFreePageLogRecord(txnID transaction.TxnID, pageID uint64) *LogRecord {
+	return &LogRecord{T: TypeFreePage, TxnID: txnID, PageID: pageID}
+}
+
+func NewAbortLogRecord(txnID transaction.TxnID) *LogRecord {
+	return &LogRecord{T: TypeAbort, TxnID: txnID}
+}
+
+func NewCheckpointBeginLogRecord(activeTxnList ...transaction.TxnID) *LogRecord {
+	panic("implement me")
+}
+
+func NewCheckpointEndLogRecord(activeTxnList ...transaction.TxnID) *LogRecord {
+	panic("implement me")
 }

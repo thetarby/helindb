@@ -12,19 +12,19 @@ func TestDefaultLogRecordSerializer(t *testing.T) {
 
 	buf := &bytes.Buffer{}
 	s.Serialize(&LogRecord{
-		t:          TypeInsert,
-		txnID:      123,
-		lsn:        12,
-		prevLsn:    123,
-		idx:        123,
-		payload:    []byte("sa"),
-		oldPayload: []byte("as"),
-		pageID:     123,
-		prevPageID: 123,
+		T:          TypeInsert,
+		TxnID:      123,
+		Lsn:        12,
+		PrevLsn:    123,
+		Idx:        123,
+		Payload:    []byte("sa"),
+		OldPayload: []byte("as"),
+		PageID:     123,
+		PrevPageID: 123,
 	}, buf)
 
 	t.Log(buf.String())
 
 	lr, _ := s.Deserialize(buf)
-	t.Log(lr.payload)
+	t.Log(lr.Payload)
 }

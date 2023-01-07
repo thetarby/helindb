@@ -7,9 +7,9 @@ import (
 	"helin/buffer"
 	"helin/common"
 	"helin/disk/pages"
+	"helin/transaction"
 	"io"
 	"log"
-	"os"
 	"strconv"
 	"testing"
 )
@@ -17,10 +17,10 @@ import (
 func TestTableHeap(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	defer os.Remove(dbName)
+	defer common.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 2)
-	firstPage, _ := pool.NewPage()
+	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
@@ -31,7 +31,7 @@ func TestTableHeap(t *testing.T) {
 	rid, err := table.InsertTuple(Row{
 		Data: make([]byte, 10),
 		Rid:  Rid{},
-	}, "")
+	}, transaction.TxnNoop())
 
 	assert.NoError(t, err)
 	assert.Equal(t, firstPage.GetPageId(), rid.PageId)
@@ -41,10 +41,10 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 	log.SetOutput(io.Discard)
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	defer os.Remove(dbName)
+	defer common.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 32)
-	firstPage, _ := pool.NewPage()
+	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
@@ -57,7 +57,7 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 		rid, err := table.InsertTuple(Row{
 			Data: []byte(strconv.Itoa(i)),
 			Rid:  Rid{},
-		}, "")
+		}, transaction.TxnNoop())
 
 		assert.NoError(t, err)
 		inserted = append(inserted, rid)
@@ -66,7 +66,7 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 	for i := 0; i < 3000; i++ {
 		rid := inserted[i]
 		tuple := Row{}
-		table.ReadTuple(rid, &tuple, "")
+		table.ReadTuple(rid, &tuple, transaction.TxnNoop())
 
 		assert.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
 	}
@@ -75,11 +75,11 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 func TestTableHeap_Delete(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	defer os.Remove(dbName)
+	defer common.Remove(dbName)
 	log.SetOutput(io.Discard)
 
 	pool := buffer.NewBufferPool(dbName, 32)
-	firstPage, _ := pool.NewPage()
+	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
@@ -92,7 +92,7 @@ func TestTableHeap_Delete(t *testing.T) {
 		rid, err := table.InsertTuple(Row{
 			Data: []byte(strconv.Itoa(i)),
 			Rid:  Rid{},
-		}, "")
+		}, transaction.TxnNoop())
 
 		assert.NoError(t, err)
 		inserted = append(inserted, rid)
@@ -100,7 +100,7 @@ func TestTableHeap_Delete(t *testing.T) {
 
 	toDelete := []int{5, 8, 9}
 	for _, i := range toDelete {
-		err := table.HardDeleteTuple(inserted[i], "")
+		err := table.HardDeleteTuple(inserted[i], transaction.TxnNoop())
 		assert.NoError(t, err)
 	}
 
@@ -108,11 +108,11 @@ func TestTableHeap_Delete(t *testing.T) {
 		rid := inserted[i]
 		tuple := Row{}
 		if common.Contains(toDelete, i) {
-			table.ReadTuple(rid, &tuple, "")
+			table.ReadTuple(rid, &tuple, transaction.TxnNoop())
 			require.Nil(t, tuple.GetData())
 			continue
 		}
-		table.ReadTuple(rid, &tuple, "")
+		table.ReadTuple(rid, &tuple, transaction.TxnNoop())
 
 		require.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
 	}
@@ -121,10 +121,10 @@ func TestTableHeap_Delete(t *testing.T) {
 func TestTableHeap_Delete_Last_Inserted_Item(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	defer os.Remove(dbName)
+	defer common.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 32)
-	firstPage, _ := pool.NewPage()
+	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
@@ -137,7 +137,7 @@ func TestTableHeap_Delete_Last_Inserted_Item(t *testing.T) {
 		rid, err := table.InsertTuple(Row{
 			Data: []byte(strconv.Itoa(i)),
 			Rid:  Rid{},
-		}, "")
+		}, transaction.TxnNoop())
 
 		assert.NoError(t, err)
 		inserted = append(inserted, rid)
@@ -145,7 +145,7 @@ func TestTableHeap_Delete_Last_Inserted_Item(t *testing.T) {
 
 	toDelete := []int{9}
 	for _, i := range toDelete {
-		err := table.HardDeleteTuple(inserted[i], "")
+		err := table.HardDeleteTuple(inserted[i], transaction.TxnNoop())
 		assert.NoError(t, err)
 	}
 
@@ -156,7 +156,7 @@ func TestTableHeap_Delete_Last_Inserted_Item(t *testing.T) {
 
 		rid := inserted[i]
 		tuple := Row{}
-		table.ReadTuple(rid, &tuple, "")
+		table.ReadTuple(rid, &tuple, transaction.TxnNoop())
 
 		require.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
 	}
@@ -165,10 +165,10 @@ func TestTableHeap_Delete_Last_Inserted_Item(t *testing.T) {
 func TestTableHeap_Delete_First_Inserted_Item(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	defer os.Remove(dbName)
+	defer common.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 32)
-	firstPage, _ := pool.NewPage()
+	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
@@ -181,7 +181,7 @@ func TestTableHeap_Delete_First_Inserted_Item(t *testing.T) {
 		rid, err := table.InsertTuple(Row{
 			Data: []byte(strconv.Itoa(i)),
 			Rid:  Rid{},
-		}, "")
+		}, transaction.TxnNoop())
 
 		assert.NoError(t, err)
 		inserted = append(inserted, rid)
@@ -189,7 +189,7 @@ func TestTableHeap_Delete_First_Inserted_Item(t *testing.T) {
 
 	toDelete := []int{0}
 	for _, i := range toDelete {
-		err := table.HardDeleteTuple(inserted[i], "")
+		err := table.HardDeleteTuple(inserted[i], transaction.TxnNoop())
 		assert.NoError(t, err)
 	}
 
@@ -200,7 +200,7 @@ func TestTableHeap_Delete_First_Inserted_Item(t *testing.T) {
 
 		rid := inserted[i]
 		tuple := Row{}
-		table.ReadTuple(rid, &tuple, "")
+		table.ReadTuple(rid, &tuple, transaction.TxnNoop())
 
 		require.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
 	}
@@ -209,11 +209,11 @@ func TestTableHeap_Delete_First_Inserted_Item(t *testing.T) {
 func TestTableHeap_Update(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	defer os.Remove(dbName)
+	defer common.Remove(dbName)
 	log.SetOutput(io.Discard)
 
 	pool := buffer.NewBufferPool(dbName, 32)
-	firstPage, _ := pool.NewPage()
+	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{
 		Pool:        pool,
@@ -226,7 +226,7 @@ func TestTableHeap_Update(t *testing.T) {
 		rid, err := table.InsertTuple(Row{
 			Data: []byte(strconv.Itoa(i)),
 			Rid:  Rid{},
-		}, "")
+		}, transaction.TxnNoop())
 
 		assert.NoError(t, err)
 		inserted = append(inserted, rid)
@@ -234,7 +234,7 @@ func TestTableHeap_Update(t *testing.T) {
 
 	toUpdate := []int{15, 25, 35}
 	for _, i := range toUpdate {
-		err := table.UpdateTuple(Row{Data: []byte("updated")}, inserted[i], "")
+		err := table.UpdateTuple(Row{Data: []byte("updated")}, inserted[i], transaction.TxnNoop())
 		assert.NoError(t, err)
 	}
 
@@ -242,11 +242,11 @@ func TestTableHeap_Update(t *testing.T) {
 		rid := inserted[i]
 		tuple := Row{}
 		if common.Contains(toUpdate, i) {
-			table.ReadTuple(rid, &tuple, "")
+			table.ReadTuple(rid, &tuple, transaction.TxnNoop())
 			require.Equal(t, []byte("updated"), tuple.GetData())
 			continue
 		}
-		table.ReadTuple(rid, &tuple, "")
+		table.ReadTuple(rid, &tuple, transaction.TxnNoop())
 
 		require.Equal(t, []byte(strconv.Itoa(i)), tuple.Data)
 	}

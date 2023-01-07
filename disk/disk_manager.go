@@ -20,6 +20,14 @@ type IDiskManager interface {
 	GetCatalogPID() uint64
 	SetCatalogPID(pid uint64)
 	Close() error
+
+	GetLogWriter() io.Writer
+}
+
+type LogFile interface {
+	io.Seeker
+	io.ReadCloser
+	io.Writer
 }
 
 const PageSize int = 4096
@@ -31,24 +39,33 @@ const PageSize int = 4096
 const FlushInstantly bool = false
 
 type Manager struct {
-	file       *os.File
-	filename   string
-	lastPageId uint64
-	mu         sync.Mutex
-	serializer IHeaderSerializer
-	header     *header
+	file        *os.File
+	filename    string
+	logFile     LogFile
+	logFileName string
+	lastPageId  uint64
+	mu          sync.Mutex
+	serializer  IHeaderSerializer
+	header      *header
 }
 
 func NewDiskManager(file string) (IDiskManager, bool, error) {
 	d := Manager{}
 	d.serializer = jsonSerializer{}
 	d.filename = file
+	d.logFileName = file + ".log"
 
 	f, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, os.ModePerm)
 	if err != nil {
 		return nil, false, err
 	}
 
+	lf, err := os.OpenFile(d.logFileName, os.O_CREATE|os.O_RDWR, os.ModePerm)
+	if err != nil {
+		return nil, false, err
+	}
+
+	d.logFile = lf
 	d.file = f
 	stats, _ := f.Stat()
 
@@ -131,6 +148,8 @@ func (d *Manager) ReadPage(pageId uint64) ([]byte, error) {
 		return []byte{}, err
 	}
 
+	// TODO: update this method to receive destination bytes instead of dynamically allocating
+	// and returning it.
 	var data = make([]byte, PageSize)
 
 	n, err := d.file.Read(data[:])
@@ -191,6 +210,9 @@ func (d *Manager) FreePage(pageId uint64) {
 }
 
 func (d *Manager) Close() error {
+	if err := d.logFile.Close(); err != nil {
+		return err
+	}
 	return d.file.Close()
 }
 
@@ -207,6 +229,10 @@ func (d *Manager) SetCatalogPID(pid uint64) {
 	h.catalogPID = pid
 	d.setHeader(h)
 	d.mu.Unlock()
+}
+
+func (d *Manager) GetLogWriter() io.Writer {
+	return d.logFile
 }
 
 func (d *Manager) writePages(pages [][]byte, startingPageId uint64) error {

@@ -6,6 +6,9 @@ import (
 	"helin/common"
 	"helin/disk"
 	"helin/disk/pages"
+	"helin/disk/wal"
+	"helin/transaction"
+	"io"
 	"log"
 	"sort"
 	"sync"
@@ -19,11 +22,11 @@ type IBufferPool interface {
 	FlushAll() error
 
 	// NewPage creates a new page
-	NewPage() (page *pages.RawPage, err error)
+	NewPage(txn transaction.Transaction) (page *pages.RawPage, err error)
 
 	// FreePage deletes a page from the buffer pool. Returns error if the page exists but could not be deleted and
 	// panics if page does not exist
-	FreePage(pageId uint64) error
+	FreePage(txn transaction.Transaction, pageId uint64) error
 
 	// EmptyFrameSize returns the number empty frames which does not hold data of any physical page
 	EmptyFrameSize() int
@@ -39,9 +42,10 @@ type BufferPool struct {
 	Replacer    IReplacer
 	DiskManager disk.IDiskManager
 	lock        sync.Mutex
+	logManager  *wal.LogManager
 }
 
-func (b *BufferPool) FreePage(pageId uint64) error {
+func (b *BufferPool) FreePage(txn transaction.Transaction, pageId uint64) error {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
@@ -58,6 +62,8 @@ func (b *BufferPool) FreePage(pageId uint64) error {
 	}
 
 	b.DiskManager.FreePage(pageId)
+
+	b.logManager.AppendLog(wal.NewFreePageLogRecord(txn.GetID(), pageId))
 	return nil
 }
 
@@ -195,17 +201,19 @@ func (b *BufferPool) Flush(pageId uint64) error {
 }
 
 func (b *BufferPool) FlushAll() error {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
+	// TODO: this implementation is not correct.
 	// TODO does this require lock? maybe not since flush acquires lock but empty frames could change in midway flushing
+	emptyFrames := make(map[int]bool)
+	for _, emptyIdx := range b.emptyFrames {
+		emptyFrames[emptyIdx] = true
+	}
+
 	dirtyFrames := make([]*pages.RawPage, 0)
 	for i, frame := range b.frames {
-		flag := 0
-		for _, emptyIdx := range b.emptyFrames {
-			if i == emptyIdx {
-				flag = 1
-				break
-			}
-		}
-		if flag == 0 { //&& frame.IsDirty() { // TODO: do not forget to uncomment this
+		if emptyFrames[i] && frame.IsDirty() {
 			dirtyFrames = append(dirtyFrames, frame)
 		}
 	}
@@ -222,8 +230,9 @@ func (b *BufferPool) FlushAll() error {
 	return nil
 }
 
-func (b *BufferPool) NewPage() (page *pages.RawPage, err error) {
+func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, err error) {
 	// TODO: too many duplicate code with GetPage
+	// TODO: analyse for resource leaks during rollbacks
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
@@ -238,6 +247,7 @@ func (b *BufferPool) NewPage() (page *pages.RawPage, err error) {
 		b.pageMap[newPageId] = emptyFrameIdx
 		b.frames[emptyFrameIdx] = p
 		b.pin(newPageId)
+		b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), p.GetPageId()))
 		return p, nil
 	}
 
@@ -265,7 +275,9 @@ func (b *BufferPool) NewPage() (page *pages.RawPage, err error) {
 	delete(b.pageMap, victimPageId)
 	b.frames[victimIdx] = p
 	b.pin(newPageId)
-	return p, err
+
+	b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), p.GetPageId()))
+	return p, nil
 }
 
 func (b *BufferPool) EmptyFrameSize() int {
@@ -284,16 +296,21 @@ func NewBufferPool(dbFile string, poolSize int) *BufferPool {
 		frames:      make([]*pages.RawPage, poolSize),
 		pageMap:     map[uint64]int{},
 		emptyFrames: emptyFrames,
+		Replacer:    NewClockReplacer(poolSize),
 		DiskManager: d,
 		lock:        sync.Mutex{},
-		Replacer:    NewClockReplacer(poolSize),
+		logManager:  wal.NewLogManager(io.Discard),
 	}
 }
 
-func NewBufferPoolWithDM(poolSize int, dm disk.IDiskManager) *BufferPool {
+func NewBufferPoolWithDM(poolSize int, dm disk.IDiskManager, logManager *wal.LogManager) *BufferPool {
 	emptyFrames := make([]int, poolSize)
 	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i
+	}
+
+	if logManager == nil {
+		logManager = wal.NewLogManager(io.Discard)
 	}
 
 	return &BufferPool{
@@ -301,8 +318,9 @@ func NewBufferPoolWithDM(poolSize int, dm disk.IDiskManager) *BufferPool {
 		frames:      make([]*pages.RawPage, poolSize),
 		pageMap:     map[uint64]int{},
 		emptyFrames: emptyFrames,
+		Replacer:    NewClockReplacer(poolSize),
 		DiskManager: dm,
 		lock:        sync.Mutex{},
-		Replacer:    NewClockReplacer(poolSize),
+		logManager:  logManager,
 	}
 }

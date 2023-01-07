@@ -7,8 +7,9 @@ import (
 	"helin/buffer"
 	"helin/catalog/db_types"
 	"helin/common"
-	"helin/concurrency"
 	"helin/disk/structures"
+	"helin/transaction"
+	io2 "io"
 	"log"
 	"sync"
 )
@@ -62,16 +63,16 @@ const NullTableOID TableOID = 0
 const NullIndexOID IndexOID = 0
 
 type Catalog interface {
-	CreateTable(txn concurrency.Transaction, tableName string, schema Schema) *TableInfo
+	CreateTable(txn transaction.Transaction, tableName string, schema Schema) *TableInfo
 	GetTable(name string) *TableInfo
 	GetTableByOID(oid TableOID) *TableInfo
 
-	CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, columnIndexes []int, isUnique bool) (*IndexInfo, error)
+	CreateBtreeIndex(txn transaction.Transaction, indexName string, tableName string, columnIndexes []int, isUnique bool) (*IndexInfo, error)
 	GetIndexByOID(indexOID IndexOID) *IndexInfo
 	GetTableIndexes(tableName string) []IndexInfo
 
-	CreateStore(txn concurrency.Transaction, name string) (*StoreInfo, error)
-	GetStore(txn concurrency.Transaction, name string) *btree.BTree
+	CreateStore(txn transaction.Transaction, name string) (*StoreInfo, error)
+	GetStore(txn transaction.Transaction, name string) *btree.BTree
 }
 
 var _ Catalog = &InMemCatalog{}
@@ -94,7 +95,7 @@ type InMemCatalog struct {
 	pool *buffer.BufferPool
 }
 
-func (c *InMemCatalog) CreateTable(txn concurrency.Transaction, tableName string, schema Schema) *TableInfo {
+func (c *InMemCatalog) CreateTable(txn transaction.Transaction, tableName string, schema Schema) *TableInfo {
 	if c.tableNames[tableName] != NullTableOID {
 		return nil
 	}
@@ -133,7 +134,7 @@ func (c *InMemCatalog) GetTableByOID(oid TableOID) *TableInfo {
 	return c.tables[oid]
 }
 
-func (c *InMemCatalog) CreateBtreeIndex(txn concurrency.Transaction, indexName string, tableName string, columnIndexes []int, isUnique bool) (*IndexInfo, error) {
+func (c *InMemCatalog) CreateBtreeIndex(txn transaction.Transaction, indexName string, tableName string, columnIndexes []int, isUnique bool) (*IndexInfo, error) {
 	// keySchema can be generated from columnIndexes
 	if c.tableNames[tableName] == 0 {
 		return nil, fmt.Errorf("tried to create an index on a nonexistent table: %v", tableName)
@@ -162,7 +163,7 @@ func (c *InMemCatalog) CreateBtreeIndex(txn concurrency.Transaction, indexName s
 	serializer := TupleKeySerializer{schema: keySchema}
 
 	// TODO: what should be degree?
-	index := btree.NewBtreeWithPager(50, btree.NewDefaultBPP(c.pool, &serializer))
+	index := btree.NewBtreeWithPager(transaction.TxnNoop(), 50, btree.NewDefaultBPP(c.pool, &serializer, io2.Discard))
 	it := structures.NewTableIterator(txn, table.Heap)
 	for {
 		n := CastRowAsTuple(it.Next())
@@ -187,7 +188,7 @@ func (c *InMemCatalog) CreateBtreeIndex(txn concurrency.Transaction, indexName s
 			Schema: keySchema,
 			Tuple:  *t,
 		}
-		index.Insert(&tupleKey, n.Rid)
+		index.Insert(nil, &tupleKey, n.Rid)
 	}
 
 	oid := c.getNextIndexOID()
@@ -215,12 +216,12 @@ func (c *InMemCatalog) GetTableIndexes(tableName string) []IndexInfo {
 	panic("implement me")
 }
 
-func (c *InMemCatalog) CreateStore(txn concurrency.Transaction, name string) (*StoreInfo, error) {
+func (c *InMemCatalog) CreateStore(txn transaction.Transaction, name string) (*StoreInfo, error) {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (c *InMemCatalog) GetStore(txn concurrency.Transaction, name string) *btree.BTree {
+func (c *InMemCatalog) GetStore(txn transaction.Transaction, name string) *btree.BTree {
 	//TODO implement me
 	panic("implement me")
 }

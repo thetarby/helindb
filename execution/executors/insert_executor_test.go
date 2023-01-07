@@ -5,10 +5,11 @@ import (
 	"helin/buffer"
 	"helin/catalog"
 	"helin/catalog/db_types"
+	"helin/common"
 	"helin/disk/structures"
 	"helin/execution"
 	"helin/execution/plans"
-	"os"
+	"helin/transaction"
 	"testing"
 
 	"github.com/google/uuid"
@@ -23,7 +24,7 @@ func poolAndCatalog() (*buffer.BufferPool, catalog.Catalog, func()) {
 	pool := buffer.NewBufferPool(dbName, poolSize)
 	ctg := catalog.NewCatalog(pool)
 
-	return pool, ctg, func() { defer os.Remove(dbName) }
+	return pool, ctg, func() { defer common.Remove(dbName) }
 }
 
 func TestInsertExecutor_Returns_ErrNoTuple_When_All_Is_Inserted(t *testing.T) {
@@ -49,7 +50,7 @@ func TestInsertExecutor_Returns_ErrNoTuple_When_All_Is_Inserted(t *testing.T) {
 		},
 	}
 	schema := catalog.NewSchema(columns)
-	table := ctg.CreateTable("", "myTable", schema)
+	table := ctg.CreateTable(transaction.TxnNoop(), "myTable", schema)
 
 	// create raw values to insert
 	n := 1000

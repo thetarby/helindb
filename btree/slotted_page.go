@@ -2,25 +2,26 @@ package btree
 
 import (
 	"helin/disk/pages"
+	"helin/disk/wal"
 )
 
-// SlottedPage is almost same as pages.SlottedPage except that its GetPageId method returns a Pointer.
-type SlottedPage struct {
-	pages.SlottedPage
+// LoggedSlottedPage is almost same as pages.SlottedPage except that its GetPageId method returns a Pointer.
+type LoggedSlottedPage struct {
+	wal.LSP
 }
 
-func (sp *SlottedPage) GetPageId() Pointer {
+func (sp *LoggedSlottedPage) GetPageId() Pointer {
 	return Pointer(sp.SlottedPage.GetPageId())
 }
 
-func InitSlottedPage(p pages.IPage) SlottedPage {
-	return SlottedPage{
-		pages.InitSlottedPage(p),
+func InitLoggedSlottedPage(p pages.IPage, lm *wal.LogManager) LoggedSlottedPage {
+	return LoggedSlottedPage{
+		LSP: wal.NewLSP(pages.InitSlottedPage(p), lm),
 	}
 }
 
-func CastSlottedPage(p pages.IPage) SlottedPage {
-	return SlottedPage{
-		pages.CastSlottedPage(p),
+func CastLoggedSlottedPage(p pages.IPage, lm *wal.LogManager) LoggedSlottedPage {
+	return LoggedSlottedPage{
+		LSP: wal.NewLSP(pages.CastSlottedPage(p), lm),
 	}
 }

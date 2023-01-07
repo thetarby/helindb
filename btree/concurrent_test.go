@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"helin/buffer"
 	"helin/common"
+	"helin/disk"
+	"helin/disk/wal"
+	"helin/transaction"
 	"io"
 	"log"
 	"math/rand"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,10 +23,10 @@ import (
 func TestConcurrent_Inserts(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	defer os.Remove(dbName)
+	defer common.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(50, NewDefaultBPP(pool, &PersistentKeySerializer{}))
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewDefaultBPP(pool, &PersistentKeySerializer{}, io.Discard))
 	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
@@ -35,7 +37,7 @@ func TestConcurrent_Inserts(t *testing.T) {
 		wg.Add(1)
 		go func(arr []int) {
 			for _, i := range arr {
-				tree.Insert(PersistentKey(i), SlotPointer{
+				tree.Insert(transaction.TxnNoop(), PersistentKey(i), SlotPointer{
 					PageId:  uint64(i),
 					SlotIdx: int16(i),
 				})
@@ -58,10 +60,10 @@ func TestConcurrent_Inserts(t *testing.T) {
 func TestConcurrent_Inserts2(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	defer os.Remove(dbName)
+	defer common.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}))
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, nil))
 	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
@@ -72,7 +74,7 @@ func TestConcurrent_Inserts2(t *testing.T) {
 		wg.Add(1)
 		go func(arr []int) {
 			for _, i := range arr {
-				tree.Insert(StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("val_%v", i))
+				tree.Insert(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("val_%v", i))
 			}
 			wg.Done()
 		}(chunk)
@@ -82,54 +84,58 @@ func TestConcurrent_Inserts2(t *testing.T) {
 }
 
 func TestConcurrent_Deletes(t *testing.T) {
-	id, _ := uuid.NewUUID()
-	dbName := id.String()
-	defer os.Remove(dbName)
+	for i := 0; i < 10; i++ {
+		t.Run("concurrent deletes", func(t *testing.T) {
+			id, _ := uuid.NewUUID()
+			dbName := id.String()
+			defer common.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 100_000)
-	tree := NewBtreeWithPager(10, NewDefaultBPP(pool, &PersistentKeySerializer{}))
-	log.SetOutput(io.Discard)
+			pool := buffer.NewBufferPool(dbName, 100_000)
+			tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewDefaultBPP(pool, &PersistentKeySerializer{}, io.Discard))
+			log.SetOutput(io.Discard)
 
-	rand.Seed(42)
-	n, chunkSize := 100_000, 1000 // there will be n/chunkSize parallel routines
-	inserted := rand.Perm(n)
-	for _, i := range inserted {
-		tree.Insert(PersistentKey(i), SlotPointer{
-			PageId:  uint64(i),
-			SlotIdx: int16(i),
+			rand.Seed(42)
+			n, chunkSize := 100_000, 1000 // there will be n/chunkSize parallel routines
+			inserted := rand.Perm(n)
+			for _, i := range inserted {
+				tree.Insert(transaction.TxnNoop(), PersistentKey(i), SlotPointer{
+					PageId:  uint64(i),
+					SlotIdx: int16(i),
+				})
+			}
+			assert.Equal(t, len(inserted), tree.Count())
+			wg := &sync.WaitGroup{}
+			for _, chunk := range common.ChunksInt(inserted[:50_000], chunkSize) {
+				wg.Add(1)
+				go func(arr []int) {
+					for _, i := range arr {
+						if !tree.Delete(transaction.TxnNoop(), PersistentKey(i)) {
+							t.Errorf("%v cannot be found", i)
+						}
+					}
+					wg.Done()
+				}(chunk)
+			}
+			wg.Wait()
+
+			for _, v := range inserted[:50_000] {
+				assert.Nil(t, tree.Find(PersistentKey(v)))
+
+			}
+			for _, v := range inserted[50_000:] {
+				p := tree.Find(PersistentKey(v)).(SlotPointer)
+				require.Equal(t, uint64(v), p.PageId)
+			}
+
+			assert.Equal(t, 50_000, tree.Count())
 		})
 	}
-	assert.Equal(t, len(inserted), tree.Count())
-	wg := &sync.WaitGroup{}
-	for _, chunk := range common.ChunksInt(inserted[:50_000], chunkSize) {
-		wg.Add(1)
-		go func(arr []int) {
-			for _, i := range arr {
-				if !tree.Delete(PersistentKey(i)) {
-					t.Errorf("%v cannot be found", i)
-				}
-			}
-			wg.Done()
-		}(chunk)
-	}
-	wg.Wait()
-
-	for _, v := range inserted[:50_000] {
-		assert.Nil(t, tree.Find(PersistentKey(v)))
-
-	}
-	for _, v := range inserted[50_000:] {
-		p := tree.Find(PersistentKey(v)).(SlotPointer)
-		require.Equal(t, uint64(v), p.PageId)
-	}
-
-	assert.Equal(t, 50_000, tree.Count())
 }
 
 func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 	log.SetOutput(io.Discard)
 	memPager := NewMemPager(&StringKeySerializer{}, &StringValueSerializer{})
-	tree := NewBtreeWithPager(10, memPager)
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, memPager)
 
 	rand.Seed(42)
 	// NOTE: on my m1 macbook air this test takes 1.1 second with 25000 chunk size and 1.6
@@ -141,7 +147,7 @@ func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 		wg.Add(1)
 		go func(arr []int) {
 			for _, i := range arr {
-				tree.Insert(StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("key_%v_val_%v", i, i))
+				tree.Insert(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("key_%v_val_%v", i, i))
 			}
 			wg.Done()
 		}(chunk)
@@ -150,7 +156,7 @@ func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 
 	assert.Equal(t, len(inserted), tree.Count())
 	// assert they are sorted
-	it := NewTreeIterator(nil, tree, tree.pager)
+	it := NewTreeIterator(transaction.TxnNoop(), tree, tree.pager)
 	var prev common.Key = StringKey("")
 	for k, v := it.Next(); k != nil; k, v = it.Next() {
 		require.Less(t, prev, k)
@@ -168,16 +174,20 @@ func TestConcurrent_Hammer(t *testing.T) {
 	log.SetOutput(io.Discard)
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	defer os.Remove(dbName)
+	dm, _, err := disk.NewDiskManager(dbName)
+	require.NoError(t, err)
+	defer common.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}))
+	logManager := wal.NewLogManager(dm.GetLogWriter())
+
+	pool := buffer.NewBufferPoolWithDM(4096, dm, logManager)
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, logManager))
 
 	// first insert some items later to be deleted
 	toDeleteN := 100_000
 	toDelete := rand.Perm(toDeleteN)
 	for _, i := range toDelete {
-		tree.Insert(StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("key_%v_val_%v", i, i))
+		tree.Insert(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("key_%v_val_%v", i, i))
 	}
 
 	rand.Seed(42)
@@ -197,7 +207,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 		wg.Add(1)
 		go func(arr []int) {
 			for _, i := range arr {
-				tree.Insert(StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("key_%v_val_%v", i, i))
+				tree.Insert(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("key_%v_val_%v", i, i))
 			}
 			wg.Done()
 		}(chunk)
@@ -208,7 +218,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 		wg.Add(1)
 		go func(arr []int) {
 			for _, i := range arr {
-				if !tree.Delete(StringKey(fmt.Sprintf("key_%v", i))) {
+				if !tree.Delete(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%v", i))) {
 					t.Error("key not found")
 				}
 			}
@@ -221,7 +231,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 	assert.Len(t, toInsert, tree.Count())
 
 	// assert they are sorted
-	it := NewTreeIterator(nil, tree, tree.pager)
+	it := NewTreeIterator(transaction.TxnNoop(), tree, tree.pager)
 	var prev common.Key = StringKey("")
 	for k, v := it.Next(); k != nil; k, v = it.Next() {
 		require.Less(t, prev, k)
@@ -248,17 +258,17 @@ func FuzzConcurrent_Inserts(f *testing.F) {
 	}
 
 	memPager := NewMemPager(&StringKeySerializer{}, &StringValueSerializer{})
-	tree := NewBtreeWithPager(10, memPager)
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, memPager)
 	f.Fuzz(func(t *testing.T, key string) {
 		if len(key) > 1000 || key == "" {
 			// NOTE: with overflow pages should pass this test without this if condition too
 			// NOTE: without overflow pages, it fails this test
 			return
 		}
-		tree.InsertOrReplace(StringKey(key), fmt.Sprintf("val_%v", key))
+		tree.InsertOrReplace(transaction.TxnNoop(), StringKey(key), fmt.Sprintf("val_%v", key))
 
 		// assert they are sorted
-		it := NewTreeIterator(nil, tree, tree.pager)
+		it := NewTreeIterator(transaction.TxnNoop(), tree, tree.pager)
 		var prev common.Key = StringKey("")
 		i := 0
 		for k, v := it.Next(); k != nil; k, v = it.Next() {
@@ -277,7 +287,7 @@ func FuzzConcurrent_Inserts(f *testing.F) {
 
 func TestConcurrent_Inserts3(t *testing.T) {
 	memPager := NewMemPager(&StringKeySerializer{}, &StringValueSerializer{})
-	tree := NewBtreeWithPager(50, memPager)
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, memPager)
 
 	m := sync.Mutex{}
 	wg := sync.WaitGroup{}
@@ -297,7 +307,7 @@ func TestConcurrent_Inserts3(t *testing.T) {
 	wg.Wait()
 
 	// assert they are sorted
-	it := NewTreeIterator(nil, tree, tree.pager)
+	it := NewTreeIterator(transaction.TxnNoop(), tree, tree.pager)
 	var prev common.Key = StringKey("")
 	i := 0
 	for k, v := it.Next(); k != nil; k, v = it.Next() {
@@ -324,7 +334,7 @@ func writer(tree *BTree, n int) []string {
 	for i := 0; i < n; i++ {
 		k := common.RandStr(1, 1000)
 		v := fmt.Sprintf("val_%v", k)
-		tree.InsertOrReplace(StringKey(k), v)
+		tree.InsertOrReplace(transaction.TxnNoop(), StringKey(k), v)
 		res = append(res, k)
 	}
 
@@ -340,7 +350,7 @@ func deleter(tree *BTree, n int, keys []string) []string {
 	indexes := rand.Perm(len(keys))
 	for i := 0; i < n; i++ {
 		k := keys[indexes[i]]
-		if tree.Delete(StringKey(k)) {
+		if tree.Delete(transaction.TxnNoop(), StringKey(k)) {
 			res = append(res, k)
 		}
 	}
