@@ -274,23 +274,6 @@ func (tree *BTree) Delete(key common.Key) bool {
 			}
 			if indexAtParent+1 < (parent.KeyLen() + 1) { // +1 is the length of pointers
 				rightSibling = tree.pager.GetNode(parent.GetValueAt(indexAtParent+1).(Pointer), Delete) //rightSibling = parent.Pointers[indexAtParent+1].(*InternalNode)
-				if x, ok := rightSibling.(*VarKeyLeafNode); ok && x.p.GetPinCount() > 1 {
-					panic("wahat")
-				}
-				if x, ok := rightSibling.(*VarKeyInternalNode); ok && x.p.GetPinCount() > 1 {
-					for {
-						if 3 > 1 {
-							println("still")
-							time.Sleep(time.Millisecond * 100)
-						} else {
-							break
-						}
-					}
-					println("now not")
-					rightSibling.PrintNode()
-					println(x.p.GetPageId())
-					panic("wahat")
-				}
 			}
 
 			// try redistribute
