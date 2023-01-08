@@ -201,19 +201,18 @@ func (b *BufferPool) Flush(pageId uint64) error {
 }
 
 func (b *BufferPool) FlushAll() error {
-	b.lock.Lock()
-	defer b.lock.Unlock()
-
 	// TODO: this implementation is not correct.
 	// TODO does this require lock? maybe not since flush acquires lock but empty frames could change in midway flushing
-	emptyFrames := make(map[int]bool)
-	for _, emptyIdx := range b.emptyFrames {
-		emptyFrames[emptyIdx] = true
-	}
-
 	dirtyFrames := make([]*pages.RawPage, 0)
 	for i, frame := range b.frames {
-		if emptyFrames[i] && frame.IsDirty() {
+		flag := 0
+		for _, emptyIdx := range b.emptyFrames {
+			if i == emptyIdx {
+				flag = 1
+				break
+			}
+		}
+		if flag == 0 && frame.IsDirty() {
 			dirtyFrames = append(dirtyFrames, frame)
 		}
 	}

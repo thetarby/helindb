@@ -60,10 +60,14 @@ func TestConcurrent_Inserts(t *testing.T) {
 func TestConcurrent_Inserts2(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
+	dm, _, err := disk.NewDiskManager(dbName)
+	require.NoError(t, err)
 	defer common.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, nil))
+	lm := wal.NewLogManager(dm.GetLogWriter())
+	pool := buffer.NewBufferPoolWithDM(1024, dm, lm)
+
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, lm))
 	log.SetOutput(io.Discard)
 
 	rand.Seed(42)

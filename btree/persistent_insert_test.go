@@ -2,11 +2,12 @@ package btree
 
 import (
 	"fmt"
+	"github.com/stretchr/testify/require"
 	"helin/buffer"
 	"helin/common"
+	"helin/disk/wal"
 	"helin/transaction"
 	"io"
-	"io/ioutil"
 	"log"
 	"math"
 	"math/rand"
@@ -61,7 +62,7 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 
 	pool := buffer.NewBufferPool(dbName, 32)
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewDefaultBPP(pool, &PersistentKeySerializer{}, io.Discard))
-	log.SetOutput(ioutil.Discard)
+	log.SetOutput(io.Discard)
 	n := 100000
 	for _, i := range rand.Perm(n) {
 		tree.Insert(transaction.TxnNoop(), PersistentKey(i), SlotPointer{
@@ -91,8 +92,8 @@ func TestPersistentEvery_Inserted_Should_Be_Found_VarSized(t *testing.T) {
 	defer common.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 16)
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 32, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, nil))
-	log.SetOutput(ioutil.Discard)
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 32, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, wal.NewLogManager(io.Discard)))
+	log.SetOutput(io.Discard)
 	n := 100000
 	for _, i := range rand.Perm(n) {
 		key, val := fmt.Sprintf("sa_%v", i), fmt.Sprintf("as_%v", i)
@@ -113,7 +114,7 @@ func TestPersistent_Pin_Count_Should_Be_Zero_After_Inserts_Are_Complete(t *testi
 
 	pool := buffer.NewBufferPool(dbName, 5)
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewDefaultBPP(pool, &PersistentKeySerializer{}, io.Discard))
-	log.SetOutput(ioutil.Discard)
+	log.SetOutput(io.Discard)
 	n := 1000
 	for _, i := range rand.Perm(n) {
 		tree.Insert(transaction.TxnNoop(), PersistentKey(i), SlotPointer{
@@ -148,7 +149,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 	poolSize := 64
 	pool := buffer.NewBufferPool(dbName, poolSize)
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 80, NewDefaultBPP(pool, &PersistentKeySerializer{}, io.Discard))
-	log.SetOutput(ioutil.Discard)
+	log.SetOutput(io.Discard)
 
 	n := 10_000
 	v := make([]PersistentKey, n, n)
@@ -163,9 +164,9 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 		})
 	}
 
-	tree.pager.(*BufferPoolPager).pool.FlushAll()
-	err := tree.pager.(*BufferPoolPager).pool.DiskManager.Close()
-	assert.NoError(t, err)
+	require.NoError(t, tree.pager.(*BufferPoolPager).pool.FlushAll())
+	require.NoError(t, tree.pager.(*BufferPoolPager).pool.DiskManager.Close())
+
 	newPool := buffer.NewBufferPool(dbName, poolSize)
 	newTreeReference := ConstructBtreeByMeta(tree.metaPID, NewDefaultBPP(newPool, &PersistentKeySerializer{}, io.Discard))
 
@@ -191,7 +192,7 @@ func TestPersistent_Find_Should_Unpin_All_Nodes_It_Pinned(t *testing.T) {
 
 	pool := buffer.NewBufferPool(dbName, 5)
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewDefaultBPP(pool, &PersistentKeySerializer{}, io.Discard))
-	log.SetOutput(ioutil.Discard)
+	log.SetOutput(io.Discard)
 	n := 1000
 	for _, i := range rand.Perm(n) {
 		tree.Insert(transaction.TxnNoop(), PersistentKey(i), SlotPointer{

@@ -3,6 +3,7 @@ package wal
 import (
 	"encoding/binary"
 	"encoding/json"
+	"helin/common"
 	"helin/disk/pages"
 	"helin/transaction"
 	"io"
@@ -31,7 +32,7 @@ func (d *DefaultLogRecordSerializer) Serialize(r *LogRecord, writer io.Writer) {
 	d.area = binary.BigEndian.AppendUint64(d.area, r.PageID)
 	d.area = binary.BigEndian.AppendUint64(d.area, r.PrevPageID)
 	d.area = binary.BigEndian.AppendUint16(d.area, uint16(len(r.Payload)))
-	d.area = binary.BigEndian.AppendUint16(d.area, uint16(len(r.Payload)))
+	d.area = binary.BigEndian.AppendUint16(d.area, uint16(len(r.OldPayload)))
 	n, err := writer.Write(d.area)
 	if err != nil {
 		panic(err)
@@ -71,7 +72,8 @@ func (d *DefaultLogRecordSerializer) Size(r *LogRecord) int {
 	return size
 }
 
-func (d *DefaultLogRecordSerializer) Deserialize(src io.Reader) (*LogRecord, int) {
+func (d *DefaultLogRecordSerializer) Deserialize(r io.Reader) (*LogRecord, int) {
+	src := common.NewStatReader(r)
 	d.area = d.area[:LogRecordInlineSize+2+2]
 	n, err := src.Read(d.area)
 	if err != nil {
@@ -113,7 +115,7 @@ func (d *DefaultLogRecordSerializer) Deserialize(src io.Reader) (*LogRecord, int
 	res.Payload = payload
 	res.OldPayload = oldpayload
 
-	return &res, 0
+	return &res, src.TotalRead
 }
 
 var _ LogRecordSerializer = &JsonLogRecordSerializer{}

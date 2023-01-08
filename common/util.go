@@ -1,6 +1,7 @@
 package common
 
 import (
+	"io"
 	"math/rand"
 	"os"
 )
@@ -72,6 +73,23 @@ func Reverse[T any](a []T) []T {
 }
 
 func Remove(dbName string) {
-	os.Remove(dbName)
-	os.Remove(dbName + ".log")
+	PanicIfErr(os.Remove(dbName))
+	PanicIfErr(os.Remove(dbName + ".log"))
+}
+
+var _ io.Reader = &StatReader{}
+
+type StatReader struct {
+	r         io.Reader
+	TotalRead int
+}
+
+func (s *StatReader) Read(p []byte) (n int, err error) {
+	n, err = s.r.Read(p)
+	s.TotalRead += n
+	return
+}
+
+func NewStatReader(r io.Reader) *StatReader {
+	return &StatReader{r: r}
 }
