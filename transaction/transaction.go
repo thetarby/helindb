@@ -1,5 +1,7 @@
 package transaction
 
+import "sync/atomic"
+
 type Transaction interface {
 	GetID() TxnID
 }
@@ -10,14 +12,21 @@ func TxnTODO() Transaction {
 
 type TxnID uint64
 
+var noOpTxnCounter uint64 = 0
+
 func TxnNoop() Transaction {
-	return txnNoop{}
+	id := atomic.AddUint64(&noOpTxnCounter, 1)
+	return txnNoop{
+		id: TxnID(id),
+	}
 }
 
 var _ Transaction = &txnNoop{}
 
-type txnNoop struct{}
+type txnNoop struct {
+	id TxnID
+}
 
 func (t txnNoop) GetID() TxnID {
-	return 1
+	return t.id
 }

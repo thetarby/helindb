@@ -77,9 +77,9 @@ func NewDiskManager(file string) (IDiskManager, bool, error) {
 		d.lastPageId = 1 // first page is reserved, so start from 1
 		d.initHeader()
 		return &d, true, nil
+	} else {
+		d.lastPageId = uint64((int(filesize) / PageSize) - 1)
 	}
-
-	d.lastPageId = uint64((int(filesize) / PageSize) - 1)
 
 	return &d, false, nil
 }
@@ -174,7 +174,7 @@ func (d *Manager) NewPage() (pageId uint64) {
 
 	// else allocate new page
 	d.lastPageId++
-	return d.lastPageId - 1
+	return d.lastPageId
 }
 
 // FreePage appends page with given id to freelist and sets it as tail.
