@@ -97,26 +97,9 @@ func (b *BufferPool) GetPage(pageId uint64) (*pages.RawPage, error) {
 	}
 
 	// else choose a victim. write victim to disk if it is dirty. read new page and pin it.
-	victimFrameIdx, err := b.Replacer.ChooseVictim()
+	victimFrameIdx, err := b.evictVictim()
 	if err != nil {
 		return nil, err
-	}
-	log.Printf("victim is chosen %v\n", victimFrameIdx)
-
-	victim := b.frames[victimFrameIdx]
-	if victim.GetPinCount() != 0 {
-		panic(fmt.Sprintf("a page is chosen as victim while it's pin count is not zero. pin count: %v, page_id: %v", victim.GetPinCount(), victim.GetPageId()))
-	}
-
-	victimPageId := victim.GetPageId()
-	if victim.IsDirty() {
-		data := victim.GetData()
-		if err := b.DiskManager.WritePage(data, victimPageId); err != nil {
-			// TODO: victim should be added to replacer as unpinned again since now it will be impossible to choose it
-			// as victim again and it is a resource leak.
-			log.Print("TODO: resource leak occurred")
-			return nil, err
-		}
 	}
 
 	pageData, err := b.DiskManager.ReadPage(pageId)
@@ -131,7 +114,6 @@ func (b *BufferPool) GetPage(pageId uint64) (*pages.RawPage, error) {
 	p.Data = pageData
 
 	b.pageMap[pageId] = victimFrameIdx
-	delete(b.pageMap, victimPageId)
 	b.frames[victimFrameIdx] = p
 	b.pin(pageId)
 	return p, err
@@ -203,6 +185,10 @@ func (b *BufferPool) Flush(pageId uint64) error {
 func (b *BufferPool) FlushAll() error {
 	// TODO: this implementation is not correct.
 	// TODO does this require lock? maybe not since flush acquires lock but empty frames could change in midway flushing
+	if err := b.logManager.Flush(); err != nil {
+		return err
+	}
+
 	dirtyFrames := make([]*pages.RawPage, 0)
 	for i, frame := range b.frames {
 		flag := 0
@@ -221,9 +207,11 @@ func (b *BufferPool) FlushAll() error {
 		return dirtyFrames[i].GetPageId() < dirtyFrames[j].GetPageId()
 	})
 
-	for _, frame := range dirtyFrames {
-		if err := b.Flush(frame.GetPageId()); err != nil {
-			return err
+	for _, frame := range b.frames {
+		if frame != nil {
+			if err := b.Flush(frame.GetPageId()); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -250,28 +238,13 @@ func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, 
 		return p, nil
 	}
 
-	victimIdx, err := b.Replacer.ChooseVictim()
-	log.Printf("victim is chosen %v\n", victimIdx)
+	victimIdx, err := b.evictVictim()
 	if err != nil {
 		return nil, err
 	}
 
-	victim := b.frames[victimIdx]
-	if victim.GetPinCount() != 0 {
-		panic(fmt.Sprintf("a page is chosen as victim while it's pin count is not zero. pin count: %v, page_id: %v", victim.GetPinCount(), victim.GetPageId()))
-	}
-
-	victimPageId := victim.GetPageId()
-	if victim.IsDirty() {
-		data := victim.GetData()
-		if err := b.DiskManager.WritePage(data, victimPageId); err != nil {
-			return nil, err
-		}
-	}
-
 	p := pages.NewRawPage(newPageId)
 	b.pageMap[newPageId] = victimIdx
-	delete(b.pageMap, victimPageId)
 	b.frames[victimIdx] = p
 	b.pin(newPageId)
 
@@ -281,6 +254,36 @@ func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, 
 
 func (b *BufferPool) EmptyFrameSize() int {
 	return len(b.emptyFrames)
+}
+
+// evictVictim chooses a victim page, writes its data to disk if it is dirty and returns emptied frame's index.
+func (b *BufferPool) evictVictim() (int, error) {
+	victimFrameIdx, err := b.Replacer.ChooseVictim()
+	if err != nil {
+		return 0, err
+	}
+
+	log.Printf("victim is chosen %v\n", victimFrameIdx)
+	victim := b.frames[victimFrameIdx]
+	if victim.GetPinCount() != 0 {
+		panic(fmt.Sprintf("a page is chosen as victim while it's pin count is not zero. pin count: %v, page_id: %v", victim.GetPinCount(), victim.GetPageId()))
+	}
+
+	victimPageId := victim.GetPageId()
+	if victim.IsDirty() {
+		data := victim.GetData()
+		if err := b.DiskManager.WritePage(data, victimPageId); err != nil {
+			// TODO: victim should be added to replacer as unpinned again since now it will be impossible to choose it
+			// as victim again and it is a resource leak.
+			log.Print("TODO: resource leak occurred")
+			return 0, err
+		}
+	}
+
+	delete(b.pageMap, victimPageId)
+	b.frames[victimFrameIdx] = nil
+
+	return victimFrameIdx, nil
 }
 
 func NewBufferPool(dbFile string, poolSize int) *BufferPool {
