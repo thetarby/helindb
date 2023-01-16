@@ -230,6 +230,21 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 		return false
 	}
 
+	// IMPORTANT NOTE: freeing pages is delayed because if txn fails, during rollback, recovery should allocate the exact
+	// same page because there might be pointers pointing to it. If pages are freed directly another txn can allocate
+	// them immediately. Hence, write locks on pages must be released at the end of the txn after freeing all the pages.
+	toFree := make([]Node, 0)
+	defer func() {
+		for _, node := range toFree {
+			CheckErr(tree.pager.FreeNode(txn, node))
+		}
+
+		for _, node := range toFree {
+			tree.pager.Unpin(node, false)
+			node.WUnlatch()
+		}
+	}()
+
 	for len(stack) > 0 {
 		popped := stack[len(stack)-1].Node
 		stack = stack[:len(stack)-1]
@@ -296,9 +311,7 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 				tree.mergeNodes(txn, popped, rightSibling, parent)
 				merged = popped
 
-				tree.pager.Unpin(rightSibling, false)
-				rightSibling.WUnlatch()
-				CheckErr(tree.pager.FreeNode(txn, rightSibling))
+				toFree = append(toFree, rightSibling)
 
 				// tree.pager.Unpin(parent, true) will be done by deferred unpinAll
 				tree.pager.Unpin(popped, true)
@@ -326,9 +339,7 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 				leftSibling.WUnlatch()
 
 				// tree.pager.Unpin(parent, true) will be done by deferred unpinAll
-				tree.pager.Unpin(popped, true)
-				popped.WUnlatch()
-				CheckErr(tree.pager.FreeNode(txn, popped))
+				toFree = append(toFree, popped)
 
 				if rightSibling != nil {
 					tree.pager.Unpin(rightSibling, false)
