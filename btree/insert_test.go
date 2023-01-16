@@ -1,8 +1,11 @@
 package btree
 
 import (
+	"github.com/stretchr/testify/require"
 	"helin/buffer"
 	"helin/common"
+	"helin/disk"
+	"helin/disk/wal"
 	"helin/transaction"
 	"io"
 	"log"
@@ -52,7 +55,17 @@ func TestInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
 }
 
 func TestAll_Inserts_Should_Be_Found_By_Find_Method(t *testing.T) {
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 3, NewMemPager(&PersistentKeySerializer{}, &StringValueSerializer{}))
+	id, _ := uuid.NewUUID()
+	dbName := id.String()
+	dm, _, err := disk.NewDiskManager(dbName)
+	require.NoError(t, err)
+	defer common.Remove(dbName)
+
+	lm := wal.NewLogManager(dm.GetLogWriter())
+	pool := buffer.NewBufferPoolWithDM(1024, dm, lm)
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 3, NewBPP(pool, &PersistentKeySerializer{}, &StringValueSerializer{}, lm))
+	log.SetOutput(io.Discard)
+
 	arr := make([]int, 0)
 	for i := 0; i < 1000; i++ {
 		arr = append(arr, i)

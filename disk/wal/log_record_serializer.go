@@ -3,6 +3,7 @@ package wal
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"helin/common"
 	"helin/disk/pages"
 	"helin/transaction"
@@ -14,13 +15,19 @@ type LogRecordSerializer interface {
 	Size(r *LogRecord) int
 
 	// Deserialize reads from src and constructs a LogRecord. Deserialize should not change the content of the src.
-	Deserialize(src io.Reader) (*LogRecord, int)
+	Deserialize(src io.Reader) (*LogRecord, int, error)
 }
 
 var _ LogRecordSerializer = &DefaultLogRecordSerializer{}
 
 type DefaultLogRecordSerializer struct {
 	area []byte
+}
+
+func NewDefaultLogRecordSerializer() *DefaultLogRecordSerializer {
+	return &DefaultLogRecordSerializer{
+		area: make([]byte, 0, 100),
+	}
 }
 
 func (d *DefaultLogRecordSerializer) Serialize(r *LogRecord, writer io.Writer) {
@@ -72,15 +79,16 @@ func (d *DefaultLogRecordSerializer) Size(r *LogRecord) int {
 	return size
 }
 
-func (d *DefaultLogRecordSerializer) Deserialize(r io.Reader) (*LogRecord, int) {
+func (d *DefaultLogRecordSerializer) Deserialize(r io.Reader) (*LogRecord, int, error) {
 	src := common.NewStatReader(r)
 	d.area = d.area[:LogRecordInlineSize+2+2]
 	n, err := src.Read(d.area)
 	if err != nil {
-		panic(err)
+		return nil, 0, err
 	}
+
 	if n != len(d.area) {
-		panic("short read")
+		return nil, 0, errors.New("short read")
 	}
 	res := LogRecord{}
 	res.T = LogRecordType(d.area[0])
@@ -101,7 +109,7 @@ func (d *DefaultLogRecordSerializer) Deserialize(r io.Reader) (*LogRecord, int) 
 		panic(err)
 	}
 	if n != len(payload) {
-		panic("short read")
+		return nil, 0, errors.New("short read")
 	}
 
 	n, err = src.Read(oldpayload)
@@ -109,13 +117,13 @@ func (d *DefaultLogRecordSerializer) Deserialize(r io.Reader) (*LogRecord, int) 
 		panic(err)
 	}
 	if n != len(oldpayload) {
-		panic("short read")
+		return nil, 0, errors.New("short read")
 	}
 
 	res.Payload = payload
 	res.OldPayload = oldpayload
 
-	return &res, src.TotalRead
+	return &res, src.TotalRead, nil
 }
 
 var _ LogRecordSerializer = &JsonLogRecordSerializer{}
@@ -134,11 +142,11 @@ func (j *JsonLogRecordSerializer) Size(r *LogRecord) int {
 	panic("implement me")
 }
 
-func (j *JsonLogRecordSerializer) Deserialize(src io.Reader) (*LogRecord, int) {
+func (j *JsonLogRecordSerializer) Deserialize(src io.Reader) (*LogRecord, int, error) {
 	record := LogRecord{}
 	if err := json.NewDecoder(src).Decode(&record); err != nil {
 		panic(err)
 	}
 
-	return &record, 0 // NOTE: TODO: returns 0
+	return &record, 0, nil // NOTE: TODO: returns 0
 }

@@ -1,7 +1,7 @@
 package wal
 
 import (
-	"helin/disk/pages"
+	"encoding/json"
 	"helin/transaction"
 	"io"
 )
@@ -20,13 +20,27 @@ func NewLogIter(reader io.ReadSeeker, serializer LogRecordSerializer) (LogIterat
 		return nil, err
 	}
 
-	return &logIter{reader: reader, serializer: serializer}, nil
+	it := &logIter{reader: reader, serializer: serializer}
+	for {
+		lr, err := it.Next()
+		b, _ := json.Marshal(lr)
+		println(string(b))
+		if err != nil {
+			break
+		}
+	}
+
+	return it, nil
 }
 
 var _ LogIterator = &logIter{}
 
 func (l *logIter) Next() (*LogRecord, error) {
-	rec, n := l.serializer.Deserialize(l.reader)
+	rec, n, err := l.serializer.Deserialize(l.reader)
+	if err != nil {
+		return nil, err
+	}
+
 	if l.i == len(l.lens) {
 		l.lens = append(l.lens, n)
 	}
@@ -88,11 +102,20 @@ func (t *txnLogIterator) Prev() (*LogRecord, error) {
 		return curr, nil
 	}
 
-	if t.curr.PrevLsn == pages.ZeroLSN {
-		return nil, ErrIteratorAtBeginning
+	//if t.curr.PrevLsn == pages.ZeroLSN {
+	//	return nil, ErrIteratorAtBeginning
+	//}
+	//
+	//if err := PrevToLsn(t.logIter, t.curr.PrevLsn); err != nil {
+	//	return nil, err
+	//}
+
+	_, err := t.logIter.Prev()
+	if err != nil {
+		return nil, err
 	}
 
-	if err := PrevToLsn(t.logIter, t.curr.PrevLsn); err != nil {
+	if err := PrevToTxn(t.logIter, t.txnID); err != nil {
 		return nil, err
 	}
 
@@ -113,6 +136,10 @@ func (t *txnLogIterator) Curr() (*LogRecord, error) {
 	return t.curr, nil
 }
 
-func NewTxnLogIterator(id transaction.TxnID) LogIterator {
-	panic("implement me")
+func NewTxnLogIterator(id transaction.TxnID, iter LogIterator) LogIterator {
+	return &txnLogIterator{
+		logIter: iter,
+		curr:    nil,
+		txnID:   id,
+	}
 }

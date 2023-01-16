@@ -43,6 +43,14 @@ func PrevToLsn(it LogIterator, lsn pages.LSN) error {
 }
 
 func PrevToTxn(it LogIterator, txn transaction.TxnID) error {
+	lr, err := it.Curr()
+	if err != nil {
+		return err
+	}
+	if lr.TxnID == txn {
+		return nil
+	}
+
 	for {
 		lr, err := it.Prev()
 		if err != nil {

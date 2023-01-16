@@ -1,6 +1,7 @@
 package pages
 
 import (
+	"encoding/binary"
 	"helin/disk"
 	"sync"
 )
@@ -22,6 +23,8 @@ type IPage interface {
 	RUnLatch()
 	IncrPinCount()
 	DecrPinCount()
+	SetRecLSN(l LSN)
+	GetRecLSN() LSN
 }
 
 type RawPage struct {
@@ -54,10 +57,11 @@ func (p *RawPage) DecrPinCount() {
 	}
 }
 
-func (p *RawPage) GetData() []byte { // TODO: it would be really good for debugging if this method can recognize whether buffer pool has replaced
+func (p *RawPage) GetData() []byte {
+	// TODO: it would be really good for debugging if this method can recognize whether buffer pool has replaced
 	// underlying page with another physical page. pages may contain their id for example and this method checks
 	// id in raw bytes with the id struct holds?
-	return p.Data
+	return p.Data[16:]
 }
 
 func (p *RawPage) GetPageId() uint64 {
@@ -94,4 +98,20 @@ func (p *RawPage) RLatch() {
 
 func (p *RawPage) RUnLatch() {
 	p.rwLatch.RUnlock()
+}
+
+func (p *RawPage) SetRecLSN(l LSN) {
+	binary.BigEndian.PutUint64(p.Data, uint64(l))
+}
+
+func (p *RawPage) SetPageLSN(l LSN) {
+	binary.BigEndian.PutUint64(p.Data[8:], uint64(l))
+}
+
+func (p *RawPage) GetRecLSN() LSN {
+	return LSN(binary.BigEndian.Uint64(p.Data))
+}
+
+func (p *RawPage) GetPageLSN() LSN {
+	return LSN(binary.BigEndian.Uint64(p.Data[8:]))
 }

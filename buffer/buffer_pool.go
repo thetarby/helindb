@@ -289,6 +289,13 @@ func (b *BufferPool) evictVictim() (int, error) {
 
 	victimPageId := victim.page.GetPageId()
 	if victim.page.IsDirty() {
+		// if log records for the victim page is not flushed, force flush log manager.
+		if victim.page.GetPageLSN() > b.logManager.GetFlushedLSN() {
+			if err := b.logManager.Flush(); err != nil {
+				return 0, err
+			}
+		}
+
 		data := victim.page.GetData()
 		if err := b.DiskManager.WritePage(data, victimPageId); err != nil {
 			// TODO: victim should be added to replacer as unpinned again since now it will be impossible to choose it

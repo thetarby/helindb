@@ -49,7 +49,7 @@ type Manager struct {
 	header      *header
 }
 
-func NewDiskManager(file string) (IDiskManager, bool, error) {
+func NewDiskManager(file string) (*Manager, bool, error) {
 	d := Manager{}
 	d.serializer = jsonSerializer{}
 	d.filename = file
@@ -233,6 +233,14 @@ func (d *Manager) SetCatalogPID(pid uint64) {
 
 func (d *Manager) GetLogWriter() io.Writer {
 	return d.logFile
+}
+
+func (d *Manager) IsInFreeList(uint64) (bool, error) {
+	panic("implement me")
+}
+
+func (d *Manager) RemoveFromFreelist(uint64) error {
+	panic("implement me")
 }
 
 func (d *Manager) writePages(pages [][]byte, startingPageId uint64) error {

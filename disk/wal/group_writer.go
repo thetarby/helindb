@@ -147,3 +147,18 @@ func (w *GroupWriter) swapAndWaitFlush() error {
 
 	return nil
 }
+
+func (w *GroupWriter) SwapAndWaitFlush() error {
+	w.mut.Lock()
+	defer w.mut.Unlock()
+
+	w.buf, w.flushBuf = w.flushBuf, w.buf
+	w.flushOffset = w.offset
+	w.offset = 0
+
+	if err := w.flush(false); err != nil {
+		return fmt.Errorf("flush failed: %w", err)
+	}
+
+	return nil
+}

@@ -79,7 +79,7 @@ func (t *TxnManagerImpl) AbortByID(id transaction.TxnID) {
 	// 3. apply clr records and append them to wal
 	// 4. append abort log
 
-	logs := wal.NewTxnLogIterator(id)
+	logs := wal.NewTxnLogIterator(id, nil)
 	for {
 		lr, err := logs.Prev()
 		if err != nil {

@@ -25,6 +25,6 @@ func TestDefaultLogRecordSerializer(t *testing.T) {
 
 	t.Log(buf.String())
 
-	lr, _ := s.Deserialize(buf)
+	lr, _, _ := s.Deserialize(buf)
 	t.Log(lr.Payload)
 }

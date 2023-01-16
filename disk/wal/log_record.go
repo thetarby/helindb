@@ -59,11 +59,11 @@ func (l *LogRecord) Clr() (*LogRecord, error) {
 	var clr *LogRecord
 	switch l.T {
 	case TypeDelete:
-		clr = NewInsertLogRecord(l.TxnID, l.Idx, l.OldPayload)
+		clr = NewInsertLogRecord(l.TxnID, l.Idx, l.OldPayload, l.PageID)
 	case TypeSet:
-		clr = NewSetLogRecord(l.TxnID, l.Idx, l.OldPayload, l.Payload)
+		clr = NewSetLogRecord(l.TxnID, l.Idx, l.OldPayload, l.Payload, l.PageID)
 	case TypeInsert:
-		clr = NewDeleteLogRecord(l.TxnID, l.Idx, l.Payload)
+		clr = NewDeleteLogRecord(l.TxnID, l.Idx, l.Payload, l.PageID)
 	default:
 		return nil, errors.New("log record cannot be negated")
 	}
@@ -72,16 +72,16 @@ func (l *LogRecord) Clr() (*LogRecord, error) {
 	return clr, nil
 }
 
-func NewInsertLogRecord(txnID transaction.TxnID, idx uint16, payload []byte) *LogRecord {
-	return &LogRecord{T: TypeInsert, TxnID: txnID, Idx: idx, Payload: payload}
+func NewInsertLogRecord(txnID transaction.TxnID, idx uint16, payload []byte, pageID uint64) *LogRecord {
+	return &LogRecord{T: TypeInsert, TxnID: txnID, Idx: idx, Payload: payload, PageID: pageID}
 }
 
-func NewDeleteLogRecord(txnID transaction.TxnID, idx uint16, deleted []byte) *LogRecord {
-	return &LogRecord{T: TypeDelete, TxnID: txnID, Idx: idx, OldPayload: deleted}
+func NewDeleteLogRecord(txnID transaction.TxnID, idx uint16, deleted []byte, pageID uint64) *LogRecord {
+	return &LogRecord{T: TypeDelete, TxnID: txnID, Idx: idx, OldPayload: deleted, PageID: pageID}
 }
 
-func NewSetLogRecord(txnID transaction.TxnID, idx uint16, payload, oldPayload []byte) *LogRecord {
-	return &LogRecord{T: TypeSet, TxnID: txnID, Idx: idx, Payload: payload, OldPayload: oldPayload}
+func NewSetLogRecord(txnID transaction.TxnID, idx uint16, payload, oldPayload []byte, pageID uint64) *LogRecord {
+	return &LogRecord{T: TypeSet, TxnID: txnID, Idx: idx, Payload: payload, OldPayload: oldPayload, PageID: pageID}
 }
 
 func NewAllocPageLogRecord(txnID transaction.TxnID, pageID uint64) *LogRecord {
