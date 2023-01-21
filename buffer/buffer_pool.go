@@ -107,9 +107,6 @@ func (b *BufferPool) GetPage(pageId uint64) (*pages.RawPage, error) {
 
 	pageData, err := b.DiskManager.ReadPage(pageId)
 	if err != nil {
-		// TODO: victim should be added to replacer as unpinned again since now it will be impossible to choose it
-		// as victim again and it is a resource leak.
-		log.Print("TODO: resource leak occurred")
 		return nil, err
 	}
 
@@ -126,7 +123,7 @@ func (b *BufferPool) GetPage(pageId uint64) (*pages.RawPage, error) {
 func (b *BufferPool) pin(pageId uint64) {
 	frameIdx, ok := b.pageMap[pageId]
 	if !ok {
-		// TODO: is panic ok here? this method is private and should not be called with a non existent
+		// NOTE: is panic ok here? this method is private and should not be called with a non-existent
 		// pageID hence panic might be ok?
 		panic(fmt.Sprintf("pinned a page which does not exist: %v", pageId))
 	}
@@ -180,7 +177,6 @@ func (b *BufferPool) Flush(pageId uint64) error {
 	if err := b.DiskManager.WritePage(frame.page.GetData(), frame.page.GetPageId()); err != nil {
 		return err
 	}
-	frame.page.SetClean() // TODO: should this happen ?
 	frame.page.WUnlatch()
 	return nil
 }
@@ -221,7 +217,6 @@ func (b *BufferPool) FlushAll() error {
 }
 
 func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, err error) {
-	// TODO: too many duplicate code with GetPage
 	// TODO: analyse for resource leaks during rollbacks
 	b.lock.Lock()
 	defer b.lock.Unlock()

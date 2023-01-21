@@ -89,7 +89,7 @@ func NewLruReplacer(poolSize int) *LruReplacer {
 	return &LruReplacer{
 		unpinned: make([]int, 0),
 		pinned:   make(map[int]int),
-		size:     poolSize, // TODO: is size really needed?
+		size:     poolSize,
 		lock:     sync.Mutex{},
 	}
 }
