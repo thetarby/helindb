@@ -84,7 +84,7 @@ func (n *VarKeyLeafNode) InsertAt(txn transaction.Transaction, index int, key co
 }
 
 func (n *VarKeyLeafNode) DeleteAt(txn transaction.Transaction, index int) {
-	CheckErr(n.p.DeleteAt(txn, index+1))
+	deleteAt(txn, n.pager, &n.p, index+1)
 	n.p.Vacuum()
 	h := n.GetHeader()
 	h.KeyLen--
@@ -262,7 +262,7 @@ func (n *VarKeyInternalNode) InsertAt(txn transaction.Transaction, index int, ke
 }
 
 func (n *VarKeyInternalNode) DeleteAt(txn transaction.Transaction, index int) {
-	CheckErr(n.p.DeleteAt(txn, index+2))
+	deleteAt(txn, n.pager, &n.p, index+2)
 	n.p.Vacuum()
 	h := n.GetHeader()
 	h.KeyLen--
@@ -452,7 +452,6 @@ func insertAt(txn transaction.Transaction, pager Pager, p *LoggedSlottedPage, id
 }
 
 func deleteAt(txn transaction.Transaction, pager Pager, p *LoggedSlottedPage, idx int) {
-	// TODO: use this method in VarKeyInternalNode and VarKeyLeafNode
 	old := p.GetAt(idx)
 	if len(old) > maxPayloadSize {
 		// TODO: free overflow page

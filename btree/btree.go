@@ -278,7 +278,7 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 			// try redistribute
 			if rightSibling != nil &&
 				((popped.IsLeaf() && rightSibling.KeyLen() >= (tree.degree/2)+1) ||
-					(!popped.IsLeaf() && rightSibling.KeyLen()+1 > (tree.degree+1)/2)) { // TODO: second check is actually different for internal and leaf nodes since internal nodes have one more value than they have keys
+					(!popped.IsLeaf() && rightSibling.KeyLen()+1 > (tree.degree+1)/2)) {
 				tree.redistribute(txn, popped, rightSibling, parent)
 				tree.pager.Unpin(popped, true)
 				tree.pager.Unpin(rightSibling, true)
@@ -329,7 +329,7 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 
 					tree.pager.Unpin(popped, true)
 					popped.WUnlatch()
-					// TODO: maybe log here? if it is a leaf node its both left and right nodes can be nil
+					// NOTE: maybe log here while debugging? if it is a leaf node its both left and right nodes can be nil
 					return true
 				}
 				tree.mergeNodes(txn, leftSibling, popped, parent)
@@ -585,13 +585,14 @@ func (tree *BTree) mergeLeafNodes(txn transaction.Transaction, p, rightNode, par
 		p.InsertAt(txn, p.KeyLen(), rightNode.GetKeyAt(i), rightNode.GetValueAt(i))
 	}
 
-	// TODO: destroy rightNode
 	parent.DeleteAt(txn, i)
 	leftHeader := p.GetHeader()
 	leftHeader.Right = rightNode.GetHeader().Right
 	p.SetHeader(txn, leftHeader)
 }
 
+// mergeNodes merges two nodes into one. Left node holds all the values after merge and rightNode becomes empty. Caller
+// should free rightNode.
 func (tree *BTree) mergeNodes(txn transaction.Transaction, p, rightNode, parent Node) {
 	if p.IsLeaf() {
 		tree.mergeLeafNodes(txn, p, rightNode, parent)

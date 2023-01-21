@@ -91,7 +91,7 @@ func (b *BufferPoolPager) NewLeafNode(txn transaction.Transaction) Node {
 		KeyLen: 0,
 	}
 
-	p, err := b.pool.NewPage(txn) // TODO: handle error
+	p, err := b.pool.NewPage(txn)
 	common.PanicIfErr(err)
 	p.WLatch()
 
