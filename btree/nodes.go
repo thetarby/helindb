@@ -3,6 +3,7 @@ package btree
 import (
 	"encoding/binary"
 	"helin/common"
+	"helin/transaction"
 )
 
 type Pointer uint64
@@ -37,19 +38,19 @@ const (
 )
 
 type Node interface {
-	setKeyAt(idx int, key common.Key)
-	setValueAt(idx int, val interface{})
+	setKeyAt(txn transaction.Transaction, idx int, key common.Key)
+	setValueAt(txn transaction.Transaction, idx int, val interface{})
 	GetKeyAt(idx int) common.Key
 	GetValueAt(idx int) interface{}
 	GetValues() []interface{}
 	PrintNode()
 	IsOverFlow(degree int) bool
-	InsertAt(index int, key common.Key, val interface{})
-	DeleteAt(index int)
+	InsertAt(txn transaction.Transaction, index int, key common.Key, val interface{})
+	DeleteAt(txn transaction.Transaction, index int)
 	GetPageId() Pointer
 	IsLeaf() bool
 	GetHeader() *PersistentNodeHeader
-	SetHeader(*PersistentNodeHeader)
+	SetHeader(txn transaction.Transaction, h *PersistentNodeHeader)
 
 	// IsSafeForSplit returns true if there is at least one empty place in the node meaning it
 	// won't split even one key is inserted

@@ -6,6 +6,9 @@ package btree
 
 import (
 	"helin/disk/pages"
+	"helin/disk/wal"
+	"helin/transaction"
+	"io"
 	"sync"
 )
 
@@ -20,28 +23,29 @@ type MemPager struct {
 	lock            *sync.Mutex
 	KeySerializer   KeySerializer
 	ValueSerializer ValueSerializer
+	LogManager      *wal.LogManager
 }
 
 // Free implements Pager
-func (*MemPager) Free(p Pointer) error {
+func (*MemPager) Free(txn transaction.Transaction, p Pointer) error {
 	delete(memPagerNodeMapping, p)
 	delete(memPagerNodeMapping2, p)
 	return nil
 }
 
 // FreeNode implements Pager
-func (*MemPager) FreeNode(n Node) error {
+func (*MemPager) FreeNode(txn transaction.Transaction, n Node) error {
 	delete(memPagerNodeMapping, n.GetPageId())
 	delete(memPagerNodeMapping2, n.GetPageId())
 	return nil
 }
 
-func (memPager *MemPager) CreatePage() NodePage {
+func (memPager *MemPager) CreatePage(transaction.Transaction) NodePage {
 	memPager.lock.Lock()
 	defer memPager.lock.Unlock()
 	memPagerLastPageID++
 	newID := memPagerLastPageID
-	sp := InitSlottedPage(pages.NewRawPage(uint64(newID)))
+	sp := InitLoggedSlottedPage(pages.NewRawPage(uint64(newID)), memPager.LogManager)
 	memPagerNodeMapping2[newID] = &sp
 	return &sp
 }
@@ -58,7 +62,7 @@ func (memPager *MemPager) UnpinByPointer(p Pointer, isDirty bool) {}
 
 func (memPager *MemPager) Unpin(n Node, isDirty bool) {}
 
-func (memPager *MemPager) NewInternalNode(firstPointer Pointer) Node {
+func (memPager *MemPager) NewInternalNode(txn transaction.Transaction, firstPointer Pointer) Node {
 	h := PersistentNodeHeader{
 		IsLeaf: 0,
 		KeyLen: 0,
@@ -70,16 +74,16 @@ func (memPager *MemPager) NewInternalNode(firstPointer Pointer) Node {
 	newID := memPagerLastPageID
 	memPager.lock.Unlock()
 	node := VarKeyInternalNode{
-		p:             InitSlottedPage(pages.NewRawPage(uint64(newID))),
+		p:             InitLoggedSlottedPage(pages.NewRawPage(uint64(newID)), memPager.LogManager),
 		keySerializer: memPager.KeySerializer,
 		pager:         memPager,
 	}
 	node.WLatch()
 	// set header
-	node.SetHeader(&h)
+	node.SetHeader(txn, &h)
 
 	// write first pointer
-	node.setValueAt(0, firstPointer)
+	node.setValueAt(txn, 0, firstPointer)
 
 	memPager.lock.Lock()
 	memPagerNodeMapping[newID] = &node
@@ -87,7 +91,7 @@ func (memPager *MemPager) NewInternalNode(firstPointer Pointer) Node {
 	return &node
 }
 
-func (memPager *MemPager) NewLeafNode() Node {
+func (memPager *MemPager) NewLeafNode(txn transaction.Transaction) Node {
 	h := PersistentNodeHeader{
 		IsLeaf: 1,
 		KeyLen: 0,
@@ -99,7 +103,7 @@ func (memPager *MemPager) NewLeafNode() Node {
 	newID := memPagerLastPageID
 	memPager.lock.Unlock()
 	node := VarKeyLeafNode{
-		p:             InitSlottedPage(pages.NewRawPage(uint64(newID))),
+		p:             InitLoggedSlottedPage(pages.NewRawPage(uint64(newID)), memPager.LogManager),
 		keySerializer: memPager.KeySerializer,
 		valSerializer: memPager.ValueSerializer,
 		pager:         memPager,
@@ -107,7 +111,7 @@ func (memPager *MemPager) NewLeafNode() Node {
 	node.WLatch()
 
 	// write header
-	node.SetHeader(&h)
+	node.SetHeader(txn, &h)
 	memPager.lock.Lock()
 	memPagerNodeMapping[newID] = &node
 	memPager.lock.Unlock()
@@ -135,5 +139,6 @@ func NewMemPager(serializer KeySerializer, valSerializer ValueSerializer) *MemPa
 		lock:            &sync.Mutex{},
 		KeySerializer:   serializer,
 		ValueSerializer: valSerializer,
+		LogManager:      wal.NewLogManager(io.Discard), // TODO: fix this
 	}
 }

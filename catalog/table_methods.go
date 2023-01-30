@@ -2,11 +2,11 @@ package catalog
 
 import (
 	"helin/catalog/db_types"
-	"helin/concurrency"
 	"helin/disk/structures"
+	"helin/transaction"
 )
 
-func (tbl *TableInfo) InsertTupleViaValues(values []*db_types.Value, txn concurrency.Transaction) (*structures.Rid, error) {
+func (tbl *TableInfo) InsertTupleViaValues(values []*db_types.Value, txn transaction.Transaction) (*structures.Rid, error) {
 	tuple, err := NewTupleWithSchema(values, tbl.Schema)
 	if err != nil {
 		return nil, err
@@ -26,7 +26,7 @@ func (tbl *TableInfo) InsertTupleViaValues(values []*db_types.Value, txn concurr
 	return &rid, nil
 }
 
-func (tbl *TableInfo) InsertTuple(tuple *Tuple, txn concurrency.Transaction) (*structures.Rid, error) {
+func (tbl *TableInfo) InsertTuple(tuple *Tuple, txn transaction.Transaction) (*structures.Rid, error) {
 	rid, err := tbl.Heap.InsertTuple(*tuple.GetRow(), txn)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func (tbl *TableInfo) InsertTuple(tuple *Tuple, txn concurrency.Transaction) (*s
 	return &rid, nil
 }
 
-func (tbl *TableInfo) DeleteTuple(rid structures.Rid, txn concurrency.Transaction) error {
+func (tbl *TableInfo) DeleteTuple(rid structures.Rid, txn transaction.Transaction) error {
 	oldTuple := Tuple{
 		Row: structures.Row{},
 	}
@@ -61,7 +61,7 @@ func (tbl *TableInfo) DeleteTuple(rid structures.Rid, txn concurrency.Transactio
 	return nil
 }
 
-func (tbl *TableInfo) UpdateTuple(rid structures.Rid, values []*db_types.Value, txn concurrency.Transaction) error {
+func (tbl *TableInfo) UpdateTuple(rid structures.Rid, values []*db_types.Value, txn transaction.Transaction) error {
 	// first read old tuple from heap
 	oldTuple := Tuple{
 		Row: structures.Row{},
@@ -128,7 +128,7 @@ func (index *IndexInfo) InsertTupleKey(tuple *Tuple, val any) {
 	}
 
 	tk := NewTupleKey(index.Schema, vals...)
-	index.Index.Insert(&tk, val) // TODO: no need to store a value if rid is in key itself
+	index.Index.Insert(transaction.TxnTODO(), &tk, val) // TODO: no need to store a value if rid is in key itself
 }
 
 func (index *IndexInfo) DeleteTupleKey(tuple *Tuple) {
@@ -144,7 +144,7 @@ func (index *IndexInfo) DeleteTupleKey(tuple *Tuple) {
 	}
 
 	tk := NewTupleKey(index.Schema, vals...)
-	index.Index.Delete(&tk)
+	index.Index.Delete(nil, &tk)
 }
 
 func (index *IndexInfo) UpdateTupleKey(tuple *Tuple, val any) {
@@ -160,5 +160,5 @@ func (index *IndexInfo) UpdateTupleKey(tuple *Tuple, val any) {
 	}
 
 	tk := NewTupleKey(index.Schema, vals...)
-	index.Index.InsertOrReplace(&tk, val)
+	index.Index.InsertOrReplace(nil, &tk, val)
 }

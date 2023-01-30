@@ -2,7 +2,10 @@ package wal
 
 import (
 	"encoding/binary"
+	"encoding/json"
+	"helin/common"
 	"helin/disk/pages"
+	"helin/transaction"
 	"io"
 )
 
@@ -21,15 +24,15 @@ type DefaultLogRecordSerializer struct {
 }
 
 func (d *DefaultLogRecordSerializer) Serialize(r *LogRecord, writer io.Writer) {
-	d.area = append(d.area, byte(r.t))
-	d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.txnID))
-	d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.lsn))
-	d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.prevLsn))
-	d.area = binary.BigEndian.AppendUint16(d.area, r.idx)
-	d.area = binary.BigEndian.AppendUint64(d.area, r.pageID)
-	d.area = binary.BigEndian.AppendUint64(d.area, r.prevPageID)
-	d.area = binary.BigEndian.AppendUint16(d.area, uint16(len(r.payload)))
-	d.area = binary.BigEndian.AppendUint16(d.area, uint16(len(r.payload)))
+	d.area = append(d.area, byte(r.T))
+	d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.TxnID))
+	d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.Lsn))
+	d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.PrevLsn))
+	d.area = binary.BigEndian.AppendUint16(d.area, r.Idx)
+	d.area = binary.BigEndian.AppendUint64(d.area, r.PageID)
+	d.area = binary.BigEndian.AppendUint64(d.area, r.PrevPageID)
+	d.area = binary.BigEndian.AppendUint16(d.area, uint16(len(r.Payload)))
+	d.area = binary.BigEndian.AppendUint16(d.area, uint16(len(r.OldPayload)))
 	n, err := writer.Write(d.area)
 	if err != nil {
 		panic(err)
@@ -40,36 +43,37 @@ func (d *DefaultLogRecordSerializer) Serialize(r *LogRecord, writer io.Writer) {
 
 	d.area = d.area[:0]
 
-	n, err = writer.Write(r.payload)
+	n, err = writer.Write(r.Payload)
 	if err != nil {
 		panic(err)
 	}
-	if n != len(r.payload) {
+	if n != len(r.Payload) {
 		panic("short write")
 	}
 
-	n, err = writer.Write(r.oldPayload)
+	n, err = writer.Write(r.OldPayload)
 	if err != nil {
 		panic(err)
 	}
-	if n != len(r.oldPayload) {
+	if n != len(r.OldPayload) {
 		panic("short write")
 	}
 }
 
 func (d *DefaultLogRecordSerializer) Size(r *LogRecord) int {
 	size := LogRecordInlineSize
-	if len(r.oldPayload) > 0 {
+	if len(r.OldPayload) > 0 {
 		// +2 is for writing length of the payload
-		size += len(r.oldPayload) + 2
+		size += len(r.OldPayload) + 2
 	}
-	if len(r.payload) > 0 {
-		size += len(r.payload) + 2
+	if len(r.Payload) > 0 {
+		size += len(r.Payload) + 2
 	}
 	return size
 }
 
-func (d *DefaultLogRecordSerializer) Deserialize(src io.Reader) (*LogRecord, int) {
+func (d *DefaultLogRecordSerializer) Deserialize(r io.Reader) (*LogRecord, int) {
+	src := common.NewStatReader(r)
 	d.area = d.area[:LogRecordInlineSize+2+2]
 	n, err := src.Read(d.area)
 	if err != nil {
@@ -79,13 +83,13 @@ func (d *DefaultLogRecordSerializer) Deserialize(src io.Reader) (*LogRecord, int
 		panic("short read")
 	}
 	res := LogRecord{}
-	res.t = LogRecordType(d.area[0])
-	res.txnID = TxnID(binary.BigEndian.Uint64(d.area[1:]))
-	res.lsn = pages.LSN(binary.BigEndian.Uint64(d.area[9:]))
-	res.prevLsn = pages.LSN(binary.BigEndian.Uint64(d.area[17:]))
-	res.idx = binary.BigEndian.Uint16(d.area[25:])
-	res.pageID = binary.BigEndian.Uint64(d.area[27:])
-	res.prevPageID = binary.BigEndian.Uint64(d.area[35:])
+	res.T = LogRecordType(d.area[0])
+	res.TxnID = transaction.TxnID(binary.BigEndian.Uint64(d.area[1:]))
+	res.Lsn = pages.LSN(binary.BigEndian.Uint64(d.area[9:]))
+	res.PrevLsn = pages.LSN(binary.BigEndian.Uint64(d.area[17:]))
+	res.Idx = binary.BigEndian.Uint16(d.area[25:])
+	res.PageID = binary.BigEndian.Uint64(d.area[27:])
+	res.PrevPageID = binary.BigEndian.Uint64(d.area[35:])
 	lenp := binary.BigEndian.Uint16(d.area[43:])
 	lenop := binary.BigEndian.Uint16(d.area[45:])
 
@@ -108,8 +112,33 @@ func (d *DefaultLogRecordSerializer) Deserialize(src io.Reader) (*LogRecord, int
 		panic("short read")
 	}
 
-	res.payload = payload
-	res.oldPayload = oldpayload
+	res.Payload = payload
+	res.OldPayload = oldpayload
 
-	return &res, 0
+	return &res, src.TotalRead
+}
+
+var _ LogRecordSerializer = &JsonLogRecordSerializer{}
+
+type JsonLogRecordSerializer struct {
+}
+
+func (j *JsonLogRecordSerializer) Serialize(r *LogRecord, writer io.Writer) {
+	if err := json.NewEncoder(writer).Encode(r); err != nil {
+		panic(err)
+	}
+}
+
+func (j *JsonLogRecordSerializer) Size(r *LogRecord) int {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (j *JsonLogRecordSerializer) Deserialize(src io.Reader) (*LogRecord, int) {
+	record := LogRecord{}
+	if err := json.NewDecoder(src).Decode(&record); err != nil {
+		panic(err)
+	}
+
+	return &record, 0 // NOTE: TODO: returns 0
 }

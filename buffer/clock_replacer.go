@@ -19,7 +19,7 @@ var _ IReplacer = &ClockReplacer{}
 type ClockReplacer struct {
 	frames         []counter
 	victimIterator int
-	lock           sync.Mutex // TODO: is this needed? access to buffer pool is already synchronized right now.
+	lock           sync.Mutex // NOTE: is this needed? access to buffer pool is already synchronized right now.
 }
 
 func (c *ClockReplacer) Pin(frameId int) {

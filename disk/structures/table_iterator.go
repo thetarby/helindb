@@ -2,8 +2,8 @@ package structures
 
 import (
 	"helin/common"
-	"helin/concurrency"
 	"helin/disk/pages"
+	"helin/transaction"
 )
 
 type Iterator interface {
@@ -11,7 +11,7 @@ type Iterator interface {
 }
 
 type TableIterator struct {
-	txn  concurrency.Transaction
+	txn  transaction.Transaction
 	rid  Rid
 	heap *TableHeap
 }
@@ -57,7 +57,7 @@ func (it *TableIterator) Next() *Row {
 	return &dest
 }
 
-func NewTableIterator(txn concurrency.Transaction, heap *TableHeap) *TableIterator {
+func NewTableIterator(txn transaction.Transaction, heap *TableHeap) *TableIterator {
 	return &TableIterator{
 		txn: txn,
 		rid: Rid{

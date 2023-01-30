@@ -6,9 +6,9 @@ import (
 	"helin/catalog/db_types"
 	"helin/common"
 	"helin/disk/structures"
+	"helin/transaction"
 	"io"
 	"log"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,7 +18,7 @@ import (
 func TestCatalog_Create_Index_On_Unpopulated_Table_2_Nonunique_Index(t *testing.T) {
 	log.SetOutput(io.Discard)
 	dbName := "db.helin"
-	defer os.Remove(dbName)
+	defer common.Remove(dbName)
 	pool := buffer.NewBufferPool(dbName, 32)
 
 	keyColumns := []Column{
@@ -35,7 +35,7 @@ func TestCatalog_Create_Index_On_Unpopulated_Table_2_Nonunique_Index(t *testing.
 	}
 	keySchema := NewSchema(keyColumns)
 	serializer := TupleKeySerializer{schema: keySchema}
-	index := btree.NewBtreeWithPager(50, btree.NewDefaultBPP(pool, &serializer))
+	index := btree.NewBtreeWithPager(transaction.TxnNoop(), 50, btree.NewDefaultBPP(pool, &serializer, io.Discard))
 
 	ageToFind := 16
 	toFind := make([]int, 0)
@@ -56,7 +56,7 @@ func TestCatalog_Create_Index_On_Unpopulated_Table_2_Nonunique_Index(t *testing.
 			PageId:  uint64(i),
 			SlotIdx: int16(age),
 		}
-		index.Insert(&tk, sp)
+		index.Insert(transaction.TxnNoop(), &tk, sp)
 		if age >= int32(ageToFind) {
 			toFind = append(toFind, int(sp.PageId))
 		}

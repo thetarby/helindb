@@ -3,7 +3,9 @@ package buffer
 import (
 	"encoding/json"
 	"github.com/stretchr/testify/assert"
+	"helin/common"
 	"helin/disk"
+	"helin/transaction"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -19,7 +21,7 @@ type teststruct struct {
 func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 	os.Remove("tmp.helin")
 	b := NewBufferPool("tmp.helin", 2)
-	defer os.Remove("tmp.helin")
+	defer common.Remove("tmp.helin")
 	log.SetOutput(ioutil.Discard)
 
 	// write 50 pages with 2 sized buffer pool
@@ -31,7 +33,7 @@ func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 
 		var data [4096]byte
 		copy(data[:], json)
-		p, err := b.NewPage()
+		p, err := b.NewPage(transaction.TxnNoop())
 
 		assert.NoError(t, err)
 		pageIDs = append(pageIDs, p.GetPageId())
@@ -64,7 +66,7 @@ func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 func TestBuffer_Pool_Should_Not_Corrupt_Pages(t *testing.T) {
 	os.Remove("tmp2.helin")
 	b := NewBufferPool("tmp2.helin", 2)
-	defer os.Remove("tmp2.helin")
+	defer common.Remove("tmp2.helin")
 	log.SetOutput(ioutil.Discard)
 
 	numPagesToTest := 50
@@ -80,7 +82,7 @@ func TestBuffer_Pool_Should_Not_Corrupt_Pages(t *testing.T) {
 	// write random pages with 10 sized buffer pool
 	pageIDs := make([]uint64, 0)
 	for i := 0; i < numPagesToTest; i++ {
-		p, err := b.NewPage()
+		p, err := b.NewPage(transaction.TxnNoop())
 		pageIDs = append(pageIDs, p.GetPageId())
 		if err != nil {
 			println(err.Error())

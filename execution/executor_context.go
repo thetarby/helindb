@@ -5,17 +5,18 @@ import (
 	"helin/catalog"
 	"helin/concurrency"
 	"helin/concurrency/lockmanager"
+	"helin/transaction"
 )
 
 type ExecutorContext struct {
-	Txn         concurrency.Transaction
+	Txn         transaction.Transaction
 	Catalog     catalog.Catalog
 	Pool        *buffer.BufferPool
 	LockManager lockmanager.ILockManager
-	TxnManager  concurrency.ITxnManager
+	TxnManager  concurrency.TxnManager
 }
 
-func NewExecutorContext(txn concurrency.Transaction, catalog catalog.Catalog, pool *buffer.BufferPool, lckManager lockmanager.ILockManager, txnManager concurrency.ITxnManager) *ExecutorContext {
+func NewExecutorContext(txn transaction.Transaction, catalog catalog.Catalog, pool *buffer.BufferPool, lckManager lockmanager.ILockManager, txnManager concurrency.TxnManager) *ExecutorContext {
 	return &ExecutorContext{
 		Txn:         txn,
 		Catalog:     catalog,

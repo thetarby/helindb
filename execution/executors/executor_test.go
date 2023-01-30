@@ -9,6 +9,7 @@ import (
 	"helin/execution"
 	"helin/execution/expressions"
 	"helin/execution/plans"
+	"helin/transaction"
 	"io"
 	"log"
 	rand2 "math/rand"
@@ -37,7 +38,7 @@ func TestSeqScanExecutor_Equal_Comparison(t *testing.T) {
 		},
 	}
 	schema := catalog.NewSchema(columns)
-	table := ctg.CreateTable("", "myTable", schema)
+	table := ctg.CreateTable(transaction.TxnNoop(), "myTable", schema)
 
 	// create raw values to insert
 	n := 1000
@@ -120,7 +121,7 @@ func TestSeqScanExecutor_Greater_Than_Comparison(t *testing.T) {
 		},
 	}
 	schema := catalog.NewSchema(columns)
-	table := ctg.CreateTable("", "myTable", schema)
+	table := ctg.CreateTable(transaction.TxnNoop(), "myTable", schema)
 
 	// create raw values to insert
 	n := 1000
@@ -204,7 +205,7 @@ func TestIndexRangeScanExecutor(t *testing.T) {
 		},
 	}
 	tableSchema := catalog.NewSchema(columns)
-	table := ctg.CreateTable("", "myTable", tableSchema)
+	table := ctg.CreateTable(transaction.TxnNoop(), "myTable", tableSchema)
 
 	idx, _ := ctg.CreateBtreeIndex(nil, "idx", "myTable", []int{2}, false)
 
@@ -282,7 +283,7 @@ func TestIndexRangeScanExecutor(t *testing.T) {
 			x := tup.GetValue(tableSchema, 1)
 			str := x.GetAsInterface().(string)
 			if str > "selam_0015" || str < "selam_0010" {
-				panic("")
+				panic(transaction.TxnNoop())
 			}
 		}
 	})
@@ -313,7 +314,7 @@ func TestIndexRangeScanExecutorOnFloat(t *testing.T) {
 		},
 	}
 	tableSchema := catalog.NewSchema(columns)
-	table := ctg.CreateTable("", "myTable", tableSchema)
+	table := ctg.CreateTable(transaction.TxnNoop(), "myTable", tableSchema)
 
 	idx, _ := ctg.CreateBtreeIndex(nil, "idx", "myTable", []int{3}, false)
 
@@ -397,7 +398,7 @@ func TestNestedLoopJoinExecutor_Join_With_Self(t *testing.T) {
 		},
 	}
 	tableSchema := catalog.NewSchema(columns)
-	table := ctg.CreateTable("", "myTable", tableSchema)
+	table := ctg.CreateTable(transaction.TxnNoop(), "myTable", tableSchema)
 
 	// create raw values to insert
 	n := 60
@@ -499,7 +500,7 @@ func TestNestedLoopJoinExecutor_Should_Do_Inner_Join(t *testing.T) {
 		},
 	}
 	namesTableSchema := catalog.NewSchema(columns)
-	names := ctg.CreateTable("", "namesTable", namesTableSchema)
+	names := ctg.CreateTable(transaction.TxnNoop(), "namesTable", namesTableSchema)
 
 	// create ages table in catalog
 	columns2 := []catalog.Column{
@@ -517,7 +518,7 @@ func TestNestedLoopJoinExecutor_Should_Do_Inner_Join(t *testing.T) {
 		},
 	}
 	agesTableSchema := catalog.NewSchema(columns2)
-	ages := ctg.CreateTable("", "agesTable", agesTableSchema)
+	ages := ctg.CreateTable(transaction.TxnNoop(), "agesTable", agesTableSchema)
 
 	// create raw values to insert to names table
 	n := 150

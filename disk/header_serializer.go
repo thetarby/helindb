@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 )
 
+// NOTE: whole content of this file is only used while debugging.
+
 type PageHeader struct {
 	IsUsed bool
 }
@@ -15,13 +17,13 @@ var pageHeaderSize = len(x) //binary.Size(PageHeader{true}) TODO: should be fixe
 
 type IHeaderSerializer interface {
 	encodePageHeader(pageHeader PageHeader) []byte
-	readPageHader(page []byte) PageHeader
+	readPageHeader(page []byte) PageHeader
 }
 
 // binary serializer implementation
 type binarySerializer struct{}
 
-func (r binarySerializer) readPageHader(page []byte) PageHeader {
+func (r binarySerializer) readPageHeader(page []byte) PageHeader {
 	header := page[:pageHeaderSize]
 
 	reader := bytes.NewReader(header)
@@ -47,7 +49,7 @@ func (r binarySerializer) encodePageHeader(pageHeader PageHeader) []byte {
 // json serializer implementation
 type jsonSerializer struct{}
 
-func (r jsonSerializer) readPageHader(page []byte) PageHeader {
+func (r jsonSerializer) readPageHeader(page []byte) PageHeader {
 	var res PageHeader
 	header := page[:pageHeaderSize]
 	json.Unmarshal(header, &res)

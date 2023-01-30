@@ -3,8 +3,8 @@ package structures
 import (
 	"helin/btree"
 	"helin/buffer"
-	"helin/concurrency"
 	"helin/disk/pages"
+	"helin/transaction"
 )
 
 type Rid btree.SlotPointer
@@ -18,16 +18,16 @@ func NewRid(pageID uint64, slotIdx int) Rid {
 
 type ITableHeap interface {
 	// InsertTuple Insert a tuple into the table. If the tuple is too large (>= page_size), return error.
-	InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, error)
+	InsertTuple(tuple Row, txn transaction.Transaction) (Rid, error)
 
 	// UpdateTuple if the new tuple is too large to fit in the old page, return error (will delete and insert)
-	UpdateTuple(tuple Row, rid Rid, txn concurrency.Transaction) error
+	UpdateTuple(tuple Row, rid Rid, txn transaction.Transaction) error
 
 	// ReadTuple if tuple does not exist at Rid returns an error
-	ReadTuple(rid Rid, dest *Row, txn concurrency.Transaction) error
+	ReadTuple(rid Rid, dest *Row, txn transaction.Transaction) error
 
 	// HardDeleteTuple if tuple does not exist at Rid returns an error
-	HardDeleteTuple(rid Rid, txn concurrency.Transaction) error
+	HardDeleteTuple(rid Rid, txn transaction.Transaction) error
 
 	// Vacuum compresses the structure so that there are no gaps between pages and in pages.
 	Vacuum() error
@@ -39,7 +39,7 @@ type TableHeap struct {
 	LastPageID  uint64
 }
 
-func (t *TableHeap) HardDeleteTuple(rid Rid, txn concurrency.Transaction) error {
+func (t *TableHeap) HardDeleteTuple(rid Rid, txn transaction.Transaction) error {
 	page, err := t.Pool.GetPage(rid.PageId)
 	if err != nil {
 		return err
@@ -57,7 +57,7 @@ func (t *TableHeap) HardDeleteTuple(rid Rid, txn concurrency.Transaction) error 
 	return nil
 }
 
-func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, error) {
+func (t *TableHeap) InsertTuple(tuple Row, txn transaction.Transaction) (Rid, error) {
 	// TODO: does not set rid in row
 	// TODO: unpin pages
 	currPage, err := t.GetFirstPage()
@@ -82,7 +82,7 @@ func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, er
 
 		// else get next page and try again
 		if currPage.GetHeader().NextPageID == 0 {
-			page, err := t.Pool.NewPage()
+			page, err := t.Pool.NewPage(transaction.TxnTODO())
 			if err != nil {
 				return Rid{}, err
 			}
@@ -108,7 +108,7 @@ func (t *TableHeap) InsertTuple(tuple Row, txn concurrency.Transaction) (Rid, er
 	}
 }
 
-func (t *TableHeap) UpdateTuple(tuple Row, rid Rid, txn concurrency.Transaction) error {
+func (t *TableHeap) UpdateTuple(tuple Row, rid Rid, txn transaction.Transaction) error {
 	page, err := t.Pool.GetPage(rid.PageId)
 	if err != nil {
 		return err
@@ -126,7 +126,7 @@ func (t *TableHeap) UpdateTuple(tuple Row, rid Rid, txn concurrency.Transaction)
 	return nil
 }
 
-func (t *TableHeap) ReadTuple(rid Rid, dest *Row, txn concurrency.Transaction) error {
+func (t *TableHeap) ReadTuple(rid Rid, dest *Row, txn transaction.Transaction) error {
 	p, err := t.Pool.GetPage(rid.PageId)
 	if err != nil {
 		return err
@@ -175,8 +175,8 @@ func NewTableHeap(pool *buffer.BufferPool, firstPageId uint64) *TableHeap {
 	}
 }
 
-func NewTableHeapWithTxn(pool *buffer.BufferPool, txn concurrency.Transaction) (*TableHeap, error) {
-	p, err := pool.NewPage()
+func NewTableHeapWithTxn(pool *buffer.BufferPool, txn transaction.Transaction) (*TableHeap, error) {
+	p, err := pool.NewPage(transaction.TxnTODO())
 	if err != nil {
 		return nil, err
 	}
