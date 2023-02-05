@@ -294,7 +294,7 @@ func InitHeapPage(page *RawPage) *HeapPage {
 	}
 
 	s.SetHeader(HeapPageHeader{
-		FreeSpacePointer: uint32(disk.PageSize),
+		FreeSpacePointer: uint32(len(s.GetData())),
 		SLotArrLen:       0,
 		NextPageID:       0,
 		PrevPageID:       0,

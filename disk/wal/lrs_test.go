@@ -2,6 +2,7 @@ package wal
 
 import (
 	"bytes"
+	"github.com/stretchr/testify/require"
 	"testing"
 )
 
@@ -11,6 +12,7 @@ func TestDefaultLogRecordSerializer(t *testing.T) {
 	}
 
 	buf := &bytes.Buffer{}
+	gw := NewGroupWriter(100, buf)
 	s.Serialize(&LogRecord{
 		T:          TypeInsert,
 		TxnID:      123,
@@ -21,10 +23,12 @@ func TestDefaultLogRecordSerializer(t *testing.T) {
 		OldPayload: []byte("as"),
 		PageID:     123,
 		PrevPageID: 123,
-	}, buf)
+	}, gw)
 
-	t.Log(buf.String())
+	require.NoError(t, gw.SwapAndWaitFlush())
 
-	lr, _ := s.Deserialize(buf)
-	t.Log(lr.Payload)
+	lr, _, _ := s.Deserialize(buf)
+	t.Log(string(lr.Payload))
+	require.Equal(t, "sa", string(lr.Payload))
+	require.Equal(t, "as", string(lr.OldPayload))
 }

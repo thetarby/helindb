@@ -39,10 +39,14 @@ pool but each buffer pool can have different size)
 
 - [x] Buffer pool free page implementation
 
-- [ ] WAL implementation 
+- [x] WAL implementation 
 
 - [x] Clock replacer implementation for buffer pool
 
-- [ ] Use uint as page id instead of int
+- [x] Use uint as page id instead of int
 
 - [ ] Define page_id type and use it everywhere instead of uint64
+
+- [ ] Refactor free and alloc page logic to make it more compliant with recovery and WAL logic
+
+- [ ] What happens if crash happens in the middle of initializing slotted page

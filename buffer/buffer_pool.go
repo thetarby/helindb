@@ -10,9 +10,12 @@ import (
 	"helin/transaction"
 	"io"
 	"log"
-	"sort"
 	"sync"
+	"time"
 )
+
+var ErrPageNotFoundInPageMap = errors.New("page cannot be found in the page map")
+var ErrRLockFailed = errors.New("RLock cannot be acquired on page")
 
 type IBufferPool interface {
 	GetPage(pageId uint64) (*pages.RawPage, error)
@@ -64,9 +67,9 @@ func (b *BufferPool) FreePage(txn transaction.Transaction, pageId uint64) error 
 		frame.freed = true
 	}
 
-	b.DiskManager.FreePage(pageId)
-
+	// TODO: should page lsn be set?
 	b.logManager.AppendLog(wal.NewFreePageLogRecord(txn.GetID(), pageId))
+	b.DiskManager.FreePage(pageId)
 	return nil
 }
 
@@ -164,31 +167,67 @@ func (b *BufferPool) Unpin(pageId uint64, isDirty bool) bool {
 	return false
 }
 
+// Flush takes a read lock on page and syncs its content to disk.
 func (b *BufferPool) Flush(pageId uint64) error {
+	// TODO
+	// NOTE: this implementation can lead to deadlocks since it acquires buffer lock and page lock and releases
+	// both at the end. Another transaction may be holding page lock and be blocked on buffer's lock.
 	b.lock.Lock()
 	defer b.lock.Unlock()
+
 	frameIdx, ok := b.pageMap[pageId]
 	if !ok {
-		return errors.New("pageId not found")
+		return ErrPageNotFoundInPageMap
 	}
 
 	frame := b.frames[frameIdx]
-	frame.page.WLatch()
-	if err := b.DiskManager.WritePage(frame.page.GetData(), frame.page.GetPageId()); err != nil {
+
+	frame.page.RLatch()
+	if err := b.DiskManager.WritePage(frame.page.GetWholeData(), frame.page.GetPageId()); err != nil {
 		return err
 	}
-	frame.page.WUnlatch()
+	frame.page.RUnLatch()
 	return nil
 }
 
+// TryFlush tries to take a read lock on page and syncs its content to disk. If it fails to lock the page it
+// returns ErrRLockFailed.
+func (b *BufferPool) TryFlush(pageId uint64) error {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
+	frameIdx, ok := b.pageMap[pageId]
+	if !ok {
+		return ErrPageNotFoundInPageMap
+	}
+	frame := b.frames[frameIdx]
+
+	if !frame.page.TryRLatch() {
+		return ErrRLockFailed
+	}
+	// if log records for the victim page is not flushed, force flush log manager.
+	if frame.page.GetPageLSN() > b.logManager.GetFlushedLSN() {
+		if err := b.logManager.Flush(); err != nil {
+			return err
+		}
+	}
+	if err := b.DiskManager.WritePage(frame.page.GetWholeData(), frame.page.GetPageId()); err != nil {
+		return err
+	}
+	frame.page.RUnLatch()
+	return nil
+}
+
+// FlushAll determines all dirty pages at the time of call and syncs all of them to disk. It blocks until all
+// determined dirty pages are synced.
 func (b *BufferPool) FlushAll() error {
-	// TODO: this implementation is not correct.
-	// TODO does this require lock? maybe not since flush acquires lock but empty frames could change in midway flushing
 	if err := b.logManager.Flush(); err != nil {
 		return err
 	}
 
-	dirtyFrames := make([]frame, 0)
+	// lock buffer and determine all dirty pages at the time of call
+	b.lock.Lock()
+	dirtyPages := make([]uint64, 0)
 	for i, frame := range b.frames {
 		flag := 0
 		for _, emptyIdx := range b.emptyFrames {
@@ -198,19 +237,26 @@ func (b *BufferPool) FlushAll() error {
 			}
 		}
 		if flag == 0 && frame.page.IsDirty() {
-			dirtyFrames = append(dirtyFrames, frame)
+			dirtyPages = append(dirtyPages, frame.page.GetPageId())
 		}
 	}
+	b.lock.Unlock()
 
-	sort.Slice(dirtyFrames, func(i, j int) bool {
-		return dirtyFrames[i].page.GetPageId() < dirtyFrames[j].page.GetPageId()
-	})
-
-	for _, frame := range b.frames {
-		if frame.page != nil {
-			if err := b.Flush(frame.page.GetPageId()); err != nil {
-				return err
+	// flush all dirty pages. if TryFlush fails wait some time and try again.
+	for _, pid := range dirtyPages {
+		for {
+			if err := b.TryFlush(pid); err != nil {
+				if err == ErrPageNotFoundInPageMap {
+					// if it is not in page map, it is already evicted and synced hence we can continue.
+					break
+				} else if err == ErrRLockFailed {
+					time.Sleep(time.Millisecond * 100)
+					continue
+				} else {
+					return err
+				}
 			}
+			break
 		}
 	}
 	return nil
@@ -226,12 +272,14 @@ func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, 
 	// new page might be popped from free list. in that case it might already be in a frame marked as freed.
 	if f, ok := b.pageMap[newPageId]; ok {
 		b.pin(newPageId)
-		b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), newPageId))
+		// TODO: should page lsn be set?
+		lsn := b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), newPageId))
 		if b.frames[f].freed != false {
 			panic("new page was in pool but freed flag is not set")
 		}
 
 		b.frames[f].freed = false
+		b.frames[f].page.SetPageLSN(lsn)
 		return b.frames[f].page, nil
 	}
 
@@ -246,7 +294,8 @@ func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, 
 		b.pageMap[newPageId] = emptyFrameIdx
 		b.frames[emptyFrameIdx] = frame{page: p}
 		b.pin(newPageId)
-		b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), p.GetPageId()))
+		lsn := b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), p.GetPageId()))
+		p.SetPageLSN(lsn)
 		return p, nil
 	}
 
@@ -261,7 +310,8 @@ func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, 
 	b.frames[victimIdx] = frame{page: p}
 	b.pin(newPageId)
 
-	b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), p.GetPageId()))
+	lsn := b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), p.GetPageId()))
+	p.SetPageLSN(lsn)
 	return p, nil
 }
 
@@ -284,11 +334,15 @@ func (b *BufferPool) evictVictim() (int, error) {
 
 	victimPageId := victim.page.GetPageId()
 	if victim.page.IsDirty() {
-		data := victim.page.GetData()
+		// if log records for the victim page is not flushed, force flush log manager.
+		if victim.page.GetPageLSN() > b.logManager.GetFlushedLSN() {
+			if err := b.logManager.Flush(); err != nil {
+				return 0, err
+			}
+		}
+
+		data := victim.page.GetWholeData()
 		if err := b.DiskManager.WritePage(data, victimPageId); err != nil {
-			// TODO: victim should be added to replacer as unpinned again since now it will be impossible to choose it
-			// as victim again and it is a resource leak.
-			log.Print("TODO: resource leak occurred")
 			return 0, err
 		}
 	}

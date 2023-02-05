@@ -1,9 +1,9 @@
 package wal
 
 import (
-	"helin/disk/pages"
 	"helin/transaction"
 	"io"
+	"os"
 )
 
 // logIter is a LogIterator implementation that iterates on each log in wal without any magic.
@@ -14,19 +14,76 @@ type logIter struct {
 	i          int
 }
 
-func NewLogIter(reader io.ReadSeeker, serializer LogRecordSerializer) (LogIterator, error) {
+func NewLogIter(reader *os.File, serializer LogRecordSerializer, iteratorType uint8) (LogIterator, error) {
 	_, err := reader.Seek(0, io.SeekStart)
 	if err != nil {
 		return nil, err
 	}
 
-	return &logIter{reader: reader, serializer: serializer}, nil
+	var it *logIter
+	if iteratorType == 0 {
+		// starts from end
+		it = &logIter{reader: reader, serializer: serializer}
+		i := 0
+		for {
+			i++
+			//println(i)
+			//if i == 427971 {
+			//	println("sa")
+			//}
+			_, err := it.Next()
+			if err != nil {
+				if err == ErrIteratorAtLast {
+					break
+				}
+				if err == ErrShortRead {
+					var sum int64 = 0
+					for _, i := range it.lens {
+						sum += int64(i)
+					}
+
+					if err := reader.Truncate(sum); err != nil {
+						return nil, err
+					}
+
+					err := reader.Sync()
+					if err != nil {
+						return nil, err
+					}
+
+					return it, nil
+				}
+
+				return nil, err
+			}
+		}
+	} else if iteratorType == 1 {
+		// starts from beginning
+		it = &logIter{reader: reader, serializer: serializer}
+	}
+
+	return it, nil
 }
 
 var _ LogIterator = &logIter{}
 
 func (l *logIter) Next() (*LogRecord, error) {
-	rec, n := l.serializer.Deserialize(l.reader)
+	rec, n, err := l.serializer.Deserialize(l.reader)
+	if err != nil {
+		if err == io.EOF {
+			return nil, ErrIteratorAtLast
+		}
+		if err == ErrShortRead {
+			if _, err := l.reader.Seek(int64(-n), io.SeekCurrent); err != nil {
+				panic(err)
+			}
+
+			return nil, ErrShortRead
+		}
+
+		return nil, err
+	}
+
 	if l.i == len(l.lens) {
 		l.lens = append(l.lens, n)
 	}
@@ -88,11 +145,20 @@ func (t *txnLogIterator) Prev() (*LogRecord, error) {
 		return curr, nil
 	}
 
-	if t.curr.PrevLsn == pages.ZeroLSN {
-		return nil, ErrIteratorAtBeginning
+	//if t.curr.PrevLsn == pages.ZeroLSN {
+	//	return nil, ErrIteratorAtBeginning
+	//}
+	//
+	//if err := PrevToLsn(t.logIter, t.curr.PrevLsn); err != nil {
+	//	return nil, err
+	//}
+
+	_, err := t.logIter.Prev()
+	if err != nil {
+		return nil, err
 	}
 
-	if err := PrevToLsn(t.logIter, t.curr.PrevLsn); err != nil {
+	if err := PrevToTxn(t.logIter, t.txnID); err != nil {
 		return nil, err
 	}
 
@@ -113,6 +179,10 @@ func (t *txnLogIterator) Curr() (*LogRecord, error) {
 	return t.curr, nil
 }
 
-func NewTxnLogIterator(id transaction.TxnID) LogIterator {
-	panic("implement me")
+func NewTxnLogIterator(id transaction.TxnID, iter LogIterator) LogIterator {
+	return &txnLogIterator{
+		logIter: iter,
+		curr:    nil,
+		txnID:   id,
+	}
 }

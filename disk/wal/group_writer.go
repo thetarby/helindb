@@ -4,19 +4,30 @@ import (
 	"errors"
 	"fmt"
 	"helin/common"
+	"helin/disk/pages"
 	"io"
 	"log"
 	"sync"
 	"time"
 )
 
+type LogWriter interface {
+	Write(d []byte, lsn pages.LSN) (int, error)
+}
+
 type GroupWriter struct {
 	buf         []byte
 	offset      int
-	flushBuf    []byte
-	flushOffset int
-	w           io.Writer
-	mut         sync.Mutex
+	latestInBuf pages.LSN
+
+	flushBuf         []byte
+	flushOffset      int
+	latestInFlushBuf pages.LSN
+
+	latestFlushed pages.LSN
+
+	w   io.Writer
+	mut sync.Mutex
 
 	timeout time.Duration
 
@@ -35,11 +46,12 @@ func NewGroupWriter(size int, w io.Writer) *GroupWriter {
 	}
 }
 
-func (w *GroupWriter) Write(d []byte) (int, error) {
+func (w *GroupWriter) Write(d []byte, lsn pages.LSN) (int, error) {
 	size := len(d)
 	if size <= w.Available() {
 		copy(w.buf[w.offset:], d)
 		w.offset += size
+		w.latestInBuf = lsn
 		return size, nil
 	}
 
@@ -50,6 +62,7 @@ func (w *GroupWriter) Write(d []byte) (int, error) {
 		acc += n
 
 		if size <= acc {
+			w.latestInBuf = lsn
 			break
 		}
 		w.swap()
@@ -108,8 +121,13 @@ func (w *GroupWriter) StopFlusher() error {
 
 func (w *GroupWriter) swap() {
 	w.mut.Lock()
+
+	// swap buffers
 	w.buf, w.flushBuf = w.flushBuf, w.buf
 	w.flushOffset = w.offset
+
+	// load lsn
+	w.latestInFlushBuf = w.latestInBuf
 	w.offset = 0
 
 	go func() {
@@ -130,6 +148,7 @@ func (w *GroupWriter) flush(release bool) error {
 		return errors.New("short write")
 	}
 
+	w.latestFlushed = w.latestInFlushBuf
 	if release {
 		w.mut.Unlock()
 	}
@@ -139,6 +158,23 @@ func (w *GroupWriter) flush(release bool) error {
 func (w *GroupWriter) swapAndWaitFlush() error {
 	w.buf, w.flushBuf = w.flushBuf, w.buf
 	w.flushOffset = w.offset
+	w.latestInFlushBuf = w.latestInBuf
+	w.offset = 0
+
+	if err := w.flush(false); err != nil {
+		return fmt.Errorf("flush failed: %w", err)
+	}
+
+	return nil
+}
+
+func (w *GroupWriter) SwapAndWaitFlush() error {
+	w.mut.Lock()
+	defer w.mut.Unlock()
+
+	w.buf, w.flushBuf = w.flushBuf, w.buf
+	w.flushOffset = w.offset
+	w.latestInFlushBuf = w.latestInBuf
 	w.offset = 0
 
 	if err := w.flush(false); err != nil {

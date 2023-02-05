@@ -12,19 +12,22 @@ type LSP struct {
 }
 
 func (p *LSP) InsertAt(txn transaction.Transaction, idx int, data []byte) error {
-	p.lm.AppendLog(NewInsertLogRecord(txn.GetID(), uint16(idx), data))
+	lsn := p.lm.AppendLog(NewInsertLogRecord(txn.GetID(), uint16(idx), data, p.GetPageId()))
+	p.SetPageLSN(lsn)
 	return p.SlottedPage.InsertAt(idx, data)
 }
 
 func (p *LSP) SetAt(txn transaction.Transaction, idx int, data []byte) error {
 	old := common.Clone(p.GetAt(idx))
-	p.lm.AppendLog(NewSetLogRecord(txn.GetID(), uint16(idx), data, old))
+	lsn := p.lm.AppendLog(NewSetLogRecord(txn.GetID(), uint16(idx), data, old, p.GetPageId()))
+	p.SetPageLSN(lsn)
 	return p.SlottedPage.SetAt(idx, data)
 }
 
 func (p *LSP) DeleteAt(txn transaction.Transaction, idx int) error {
 	deleted := common.Clone(p.GetAt(idx))
-	p.lm.AppendLog(NewDeleteLogRecord(txn.GetID(), uint16(idx), deleted))
+	lsn := p.lm.AppendLog(NewDeleteLogRecord(txn.GetID(), uint16(idx), deleted, p.GetPageId()))
+	p.SetPageLSN(lsn)
 	return p.SlottedPage.DeleteAt(idx)
 }
 

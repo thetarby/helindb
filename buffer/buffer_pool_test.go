@@ -50,7 +50,7 @@ func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 		assert.NoError(t, err)
 
 		x := teststruct{}
-		byteArr := p.GetData()
+		byteArr := p.GetWholeData()
 		for i := 0; i < len(byteArr); i++ {
 			if byteArr[i] == '\000' {
 				byteArr = byteArr[:i]
@@ -98,7 +98,7 @@ func TestBuffer_Pool_Should_Not_Corrupt_Pages(t *testing.T) {
 		p, err := b.GetPage(pageIDs[i])
 		assert.NoError(t, err)
 
-		assert.ElementsMatch(t, randomPages[i], p.GetData())
+		assert.ElementsMatch(t, randomPages[i], p.GetWholeData())
 		b.Unpin(p.GetPageId(), false)
 	}
 }

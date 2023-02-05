@@ -72,6 +72,16 @@ func Reverse[T any](a []T) []T {
 	return r
 }
 
+func OneOf[T comparable](a T, l ...T) bool {
+	for i := 0; i < len(l); i++ {
+		if a == l[i] {
+			return true
+		}
+	}
+
+	return false
+}
+
 func Remove(dbName string) {
 	PanicIfErr(os.Remove(dbName))
 	PanicIfErr(os.Remove(dbName + ".log"))

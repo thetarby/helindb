@@ -6,6 +6,7 @@ import (
 	"helin/btree"
 	"helin/buffer"
 	"helin/common"
+	"helin/concurrency"
 	"helin/disk"
 	"helin/disk/wal"
 	"helin/transaction"
@@ -26,12 +27,15 @@ type PersistentCatalog struct {
 	lm   *wal.LogManager
 }
 
-func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.IBufferPool) {
+func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.IBufferPool, concurrency.CheckpointManager, concurrency.TxnManager) {
 	dm, created, err := disk.NewDiskManager(file)
 	common.PanicIfErr(err)
 	if created {
 		lm := wal.NewLogManager(dm.GetLogWriter())
 		pool := buffer.NewBufferPoolWithDM(poolSize, dm, lm)
+		tm := concurrency.NewTxnManager(lm)
+		cm := concurrency.NewCheckpointManager(pool, lm, tm)
+
 		// NOTE: maybe use global serializers instead of initializing structs
 		bpp := btree.NewBPP(pool, &btree.StringKeySerializer{}, &btree.StringValueSerializer{}, lm)
 		catalogStore := btree.NewBtreeWithPager(transaction.TxnNoop(), degree, bpp)
@@ -41,11 +45,14 @@ func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.IBufferP
 			pool: pool,
 			l:    &sync.Mutex{},
 			lm:   lm,
-		}, pool
+		}, pool, cm, tm
 	}
 
 	lm := wal.NewLogManager(dm.GetLogWriter())
 	pool := buffer.NewBufferPoolWithDM(poolSize, dm, lm)
+	tm := concurrency.NewTxnManager(lm)
+	cm := concurrency.NewCheckpointManager(pool, lm, tm)
+
 	bpp := btree.NewBPP(pool, &btree.StringKeySerializer{}, &btree.StringValueSerializer{}, lm)
 	catalogStore := btree.ConstructBtreeByMeta(btree.Pointer(dm.GetCatalogPID()), bpp)
 	return &PersistentCatalog{
@@ -53,7 +60,7 @@ func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.IBufferP
 		pool: pool,
 		l:    &sync.Mutex{},
 		lm:   lm,
-	}, pool
+	}, pool, cm, tm
 }
 
 func (p *PersistentCatalog) CreateStore(txn transaction.Transaction, name string) (*StoreInfo, error) {

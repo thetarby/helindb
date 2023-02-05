@@ -7,14 +7,6 @@ import (
 	"sync/atomic"
 )
 
-type IsolationLevel int
-
-const (
-	ReadUncommitted IsolationLevel = iota
-	ReadCommitted
-	RepeatableRead
-)
-
 type txn struct {
 	id transaction.TxnID
 }
@@ -23,11 +15,12 @@ func (t txn) GetID() transaction.TxnID {
 	return t.id
 }
 
+// TxnManager keeps track of running transactions.
 type TxnManager interface {
-	Begin(IsolationLevel) transaction.Transaction
+	Begin() transaction.Transaction
 	Commit(transaction.Transaction)
-	Abort(transaction.Transaction)
 	CommitByID(transaction.TxnID)
+	Abort(transaction.Transaction)
 	AbortByID(id transaction.TxnID)
 
 	BlockAllTransactions()
@@ -39,29 +32,35 @@ type TxnManager interface {
 var _ TxnManager = &TxnManagerImpl{}
 
 type TxnManagerImpl struct {
-	actives    map[transaction.TxnID]bool
+	actives    map[transaction.TxnID]transaction.Transaction
+	lm         *wal.LogManager
 	r          *Recovery
 	txnCounter atomic.Int64
 	mut        *sync.Mutex
 }
 
-func NewTxnManagerImpl() *TxnManagerImpl {
+func NewTxnManager(lm *wal.LogManager) *TxnManagerImpl {
 	return &TxnManagerImpl{
-		actives:    map[transaction.TxnID]bool{},
+		actives:    map[transaction.TxnID]transaction.Transaction{},
+		lm:         lm,
 		r:          nil,
 		txnCounter: atomic.Int64{},
 		mut:        &sync.Mutex{},
 	}
 }
 
-func (t *TxnManagerImpl) Begin(level IsolationLevel) transaction.Transaction {
+func (t *TxnManagerImpl) Begin() transaction.Transaction {
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
 	id := t.txnCounter.Add(1)
-	return txn{id: transaction.TxnID(id)}
+	txn := txn{id: transaction.TxnID(id)}
+	t.actives[txn.GetID()] = txn
+	return txn
 }
 
 func (t *TxnManagerImpl) Commit(transaction transaction.Transaction) {
-	//TODO implement me
-	panic("implement me")
+	t.CommitByID(transaction.GetID())
 }
 
 func (t *TxnManagerImpl) Abort(transaction transaction.Transaction) {
@@ -69,8 +68,11 @@ func (t *TxnManagerImpl) Abort(transaction transaction.Transaction) {
 }
 
 func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) {
-	//TODO implement me
-	panic("implement me")
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
+	t.lm.AppendLog(wal.NewCommitLogRecord(id))
+	delete(t.actives, id)
 }
 
 func (t *TxnManagerImpl) AbortByID(id transaction.TxnID) {
@@ -79,7 +81,7 @@ func (t *TxnManagerImpl) AbortByID(id transaction.TxnID) {
 	// 3. apply clr records and append them to wal
 	// 4. append abort log
 
-	logs := wal.NewTxnLogIterator(id)
+	logs := wal.NewTxnLogIterator(id, nil)
 	for {
 		lr, err := logs.Prev()
 		if err != nil {
@@ -107,6 +109,9 @@ func (t *TxnManagerImpl) ResumeTransactions() {
 }
 
 func (t *TxnManagerImpl) ActiveTransactions() []transaction.TxnID {
-	//TODO implement me
-	panic("implement me")
+	res := make([]transaction.TxnID, 0, len(t.actives))
+	for id := range t.actives {
+		res = append(res, id)
+	}
+	return res
 }

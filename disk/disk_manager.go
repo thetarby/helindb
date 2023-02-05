@@ -49,7 +49,7 @@ type Manager struct {
 	header      *header
 }
 
-func NewDiskManager(file string) (IDiskManager, bool, error) {
+func NewDiskManager(file string) (*Manager, bool, error) {
 	d := Manager{}
 	d.serializer = jsonSerializer{}
 	d.filename = file
@@ -148,8 +148,7 @@ func (d *Manager) ReadPage(pageId uint64) ([]byte, error) {
 		return []byte{}, err
 	}
 
-	// TODO: update this method to receive destination bytes instead of dynamically allocating
-	// and returning it.
+	// TODO: update this method to receive destination bytes instead of dynamically allocating and returning it.
 	var data = make([]byte, PageSize)
 
 	n, err := d.file.Read(data[:])
@@ -233,6 +232,96 @@ func (d *Manager) SetCatalogPID(pid uint64) {
 
 func (d *Manager) GetLogWriter() io.Writer {
 	return d.logFile
+}
+
+func (d *Manager) IsInFreeList(pageID uint64) (bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// if list is empty return false
+	h := d.getHeader()
+	if h.freeListHead == 0 {
+		return false, nil
+	}
+
+	nextPageID := h.freeListHead
+	for {
+		if nextPageID == pageID {
+			return true, nil
+		}
+
+		if nextPageID == h.freeListTail {
+			return false, nil
+		}
+
+		// parse next page id
+		data, err := d.ReadPage(h.freeListHead)
+		if err != nil {
+			panic(err)
+		}
+		nextPageID = binary.BigEndian.Uint64(data)
+	}
+}
+
+func (d *Manager) RemoveFromFreelist(pageID uint64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	// if list is empty return false
+	h := d.getHeader()
+	if h.freeListHead == 0 {
+		return errors.New("cannot delete from empty free list")
+	}
+
+	// if removed page is head, directly use pop operation
+	if pageID == h.freeListHead {
+		d.popFreeList()
+		return nil
+	}
+
+	nextPageID, prevPageID := h.freeListHead, h.freeListHead
+	for {
+		if nextPageID == pageID {
+			// do deletion
+			prevData, err := d.ReadPage(prevPageID)
+			if err == io.EOF {
+				prevData = make([]byte, PageSize, PageSize)
+			} else if err != nil {
+				panic(err)
+			}
+
+			nextData, err := d.ReadPage(nextPageID)
+			if err == io.EOF {
+				prevData = make([]byte, PageSize, PageSize)
+			} else if err != nil {
+				panic(err)
+			}
+
+			binary.BigEndian.PutUint64(prevData, binary.BigEndian.Uint64(nextData))
+			if err := d.WritePage(prevData, prevPageID); err != nil {
+				panic(err)
+			}
+
+			if nextPageID == h.freeListTail {
+				h.freeListTail = prevPageID
+				d.setHeader(h)
+			}
+			return nil
+		}
+
+		if nextPageID == h.freeListTail {
+			break
+		}
+
+		// parse next page id
+		data, err := d.ReadPage(h.freeListHead)
+		if err != nil {
+			panic(err)
+		}
+		nextPageID = binary.BigEndian.Uint64(data)
+	}
+
+	return errors.New("page cannot be found in free list")
 }
 
 func (d *Manager) writePages(pages [][]byte, startingPageId uint64) error {

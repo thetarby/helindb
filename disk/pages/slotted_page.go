@@ -8,7 +8,7 @@ import (
 	"sort"
 )
 
-var ErrNotEnoughSpace = errors.New("not enough space")
+var ErrNotEnoughSpace = errors.New("SlottedPage: not enough space")
 
 type SlottedPage struct {
 	IPage
@@ -18,8 +18,6 @@ type SlottedPageHeader struct {
 	FreeSpacePointer uint16
 	SlotArrSize      uint16
 	EmptyBytes       uint16
-	recLSN           LSN
-	pageLSN          LSN
 }
 
 type SLotArrEntry struct {
@@ -83,8 +81,6 @@ func (sp *SlottedPage) GetHeader() SlottedPageHeader {
 		FreeSpacePointer: binary.BigEndian.Uint16(d),
 		SlotArrSize:      binary.BigEndian.Uint16(d[2:]),
 		EmptyBytes:       binary.BigEndian.Uint16(d[4:]),
-		recLSN:           ReadLSN(d[6:]),
-		pageLSN:          ReadLSN(d[14:]),
 	}
 }
 
@@ -93,28 +89,6 @@ func (sp *SlottedPage) setHeader(h SlottedPageHeader) {
 	binary.BigEndian.PutUint16(d, h.FreeSpacePointer)
 	binary.BigEndian.PutUint16(d[2:], h.SlotArrSize)
 	binary.BigEndian.PutUint16(d[4:], h.EmptyBytes)
-	PutLSN(d[6:], h.recLSN)
-	PutLSN(d[14:], h.pageLSN)
-}
-
-func (sp *SlottedPage) SetPageLSN(l LSN) {
-	h := sp.GetHeader()
-	h.pageLSN = l
-	sp.setHeader(h)
-}
-
-func (sp *SlottedPage) GetPageLSN() LSN {
-	return sp.GetHeader().pageLSN
-}
-
-func (sp *SlottedPage) SetRecLSN(l LSN) {
-	h := sp.GetHeader()
-	h.recLSN = l
-	sp.setHeader(h)
-}
-
-func (sp *SlottedPage) GetRecLSN() LSN {
-	return sp.GetHeader().recLSN
 }
 
 func (sp *SlottedPage) GetAt(idx int) []byte {
@@ -252,10 +226,13 @@ func (sp *SlottedPage) insertAt(idx int, data []byte) error {
 
 	temp := make([]byte, 4)
 	n := binary.PutUvarint(temp, uint64(len(data)))
-	h.FreeSpacePointer -= uint16(len(data) + n)
-	if h.FreeSpacePointer <= uint16(HeaderSize)+(h.SlotArrSize+1)*uint16(SlotArrEntrySize) {
+
+	totalSize := uint16(len(data) + n)
+	if totalSize >= h.FreeSpacePointer ||
+		(h.FreeSpacePointer-totalSize) <= uint16(HeaderSize)+(h.SlotArrSize+1)*uint16(SlotArrEntrySize) {
 		return ErrNotEnoughSpace
 	}
+	h.FreeSpacePointer -= totalSize
 
 	copy(sp.GetData()[h.FreeSpacePointer:], temp[:n])
 	copy(sp.GetData()[h.FreeSpacePointer+uint16(n):], data)
