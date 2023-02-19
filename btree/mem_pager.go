@@ -62,7 +62,7 @@ func (memPager *MemPager) UnpinByPointer(p Pointer, isDirty bool) {}
 
 func (memPager *MemPager) Unpin(n Node, isDirty bool) {}
 
-func (memPager *MemPager) NewInternalNode(txn transaction.Transaction, firstPointer Pointer) Node {
+func (memPager *MemPager) NewInternalNode(txn transaction.Transaction, firstPointer Pointer) NodeReleaser {
 	h := PersistentNodeHeader{
 		IsLeaf: 0,
 		KeyLen: 0,
@@ -88,10 +88,10 @@ func (memPager *MemPager) NewInternalNode(txn transaction.Transaction, firstPoin
 	memPager.lock.Lock()
 	memPagerNodeMapping[newID] = &node
 	memPager.lock.Unlock()
-	return &node
+	return &memNodeWriteReleaser{&node}
 }
 
-func (memPager *MemPager) NewLeafNode(txn transaction.Transaction) Node {
+func (memPager *MemPager) NewLeafNode(txn transaction.Transaction) NodeReleaser {
 	h := PersistentNodeHeader{
 		IsLeaf: 1,
 		KeyLen: 0,
@@ -115,7 +115,7 @@ func (memPager *MemPager) NewLeafNode(txn transaction.Transaction) Node {
 	memPager.lock.Lock()
 	memPagerNodeMapping[newID] = &node
 	memPager.lock.Unlock()
-	return &node
+	return &memNodeWriteReleaser{&node}
 }
 
 func (memPager *MemPager) GetNode(p Pointer, mode TraverseMode) Node {
@@ -134,6 +134,13 @@ func (memPager *MemPager) GetNode(p Pointer, mode TraverseMode) Node {
 	return node
 }
 
+func (memPager *MemPager) GetNodeReleaser(p Pointer, mode TraverseMode) NodeReleaser {
+	if mode == Read {
+		return &memNodeReadReleaser{memPager.GetNode(p, mode)}
+	}
+	return &memNodeWriteReleaser{memPager.GetNode(p, mode)}
+}
+
 func NewMemPager(serializer KeySerializer, valSerializer ValueSerializer) *MemPager {
 	return &MemPager{
 		lock:            &sync.Mutex{},
@@ -141,4 +148,20 @@ func NewMemPager(serializer KeySerializer, valSerializer ValueSerializer) *MemPa
 		ValueSerializer: valSerializer,
 		LogManager:      wal.NewLogManager(io.Discard), // TODO: fix this
 	}
+}
+
+type memNodeReadReleaser struct {
+	Node
+}
+
+func (n *memNodeReadReleaser) Release(bool) {
+	n.RUnLatch()
+}
+
+type memNodeWriteReleaser struct {
+	Node
+}
+
+func (n *memNodeWriteReleaser) Release(bool) {
+	n.WUnlatch()
 }

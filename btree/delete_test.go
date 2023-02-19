@@ -13,13 +13,13 @@ func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty(t *testing.T) {
 		tree.Insert(transaction.TxnNoop(), PersistentKey(val), "selam")
 	}
 
-	res, stack := tree.FindAndGetStack(PersistentKey(1), Read)
-	tree.runlatch(stack)
+	res, stack := tree.FindAndGetStack(PersistentKey(1), Debug)
+	release(stack)
 	assert.Len(t, stack, 3)
 	assert.Equal(t, "selam", res.(string))
 
 	tree.Delete(transaction.TxnNoop(), PersistentKey(1))
-	_, stack = tree.FindAndGetStack(PersistentKey(1), Read)
+	_, stack = tree.FindAndGetStack(PersistentKey(1), Debug)
 
 	assert.Len(t, stack, 2)
 }
@@ -30,22 +30,22 @@ func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_2(t *testing.T) {
 		tree.Insert(transaction.TxnNoop(), PersistentKey(val), "selam")
 	}
 
-	res, stack := tree.FindAndGetStack(PersistentKey(1), Read)
-	tree.runlatch(stack)
+	res, stack := tree.FindAndGetStack(PersistentKey(1), Debug)
+	release(stack)
 	assert.Len(t, stack, 4)
 	assert.Equal(t, "selam", res.(string))
 
 	for _, i := range []int{1, 2, 3, 4, 5} {
 		tree.Delete(transaction.TxnNoop(), PersistentKey(i))
-		res, stack := tree.FindAndGetStack(PersistentKey(10), Read)
-		tree.runlatch(stack)
+		res, stack := tree.FindAndGetStack(PersistentKey(10), Debug)
+		release(stack)
 		assert.Len(t, stack, 3)
 		assert.Equal(t, "selam", res.(string))
 	}
 
 	tree.Delete(transaction.TxnNoop(), PersistentKey(6))
-	_, stack = tree.FindAndGetStack(PersistentKey(10), Read)
-	tree.runlatch(stack)
+	_, stack = tree.FindAndGetStack(PersistentKey(10), Debug)
+	release(stack)
 	assert.Len(t, stack, 2)
 }
 

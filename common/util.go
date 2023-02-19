@@ -62,6 +62,13 @@ func Clone[T any](v []T) []T {
 	return clone
 }
 
+func Ternary[T any](exp bool, a, b T) T {
+	if exp {
+		return a
+	}
+	return b
+}
+
 func Reverse[T any](a []T) []T {
 	l := len(a)
 	r := make([]T, 0)

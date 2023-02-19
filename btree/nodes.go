@@ -25,7 +25,7 @@ func DeserializePointer(dest []byte) Pointer {
 type Keys []common.Key
 
 type NodeIndexPair struct {
-	Node  Node
+	Node  NodeReleaser
 	Index int // pointer index for internal nodes and value index for leaf nodes
 }
 
@@ -35,6 +35,7 @@ const (
 	Read TraverseMode = iota
 	Delete
 	Insert
+	Debug
 )
 
 type Node interface {

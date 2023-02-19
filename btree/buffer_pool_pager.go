@@ -60,7 +60,7 @@ func (b *BufferPoolPager) UnpinByPointer(p Pointer, isDirty bool) {
 }
 
 // NewInternalNode Caller should call unpin with dirty is set
-func (b *BufferPoolPager) NewInternalNode(txn transaction.Transaction, firstPointer Pointer) Node {
+func (b *BufferPoolPager) NewInternalNode(txn transaction.Transaction, firstPointer Pointer) NodeReleaser {
 	// TODO: handle rollback
 	h := PersistentNodeHeader{
 		IsLeaf: 0,
@@ -81,10 +81,10 @@ func (b *BufferPoolPager) NewInternalNode(txn transaction.Transaction, firstPoin
 	// write first pointer
 	node.setValueAt(txn, 0, firstPointer)
 
-	return &node
+	return &writeNodeReleaser{&node, b.pool}
 }
 
-func (b *BufferPoolPager) NewLeafNode(txn transaction.Transaction) Node {
+func (b *BufferPoolPager) NewLeafNode(txn transaction.Transaction) NodeReleaser {
 	// TODO: handle rollback
 	h := PersistentNodeHeader{
 		IsLeaf: 1,
@@ -103,7 +103,7 @@ func (b *BufferPoolPager) NewLeafNode(txn transaction.Transaction) Node {
 	// write header
 	node.SetHeader(txn, &h)
 
-	return &node
+	return &writeNodeReleaser{&node, b.pool}
 }
 
 func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
@@ -133,8 +133,51 @@ func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 	}
 }
 
+func (b *BufferPoolPager) GetNodeReleaser(p Pointer, mode TraverseMode) NodeReleaser {
+	n := b.GetNode(p, mode)
+	if n == nil {
+		return nil
+	}
+	if mode == Read {
+		return &readNodeReleaser{
+			Node: n,
+			pool: b.pool,
+		}
+	} else {
+		return &writeNodeReleaser{
+			Node: n,
+			pool: b.pool,
+		}
+	}
+}
+
 func (b *BufferPoolPager) Unpin(n Node, isDirty bool) {
 	b.pool.Unpin(uint64(n.GetPageId()), isDirty)
+}
+
+type NodeReleaser interface {
+	Node
+	Release(dirty bool)
+}
+
+type readNodeReleaser struct {
+	Node
+	pool *buffer.BufferPool
+}
+
+func (n *readNodeReleaser) Release(bool) {
+	n.pool.Unpin(uint64(n.GetPageId()), false)
+	n.RUnLatch()
+}
+
+type writeNodeReleaser struct {
+	Node
+	pool *buffer.BufferPool
+}
+
+func (n *writeNodeReleaser) Release(isDirty bool) {
+	n.pool.Unpin(uint64(n.GetPageId()), false)
+	n.WUnlatch()
 }
 
 func NewDefaultBPP(pool *buffer.BufferPool, serializer KeySerializer, logWriter io.Writer) *BufferPoolPager {

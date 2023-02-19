@@ -103,7 +103,12 @@ func (sp *SlottedPage) GetAt(idx int) []byte {
 func (sp *SlottedPage) InsertAt(idx int, data []byte) error {
 	if err := sp.insertAt(idx, data); err == ErrNotEnoughSpace {
 		sp.Vacuum()
-		return sp.insertAt(idx, data)
+		if err := sp.insertAt(idx, data); err != nil {
+			return err
+		}
+
+		sp.SetDirty()
+		return nil
 	} else {
 		return err
 	}
@@ -130,6 +135,7 @@ func (sp *SlottedPage) SetAt(idx int, data []byte) error {
 			newValSize := len(data)
 			n := binary.PutUvarint(d[offset:], uint64(newValSize))
 			copy(d[int(offset)+n:], data)
+			sp.SetDirty()
 			return nil
 		}
 	}
@@ -163,6 +169,7 @@ func (sp *SlottedPage) DeleteAt(idx int) error {
 
 	sp.setSlotArr(arr)
 	sp.setHeader(h)
+	sp.SetDirty()
 
 	return nil
 }
@@ -298,6 +305,7 @@ func (sp *SlottedPage) values() []byte {
 	return sp.GetData()[sp.GetHeader().FreeSpacePointer:]
 }
 
+// InitSlottedPage formats underlying page as a slotting page. Hence, it modifies the page unlike CastSlottedPage.
 func InitSlottedPage(p IPage) SlottedPage {
 	sp := SlottedPage{p}
 
@@ -309,6 +317,7 @@ func InitSlottedPage(p IPage) SlottedPage {
 	return sp
 }
 
+// CastSlottedPage interprets underlying page as a SlottedPage. It does not do any modification on the page's data.
 func CastSlottedPage(p IPage) SlottedPage {
 	return SlottedPage{p}
 }
