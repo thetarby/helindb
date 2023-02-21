@@ -4,6 +4,7 @@ import "sync/atomic"
 
 type Transaction interface {
 	GetID() TxnID
+	FreePage(pageID uint64)
 }
 
 func TxnTODO() Transaction {
@@ -25,6 +26,10 @@ var _ Transaction = &txnNoop{}
 
 type txnNoop struct {
 	id TxnID
+}
+
+func (t txnNoop) FreePage(pageID uint64) {
+	return
 }
 
 func (t txnNoop) GetID() TxnID {

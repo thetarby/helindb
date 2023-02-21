@@ -1,24 +1,33 @@
 package concurrency
 
 import (
+	"helin/buffer"
 	"helin/disk/wal"
 	"helin/transaction"
+	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type txn struct {
-	id transaction.TxnID
+	id         transaction.TxnID
+	freedPages []uint64
 }
 
-func (t txn) GetID() transaction.TxnID {
+func (t *txn) GetID() transaction.TxnID {
 	return t.id
+}
+
+func (t *txn) FreePage(pageID uint64) {
+	t.freedPages = append(t.freedPages, pageID)
 }
 
 // TxnManager keeps track of running transactions.
 type TxnManager interface {
 	Begin() transaction.Transaction
 	Commit(transaction.Transaction)
+	AsyncCommit(transaction transaction.Transaction)
 	CommitByID(transaction.TxnID)
 	Abort(transaction.Transaction)
 	AbortByID(id transaction.TxnID)
@@ -32,20 +41,22 @@ type TxnManager interface {
 var _ TxnManager = &TxnManagerImpl{}
 
 type TxnManagerImpl struct {
-	actives    map[transaction.TxnID]transaction.Transaction
+	actives    map[transaction.TxnID]*txn
 	lm         *wal.LogManager
 	r          *Recovery
 	txnCounter atomic.Int64
 	mut        *sync.Mutex
+	pool       buffer.IBufferPool
 }
 
-func NewTxnManager(lm *wal.LogManager) *TxnManagerImpl {
+func NewTxnManager(pool buffer.IBufferPool, lm *wal.LogManager) *TxnManagerImpl {
 	return &TxnManagerImpl{
-		actives:    map[transaction.TxnID]transaction.Transaction{},
+		actives:    map[transaction.TxnID]*txn{},
 		lm:         lm,
 		r:          nil,
 		txnCounter: atomic.Int64{},
 		mut:        &sync.Mutex{},
+		pool:       pool,
 	}
 }
 
@@ -55,12 +66,31 @@ func (t *TxnManagerImpl) Begin() transaction.Transaction {
 
 	id := t.txnCounter.Add(1)
 	txn := txn{id: transaction.TxnID(id)}
-	t.actives[txn.GetID()] = txn
-	return txn
+	t.actives[txn.GetID()] = &txn
+	return &txn
 }
+
+var s = time.Now()
 
 func (t *TxnManagerImpl) Commit(transaction transaction.Transaction) {
 	t.CommitByID(transaction.GetID())
+	if int(transaction.GetID())%1000 == 0 {
+		log.Printf("txn:%v tps: %v\n", transaction.GetID(), 1000/time.Since(s).Seconds())
+		s = time.Now()
+	}
+}
+
+func (t *TxnManagerImpl) AsyncCommit(transaction transaction.Transaction) {
+	if int(transaction.GetID())%100 == 0 {
+		log.Println("txn: ", transaction.GetID())
+	}
+
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
+	txn := t.actives[transaction.GetID()]
+	t.lm.AppendLog(wal.NewCommitLogRecord(transaction.GetID(), txn.freedPages))
+	delete(t.actives, transaction.GetID())
 }
 
 func (t *TxnManagerImpl) Abort(transaction transaction.Transaction) {
@@ -69,10 +99,22 @@ func (t *TxnManagerImpl) Abort(transaction transaction.Transaction) {
 
 func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) {
 	t.mut.Lock()
-	defer t.mut.Unlock()
+	txn := t.actives[id]
+	t.mut.Unlock()
 
-	t.lm.AppendLog(wal.NewCommitLogRecord(id))
+	t.lm.WaitAppendLog(wal.NewCommitLogRecord(id, txn.freedPages))
+	// IMPORTANT NOTE: if a checkpoint begins right at this line commit log record is persisted but active txn table
+	// still includes this log record. Hence, in undo phase there might seem commit log records. In that case that
+	// txn should not be rolled back.
+	t.mut.Lock()
 	delete(t.actives, id)
+	for _, page := range txn.freedPages {
+		if err := t.pool.FreePage(txn, page, true); err != nil {
+			panic(err)
+		}
+	}
+	t.lm.AppendLog(wal.NewTxnEndLogRecord(id))
+	t.mut.Unlock()
 }
 
 func (t *TxnManagerImpl) AbortByID(id transaction.TxnID) {

@@ -3,13 +3,18 @@ package wal
 import (
 	"encoding/json"
 	"errors"
-	"helin/disk/pages"
 	"helin/transaction"
 	"io"
 )
 
+// ErrIteratorAtBeginning is returned when prev is called when iterator is at the first log record.
 var ErrIteratorAtBeginning = errors.New("iterator is at the beginning")
+
+// ErrIteratorAtLast is returned when next is called when iterator is at the latest log record.
 var ErrIteratorAtLast = errors.New("iterator is at the last")
+
+// ErrIteratorNotInitialized is returned when curr is called on an iterator that is initialized but
+// no next or prev is called yet on it.
 var ErrIteratorNotInitialized = errors.New("iterator is not initialized")
 
 // LogIterator is used to move around a log file.
@@ -17,19 +22,6 @@ type LogIterator interface {
 	Next() (*LogRecord, error)
 	Prev() (*LogRecord, error)
 	Curr() (*LogRecord, error)
-}
-
-func PrevToType(it LogIterator, t LogRecordType) error {
-	for {
-		lr, err := it.Prev()
-		if err != nil {
-			return err
-		}
-
-		if lr.T == t {
-			return nil
-		}
-	}
 }
 
 func PrevToStart(it LogIterator) error {
@@ -45,14 +37,22 @@ func PrevToStart(it LogIterator) error {
 	}
 }
 
-func PrevToLsn(it LogIterator, lsn pages.LSN) error {
+func PrevToType(it LogIterator, t LogRecordType) error {
+	lr, err := it.Curr()
+	if err != nil {
+		return err
+	}
+	if lr.Type() == t {
+		return nil
+	}
+
 	for {
 		lr, err := it.Prev()
 		if err != nil {
 			return err
 		}
 
-		if lr.Lsn == lsn {
+		if lr.T == t {
 			return nil
 		}
 	}
@@ -79,7 +79,36 @@ func PrevToTxn(it LogIterator, txn transaction.TxnID) error {
 	}
 }
 
+func NextToTxn(it LogIterator, txn transaction.TxnID) error {
+	lr, err := it.Curr()
+	if err != nil {
+		return err
+	}
+	if lr.TxnID == txn {
+		return nil
+	}
+
+	for {
+		lr, err := it.Next()
+		if err != nil {
+			return err
+		}
+
+		if lr.TxnID == txn {
+			return nil
+		}
+	}
+}
+
 func NextToType(it LogIterator, t LogRecordType) error {
+	lr, err := it.Curr()
+	if err != nil {
+		return err
+	}
+	if lr.Type() == t {
+		return nil
+	}
+
 	for {
 		lr, err := it.Next()
 		if err != nil {
@@ -87,19 +116,6 @@ func NextToType(it LogIterator, t LogRecordType) error {
 		}
 
 		if lr.T == t {
-			return nil
-		}
-	}
-}
-
-func NextToLsn(it LogIterator, lsn pages.LSN) error {
-	for {
-		lr, err := it.Next()
-		if err != nil {
-			return err
-		}
-
-		if lr.Lsn == lsn {
 			return nil
 		}
 	}

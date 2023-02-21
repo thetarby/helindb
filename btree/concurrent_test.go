@@ -65,7 +65,7 @@ func TestConcurrent_Inserts2(t *testing.T) {
 	defer common.Remove(dbName)
 
 	lm := wal.NewLogManager(dm.GetLogWriter())
-	pool := buffer.NewBufferPoolWithDM(1024, dm, lm)
+	pool := buffer.NewBufferPoolWithDM(true, 1024, dm, lm)
 
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, lm))
 	log.SetOutput(io.Discard)
@@ -92,10 +92,14 @@ func TestConcurrent_Deletes(t *testing.T) {
 		t.Run("concurrent deletes", func(t *testing.T) {
 			id, _ := uuid.NewUUID()
 			dbName := id.String()
+			dm, _, err := disk.NewDiskManager(dbName)
+			require.NoError(t, err)
 			defer common.Remove(dbName)
 
-			pool := buffer.NewBufferPool(dbName, 100_000)
-			tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewDefaultBPP(pool, &PersistentKeySerializer{}, io.Discard))
+			lm := wal.NewLogManager(dm.GetLogWriter())
+			pool := buffer.NewBufferPoolWithDM(true, 100_000, dm, lm)
+
+			tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewBPP(pool, &PersistentKeySerializer{}, &SlotPointerValueSerializer{}, lm))
 			log.SetOutput(io.Discard)
 
 			rand.Seed(42)
@@ -160,7 +164,7 @@ func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 
 	assert.Equal(t, len(inserted), tree.Count())
 	// assert they are sorted
-	it := NewTreeIterator(transaction.TxnNoop(), tree, tree.pager)
+	it := NewTreeIterator(transaction.TxnNoop(), tree)
 	var prev common.Key = StringKey("")
 	for k, v := it.Next(); k != nil; k, v = it.Next() {
 		require.Less(t, prev, k)
@@ -184,7 +188,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 
 	logManager := wal.NewLogManager(dm.GetLogWriter())
 
-	pool := buffer.NewBufferPoolWithDM(4096, dm, logManager)
+	pool := buffer.NewBufferPoolWithDM(true, 4096, dm, logManager)
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, logManager))
 
 	// first insert some items later to be deleted
@@ -235,7 +239,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 	assert.Len(t, toInsert, tree.Count())
 
 	// assert they are sorted
-	it := NewTreeIterator(transaction.TxnNoop(), tree, tree.pager)
+	it := NewTreeIterator(transaction.TxnNoop(), tree)
 	var prev common.Key = StringKey("")
 	for k, v := it.Next(); k != nil; k, v = it.Next() {
 		require.Less(t, prev, k)
@@ -272,7 +276,7 @@ func FuzzConcurrent_Inserts(f *testing.F) {
 		tree.InsertOrReplace(transaction.TxnNoop(), StringKey(key), fmt.Sprintf("val_%v", key))
 
 		// assert they are sorted
-		it := NewTreeIterator(transaction.TxnNoop(), tree, tree.pager)
+		it := NewTreeIterator(transaction.TxnNoop(), tree)
 		var prev common.Key = StringKey("")
 		i := 0
 		for k, v := it.Next(); k != nil; k, v = it.Next() {
@@ -311,7 +315,7 @@ func TestConcurrent_Inserts3(t *testing.T) {
 	wg.Wait()
 
 	// assert they are sorted
-	it := NewTreeIterator(transaction.TxnNoop(), tree, tree.pager)
+	it := NewTreeIterator(transaction.TxnNoop(), tree)
 	var prev common.Key = StringKey("")
 	i := 0
 	for k, v := it.Next(); k != nil; k, v = it.Next() {

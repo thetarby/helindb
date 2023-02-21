@@ -105,8 +105,8 @@ func (tree *BTree) getRoot() Pointer {
 
 func (tree *BTree) setRoot(txn transaction.Transaction, p Pointer) {
 	meta := tree.meta()
-	meta.RLatch()
-	defer meta.RUnLatch()
+	meta.WLatch()
+	defer meta.WUnlatch()
 	defer tree.pager.UnpinByPointer(meta.GetPageId(), true)
 	meta.setRoot(txn, p)
 }
@@ -126,8 +126,7 @@ func (tree *BTree) Insert(txn transaction.Transaction, key common.Key, value any
 	if i != nil {
 		panic(fmt.Sprintf("key already exists:  %v", key))
 	}
-	defer func() { tree.wunlatchAll(stack) }()
-	defer func() { tree.unpinAll(stack) }()
+	defer func() { release(stack) }()
 
 	var rightNod = value
 	var rightKey = key
@@ -166,8 +165,8 @@ func (tree *BTree) InsertOrReplace(txn transaction.Transaction, key common.Key, 
 		stack = stack[1:]
 		rootLocked = true
 	}
-	defer func() { tree.wunlatchAll(stack) }()
-	defer func() { tree.unpinAll(stack) }()
+	defer func() { release(stack) }()
+
 	if i != nil {
 		// top of stack is the leaf Node
 		topOfStack := stack[len(stack)-1]
@@ -189,22 +188,19 @@ func (tree *BTree) InsertOrReplace(txn transaction.Transaction, key common.Key, 
 
 		if popped.IsOverFlow(tree.degree) {
 			rightNod, _, rightKey = tree.splitNode(txn, popped, popped.KeyLen()/2)
-			tree.pager.Unpin(popped, true)
+			popped.Release(true)
 			if rootLocked && popped.GetPageId() == tree.getRoot() {
 				leftNode := popped
 
 				newRoot := tree.pager.NewInternalNode(txn, leftNode.GetPageId())
 				newRoot.InsertAt(txn, 0, rightKey, rightNod.(Pointer))
 				tree.setRoot(txn, newRoot.GetPageId())
-				tree.pager.Unpin(newRoot, true)
-				newRoot.WUnlatch()
+				newRoot.Release(true)
 			}
 		} else {
-			tree.pager.Unpin(popped, true)
-			popped.WUnlatch()
+			popped.Release(true)
 			break
 		}
-		popped.WUnlatch()
 	}
 
 	return true
@@ -357,14 +353,12 @@ func (tree *BTree) FindSince(key common.Key) []any {
 	for {
 		p := node.GetRight()
 		if p == 0 {
-			tree.pager.Unpin(node, false)
-			node.RUnLatch()
+			node.Release(false)
 			break
 		}
 		old := node
 		node = tree.pager.GetNodeReleaser(p, Read)
-		tree.pager.Unpin(old, false)
-		old.RUnLatch()
+		old.Release(false)
 		vals := node.GetValues()
 		res = append(res, vals...)
 	}
@@ -399,8 +393,7 @@ func (tree *BTree) Count() int {
 		}
 		old := n
 		n = tree.pager.GetNodeReleaser(n.GetValueAt(0).(Pointer), Read)
-		tree.pager.Unpin(old, false)
-		old.RUnLatch()
+		old.Release(false)
 	}
 
 	num := 0
@@ -408,14 +401,12 @@ func (tree *BTree) Count() int {
 		num += len(n.GetValues())
 		r := n.GetRight()
 		if r == 0 {
-			n.RUnLatch()
-			tree.pager.Unpin(n, false)
+			n.Release(false)
 			break
 		}
 		old := n
 		n = tree.pager.GetNodeReleaser(r, Read)
-		tree.pager.Unpin(old, false)
-		old.RUnLatch()
+		old.Release(false)
 	}
 
 	return num
@@ -477,6 +468,7 @@ func (tree *BTree) findAndGetStack(node NodeReleaser, key common.Key, stackIn []
 		childNode := tree.pager.GetNodeReleaser(pointer, mode)
 
 		if mode == Read {
+			// NOTE: root entry lock is released in FindAndGetStack
 			stackOut = stackOut[1:] // TODO: do this better
 			node.Release(false)
 		} else if mode == Debug {
@@ -520,24 +512,6 @@ func (tree *BTree) FindAndGetStack(key common.Key, mode TraverseMode) (value any
 		tree.rootEntryLock.Unlock()
 	}
 	return tree.findAndGetStack(root, key, stack, mode)
-}
-
-func (tree *BTree) unpinAll(stack []NodeIndexPair) {
-	for _, pair := range stack {
-		tree.pager.Unpin(pair.Node, false)
-	}
-}
-
-func (tree *BTree) wunlatchAll(stack []NodeIndexPair) {
-	for _, pair := range stack {
-		pair.Node.WUnlatch()
-	}
-}
-
-func (tree *BTree) runlatch(stack []NodeIndexPair) {
-	for _, pair := range stack {
-		pair.Node.RUnLatch()
-	}
 }
 
 func (tree *BTree) mergeInternalNodes(txn transaction.Transaction, p, rightNode, parent Node) {

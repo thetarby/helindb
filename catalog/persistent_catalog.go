@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	degree = 50
+	degree = 70
 )
 
 var _ Catalog = &PersistentCatalog{}
@@ -32,8 +32,9 @@ func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.IBufferP
 	common.PanicIfErr(err)
 	if created {
 		lm := wal.NewLogManager(dm.GetLogWriter())
-		pool := buffer.NewBufferPoolWithDM(poolSize, dm, lm)
-		tm := concurrency.NewTxnManager(lm)
+		lm.RunFlusher()
+		pool := buffer.NewBufferPoolWithDM(true, poolSize, dm, lm)
+		tm := concurrency.NewTxnManager(pool, lm)
 		cm := concurrency.NewCheckpointManager(pool, lm, tm)
 
 		// NOTE: maybe use global serializers instead of initializing structs
@@ -49,8 +50,9 @@ func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.IBufferP
 	}
 
 	lm := wal.NewLogManager(dm.GetLogWriter())
-	pool := buffer.NewBufferPoolWithDM(poolSize, dm, lm)
-	tm := concurrency.NewTxnManager(lm)
+	lm.RunFlusher()
+	pool := buffer.NewBufferPoolWithDM(true, poolSize, dm, lm)
+	tm := concurrency.NewTxnManager(pool, lm)
 	cm := concurrency.NewCheckpointManager(pool, lm, tm)
 
 	bpp := btree.NewBPP(pool, &btree.StringKeySerializer{}, &btree.StringValueSerializer{}, lm)

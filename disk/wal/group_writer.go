@@ -26,32 +26,38 @@ type GroupWriter struct {
 
 	latestFlushed pages.LSN
 
-	w   io.Writer
-	mut sync.Mutex
+	w      io.Writer
+	mut    sync.Mutex
+	bufMut sync.Mutex
 
-	timeout time.Duration
+	flushEvent *common.Event
 
 	flusherDone chan bool
 	errChan     chan error
+	stats       *common.Stats
 }
 
 func NewGroupWriter(size int, w io.Writer) *GroupWriter {
 	return &GroupWriter{
-		buf:      make([]byte, size),
-		flushBuf: make([]byte, size),
-		errChan:  make(chan error),
-		w:        w,
-		mut:      sync.Mutex{},
-		timeout:  time.Second,
+		buf:        make([]byte, size),
+		flushBuf:   make([]byte, size),
+		errChan:    make(chan error),
+		w:          w,
+		mut:        sync.Mutex{},
+		stats:      common.NewStats(),
+		flushEvent: common.NewEvent(),
+		bufMut:     sync.Mutex{},
 	}
 }
 
 func (w *GroupWriter) Write(d []byte, lsn pages.LSN) (int, error) {
+	w.bufMut.Lock()
 	size := len(d)
 	if size <= w.Available() {
 		copy(w.buf[w.offset:], d)
 		w.offset += size
 		w.latestInBuf = lsn
+		w.bufMut.Unlock()
 		return size, nil
 	}
 
@@ -65,10 +71,13 @@ func (w *GroupWriter) Write(d []byte, lsn pages.LSN) (int, error) {
 			w.latestInBuf = lsn
 			break
 		}
+		w.bufMut.Unlock()
 		w.swap()
+		w.bufMut.Lock()
 	}
 
 	// size is modified now hence return len(d)
+	w.bufMut.Unlock()
 	return size, nil
 }
 
@@ -121,6 +130,7 @@ func (w *GroupWriter) StopFlusher() error {
 
 func (w *GroupWriter) swap() {
 	w.mut.Lock()
+	w.bufMut.Lock()
 
 	// swap buffers
 	w.buf, w.flushBuf = w.flushBuf, w.buf
@@ -129,6 +139,7 @@ func (w *GroupWriter) swap() {
 	// load lsn
 	w.latestInFlushBuf = w.latestInBuf
 	w.offset = 0
+	w.bufMut.Unlock()
 
 	go func() {
 		// TODO: how to handle error other than logging.
@@ -140,6 +151,7 @@ func (w *GroupWriter) swap() {
 
 func (w *GroupWriter) flush(release bool) error {
 	// NOTE: do not release lock on errors. lock should only be released when write succeeds to avoid missing writes.
+	w.stats.Avg("avg_log_flush_size", float64(w.flushOffset))
 	n, err := w.w.Write(w.flushBuf[:w.flushOffset])
 	if err != nil {
 		return err
@@ -152,6 +164,8 @@ func (w *GroupWriter) flush(release bool) error {
 	if release {
 		w.mut.Unlock()
 	}
+
+	w.flushEvent.Broadcast()
 	return nil
 }
 

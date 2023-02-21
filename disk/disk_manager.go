@@ -16,18 +16,11 @@ type IDiskManager interface {
 	WritePages(data [][]byte, pageId []uint64) error
 	ReadPage(pageId uint64) ([]byte, error)
 	NewPage() (pageId uint64)
-	FreePage(pageId uint64)
 	GetCatalogPID() uint64
 	SetCatalogPID(pid uint64)
 	Close() error
 
 	GetLogWriter() io.Writer
-}
-
-type LogFile interface {
-	io.Seeker
-	io.ReadCloser
-	io.Writer
 }
 
 const PageSize int = 4096
@@ -41,7 +34,7 @@ const FlushInstantly bool = false
 type Manager struct {
 	file        *os.File
 	filename    string
-	logFile     LogFile
+	logFile     *os.File
 	logFileName string
 	lastPageId  uint64
 	mu          sync.Mutex
@@ -74,8 +67,8 @@ func NewDiskManager(file string) (*Manager, bool, error) {
 
 	if filesize == 0 {
 		// if it is a new db file
-		d.lastPageId = 1 // first page is reserved, so start from 1
-		d.initHeader()
+		d.lastPageId = 2 // first two page is reserved, so start from 2
+		//d.initHeader()
 		return &d, true, nil
 	} else {
 		d.lastPageId = uint64((int(filesize) / PageSize) - 1)
@@ -166,46 +159,14 @@ func (d *Manager) NewPage() (pageId uint64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// if pop free list is successful return popped page
-	if p := d.popFreeList(); p != 0 {
-		return p
-	}
+	//// if pop free list is successful return popped page
+	//if p := d.popFreeList(); p != 0 {
+	//	return p
+	//}
 
 	// else allocate new page
 	d.lastPageId++
 	return d.lastPageId
-}
-
-// FreePage appends page with given id to freelist and sets it as tail.
-func (d *Manager) FreePage(pageId uint64) {
-	d.mu.Lock()
-	d.mu.Unlock()
-	h := d.getHeader()
-
-	// if free list is empty
-	if h.freeListHead == 0 {
-		h.freeListHead = pageId
-		h.freeListTail = pageId
-		d.setHeader(h)
-		return
-	}
-
-	// freed page may not be synced to file just yet. in that case ReadPage returns io.EOF and for the consistence of
-	// freelist it needs to be written to disk. Hence, empty bytes are initialized and page is flushed.
-	data, err := d.ReadPage(h.freeListTail)
-	if err == io.EOF {
-		data = make([]byte, PageSize, PageSize)
-	} else if err != nil {
-		panic(err)
-	}
-
-	binary.BigEndian.PutUint64(data, pageId)
-	if err := d.WritePage(data, h.freeListTail); err != nil {
-		panic(err)
-	}
-
-	h.freeListTail = pageId
-	d.setHeader(h)
 }
 
 func (d *Manager) Close() error {
@@ -231,97 +192,7 @@ func (d *Manager) SetCatalogPID(pid uint64) {
 }
 
 func (d *Manager) GetLogWriter() io.Writer {
-	return d.logFile
-}
-
-func (d *Manager) IsInFreeList(pageID uint64) (bool, error) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	// if list is empty return false
-	h := d.getHeader()
-	if h.freeListHead == 0 {
-		return false, nil
-	}
-
-	nextPageID := h.freeListHead
-	for {
-		if nextPageID == pageID {
-			return true, nil
-		}
-
-		if nextPageID == h.freeListTail {
-			return false, nil
-		}
-
-		// parse next page id
-		data, err := d.ReadPage(h.freeListHead)
-		if err != nil {
-			panic(err)
-		}
-		nextPageID = binary.BigEndian.Uint64(data)
-	}
-}
-
-func (d *Manager) RemoveFromFreelist(pageID uint64) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	// if list is empty return false
-	h := d.getHeader()
-	if h.freeListHead == 0 {
-		return errors.New("cannot delete from empty free list")
-	}
-
-	// if removed page is head, directly use pop operation
-	if pageID == h.freeListHead {
-		d.popFreeList()
-		return nil
-	}
-
-	nextPageID, prevPageID := h.freeListHead, h.freeListHead
-	for {
-		if nextPageID == pageID {
-			// do deletion
-			prevData, err := d.ReadPage(prevPageID)
-			if err == io.EOF {
-				prevData = make([]byte, PageSize, PageSize)
-			} else if err != nil {
-				panic(err)
-			}
-
-			nextData, err := d.ReadPage(nextPageID)
-			if err == io.EOF {
-				prevData = make([]byte, PageSize, PageSize)
-			} else if err != nil {
-				panic(err)
-			}
-
-			binary.BigEndian.PutUint64(prevData, binary.BigEndian.Uint64(nextData))
-			if err := d.WritePage(prevData, prevPageID); err != nil {
-				panic(err)
-			}
-
-			if nextPageID == h.freeListTail {
-				h.freeListTail = prevPageID
-				d.setHeader(h)
-			}
-			return nil
-		}
-
-		if nextPageID == h.freeListTail {
-			break
-		}
-
-		// parse next page id
-		data, err := d.ReadPage(h.freeListHead)
-		if err != nil {
-			panic(err)
-		}
-		nextPageID = binary.BigEndian.Uint64(data)
-	}
-
-	return errors.New("page cannot be found in free list")
+	return &SyncWriter{d.logFile}
 }
 
 func (d *Manager) writePages(pages [][]byte, startingPageId uint64) error {
@@ -348,34 +219,6 @@ func (d *Manager) writePages(pages [][]byte, startingPageId uint64) error {
 	}
 
 	return nil
-}
-
-func (d *Manager) popFreeList() (pageId uint64) {
-	// if list is empty return 0
-	h := d.getHeader()
-	if h.freeListHead == 0 {
-		return 0
-	}
-
-	// if there is only on entry in free list return that and set head and tail to 0
-	if h.freeListHead == h.freeListTail {
-		pageId = h.freeListHead
-		h.freeListHead, h.freeListTail = 0, 0
-		d.setHeader(h)
-		return
-	}
-
-	// else pop head, read new head and update header
-	pageId = h.freeListHead
-
-	data, err := d.ReadPage(h.freeListHead)
-	if err != nil {
-		panic(err)
-	}
-
-	h.freeListHead = binary.BigEndian.Uint64(data)
-	d.setHeader(h)
-	return
 }
 
 func (d *Manager) getHeader() header {
@@ -407,28 +250,34 @@ func (d *Manager) setHeader(h header) {
 
 func (d *Manager) initHeader() {
 	d.setHeader(header{
-		freeListHead: 0,
-		freeListTail: 0,
-		catalogPID:   0,
+		catalogPID: 0,
 	})
 }
 
 type header struct {
-	freeListHead uint64
-	freeListTail uint64
-	catalogPID   uint64
+	catalogPID uint64
 }
 
 func readHeader(data []byte) header {
 	return header{
-		freeListHead: binary.BigEndian.Uint64(data),
-		freeListTail: binary.BigEndian.Uint64(data[8:]),
-		catalogPID:   binary.BigEndian.Uint64(data[16:]),
+		catalogPID: binary.BigEndian.Uint64(data),
 	}
 }
 
 func writeHeader(h header, dest []byte) {
-	binary.BigEndian.PutUint64(dest, h.freeListHead)
-	binary.BigEndian.PutUint64(dest[8:], h.freeListTail)
-	binary.BigEndian.PutUint64(dest[16:], h.catalogPID)
+	binary.BigEndian.PutUint64(dest, h.catalogPID)
+}
+
+// SyncWriter calls fsync after each write, so it guarantees every write is persisted to disk. It is useful for
+// log writer.
+type SyncWriter struct {
+	*os.File
+}
+
+func (r *SyncWriter) Write(d []byte) (int, error) {
+	n, err := r.File.Write(d)
+	if err := r.File.Sync(); err != nil {
+		return n, err
+	}
+	return n, err
 }

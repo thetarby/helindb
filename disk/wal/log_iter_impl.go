@@ -24,13 +24,7 @@ func NewLogIter(reader *os.File, serializer LogRecordSerializer, iteratorType ui
 	if iteratorType == 0 {
 		// starts from end
 		it = &logIter{reader: reader, serializer: serializer}
-		i := 0
 		for {
-			i++
-			//println(i)
-			//if i == 427971 {
-			//	println("sa")
-			//}
 			_, err := it.Next()
 			if err != nil {
 				if err == ErrIteratorAtLast {
@@ -126,8 +120,21 @@ type txnLogIterator struct {
 var _ LogIterator = &txnLogIterator{}
 
 func (t *txnLogIterator) Next() (*LogRecord, error) {
-	//TODO implement me
-	panic("implement me")
+	if _, err := t.logIter.Next(); err != nil {
+		return nil, err
+	}
+
+	if err := NextToTxn(t.logIter, t.txnID); err != nil {
+		return nil, err
+	}
+
+	curr, err := t.logIter.Curr()
+	if err != nil {
+		return nil, err
+	}
+
+	t.curr = curr
+	return curr, nil
 }
 
 func (t *txnLogIterator) Prev() (*LogRecord, error) {
@@ -144,14 +151,6 @@ func (t *txnLogIterator) Prev() (*LogRecord, error) {
 		t.curr = curr
 		return curr, nil
 	}
-
-	//if t.curr.PrevLsn == pages.ZeroLSN {
-	//	return nil, ErrIteratorAtBeginning
-	//}
-	//
-	//if err := PrevToLsn(t.logIter, t.curr.PrevLsn); err != nil {
-	//	return nil, err
-	//}
 
 	_, err := t.logIter.Prev()
 	if err != nil {
@@ -179,6 +178,7 @@ func (t *txnLogIterator) Curr() (*LogRecord, error) {
 	return t.curr, nil
 }
 
+// NewTxnLogIterator creates a txn log iterator starting from the latest log record with given txn id.
 func NewTxnLogIterator(id transaction.TxnID, iter LogIterator) LogIterator {
 	return &txnLogIterator{
 		logIter: iter,

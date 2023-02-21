@@ -1,6 +1,8 @@
 package common
 
 import (
+	"encoding/binary"
+	"fmt"
 	"io"
 	"math/rand"
 	"os"
@@ -109,4 +111,17 @@ func (s *StatReader) Read(p []byte) (n int, err error) {
 
 func NewStatReader(r io.Reader) *StatReader {
 	return &StatReader{r: r}
+}
+
+func Uint64AsBytes(x uint64) []byte {
+	// OPTIMIZATION NOTE: heap alloc
+	res := make([]byte, 8)
+	binary.BigEndian.PutUint64(res, x)
+	return res
+}
+
+func Assert(condition bool, msg string, v ...any) {
+	if !condition {
+		panic(fmt.Sprintf("assertion failed: "+msg, v...))
+	}
 }

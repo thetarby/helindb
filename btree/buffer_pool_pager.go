@@ -30,12 +30,14 @@ type BufferPoolPager struct {
 
 func (b *BufferPoolPager) Free(txn transaction.Transaction, p Pointer) error {
 	// TODO: handle rollback
-	return b.pool.FreePage(txn, uint64(p))
+	txn.FreePage(uint64(p))
+	return nil
 }
 
 func (b *BufferPoolPager) FreeNode(txn transaction.Transaction, n Node) error {
 	// TODO: handle rollback
-	return b.pool.FreePage(txn, uint64(n.GetPageId()))
+	txn.FreePage(uint64(n.GetPageId()))
+	return nil
 }
 
 func (b *BufferPoolPager) CreatePage(txn transaction.Transaction) NodePage {
@@ -91,6 +93,8 @@ func (b *BufferPoolPager) NewLeafNode(txn transaction.Transaction) NodeReleaser 
 		KeyLen: 0,
 	}
 
+	// TODO: if page is popped from freelist here it is modified without logging
+	// but a txn release lock on freed page when it commits so no one can modify it.
 	p, err := b.pool.NewPage(txn)
 	common.PanicIfErr(err)
 	p.WLatch()

@@ -43,7 +43,7 @@ func (it *TreeIterator) Close() error {
 	return nil
 }
 
-func NewTreeIterator(txn transaction.Transaction, tree *BTree, pager Pager) *TreeIterator {
+func NewTreeIterator(txn transaction.Transaction, tree *BTree) *TreeIterator {
 	curr := tree.GetRoot(Read)
 	for !curr.IsLeaf() {
 		old := curr
@@ -58,14 +58,13 @@ func NewTreeIterator(txn transaction.Transaction, tree *BTree, pager Pager) *Tre
 		curr:     curr.GetPageId(),
 		currNode: curr,
 		currIdx:  0,
-		pager:    pager,
+		pager:    tree.pager,
 	}
 }
 
 func NewTreeIteratorWithKey(txn transaction.Transaction, key common.Key, tree *BTree, pager Pager) *TreeIterator {
 	_, stack := tree.FindAndGetStack(key, Read)
 	leaf, idx := stack[len(stack)-1].Node, stack[len(stack)-1].Index
-	tree.unpinAll(stack[:len(stack)-1])
 
 	return &TreeIterator{
 		txn:      txn,

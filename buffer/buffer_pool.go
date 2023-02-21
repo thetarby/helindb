@@ -7,10 +7,12 @@ import (
 	"helin/disk"
 	"helin/disk/pages"
 	"helin/disk/wal"
+	"helin/freelist"
 	"helin/transaction"
 	"io"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,9 +21,7 @@ var ErrRLockFailed = errors.New("RLock cannot be acquired on page")
 
 type IBufferPool interface {
 	GetPage(pageId uint64) (*pages.RawPage, error)
-	pin(pageId uint64)
 	Unpin(pageId uint64, isDirty bool) bool
-	Flush(pageId uint64) error
 	FlushAll() error
 
 	// NewPage creates a new page
@@ -29,10 +29,12 @@ type IBufferPool interface {
 
 	// FreePage deletes a page from the buffer pool. Returns error if the page exists but could not be deleted and
 	// panics if page does not exist
-	FreePage(txn transaction.Transaction, pageId uint64) error
+	FreePage(txn transaction.Transaction, pageId uint64, log bool) error
 
 	// EmptyFrameSize returns the number empty frames which does not hold data of any physical page
 	EmptyFrameSize() int
+
+	GetFreeList() freelist.FreeList
 }
 
 type frame struct {
@@ -51,12 +53,18 @@ type BufferPool struct {
 	DiskManager disk.IDiskManager
 	lock        sync.Mutex
 	logManager  *wal.LogManager
+	fl          freelist.FreeList
 }
 
-func (b *BufferPool) FreePage(txn transaction.Transaction, pageId uint64) error {
+func (b *BufferPool) GetFreeList() freelist.FreeList {
+	return b.fl
+}
+
+func (b *BufferPool) FreePage(txn transaction.Transaction, pageId uint64, log bool) error {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
+	// TODO: do not return error from this method panic instead?
 	if frame, ok := b.pageMap[pageId]; ok {
 		frame := b.frames[frame]
 		// this check might not be necessary, maybe assert and panic since this will be an internal call
@@ -67,9 +75,11 @@ func (b *BufferPool) FreePage(txn transaction.Transaction, pageId uint64) error 
 		frame.freed = true
 	}
 
-	// TODO: should page lsn be set?
-	b.logManager.AppendLog(wal.NewFreePageLogRecord(txn.GetID(), pageId))
-	b.DiskManager.FreePage(pageId)
+	if log {
+		b.logManager.AppendLog(wal.NewFreePageLogRecord(txn.GetID(), pageId))
+	}
+
+	b.fl.Add(txn, pageId)
 	return nil
 }
 
@@ -77,6 +87,10 @@ func (b *BufferPool) GetPage(pageId uint64) (*pages.RawPage, error) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
+	return b.getPage(pageId)
+}
+
+func (b *BufferPool) getPage(pageId uint64) (*pages.RawPage, error) {
 	if frameId, ok := b.pageMap[pageId]; ok {
 		b.pin(pageId)
 		return b.frames[frameId].page, nil
@@ -140,6 +154,10 @@ func (b *BufferPool) Unpin(pageId uint64, isDirty bool) bool {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
+	return b.unpin(pageId, isDirty)
+}
+
+func (b *BufferPool) unpin(pageId uint64, isDirty bool) bool {
 	frameIdx, ok := b.pageMap[pageId]
 	if !ok {
 		panic(fmt.Sprintf("unpinned a page which does not exist: %v", pageId))
@@ -167,34 +185,11 @@ func (b *BufferPool) Unpin(pageId uint64, isDirty bool) bool {
 	return false
 }
 
-// Flush takes a read lock on page and syncs its content to disk.
-func (b *BufferPool) Flush(pageId uint64) error {
-	// TODO
-	// NOTE: this implementation can lead to deadlocks since it acquires buffer lock and page lock and releases
-	// both at the end. Another transaction may be holding page lock and be blocked on buffer's lock.
-	b.lock.Lock()
-	defer b.lock.Unlock()
-
-	frameIdx, ok := b.pageMap[pageId]
-	if !ok {
-		return ErrPageNotFoundInPageMap
-	}
-
-	frame := b.frames[frameIdx]
-
-	frame.page.RLatch()
-	if err := b.DiskManager.WritePage(frame.page.GetWholeData(), frame.page.GetPageId()); err != nil {
-		return err
-	}
-	frame.page.RUnLatch()
-	return nil
-}
-
 // TryFlush tries to take a read lock on page and syncs its content to disk. If it fails to lock the page it
-// returns ErrRLockFailed.
+// returns ErrRLockFailed. If page is not dirty directly returns.
 func (b *BufferPool) TryFlush(pageId uint64) error {
 	b.lock.Lock()
-	defer b.lock.Unlock()
+	defer b.lock.Unlock() // TODO: no need to hold lock when doing io.
 
 	frameIdx, ok := b.pageMap[pageId]
 	if !ok {
@@ -205,6 +200,12 @@ func (b *BufferPool) TryFlush(pageId uint64) error {
 	if !frame.page.TryRLatch() {
 		return ErrRLockFailed
 	}
+	defer frame.page.RUnLatch()
+
+	if !frame.page.IsDirty() {
+		return nil
+	}
+
 	// if log records for the victim page is not flushed, force flush log manager.
 	if frame.page.GetPageLSN() > b.logManager.GetFlushedLSN() {
 		if err := b.logManager.Flush(); err != nil {
@@ -214,7 +215,7 @@ func (b *BufferPool) TryFlush(pageId uint64) error {
 	if err := b.DiskManager.WritePage(frame.page.GetWholeData(), frame.page.GetPageId()); err != nil {
 		return err
 	}
-	frame.page.RUnLatch()
+	frame.page.SetClean()
 	return nil
 }
 
@@ -225,32 +226,24 @@ func (b *BufferPool) FlushAll() error {
 		return err
 	}
 
-	// lock buffer and determine all dirty pages at the time of call
 	b.lock.Lock()
-	dirtyPages := make([]uint64, 0)
-	for i, frame := range b.frames {
-		flag := 0
-		for _, emptyIdx := range b.emptyFrames {
-			if i == emptyIdx {
-				flag = 1
-				break
-			}
-		}
-		if flag == 0 && frame.page.IsDirty() {
-			dirtyPages = append(dirtyPages, frame.page.GetPageId())
+	pooledPages := make([]uint64, 0)
+	for _, frame := range b.frames {
+		if frame.page != nil {
+			pooledPages = append(pooledPages, frame.page.GetPageId())
 		}
 	}
 	b.lock.Unlock()
 
 	// flush all dirty pages. if TryFlush fails wait some time and try again.
-	for _, pid := range dirtyPages {
+	for _, pid := range pooledPages {
 		for {
 			if err := b.TryFlush(pid); err != nil {
 				if err == ErrPageNotFoundInPageMap {
 					// if it is not in page map, it is already evicted and synced hence we can continue.
 					break
 				} else if err == ErrRLockFailed {
-					time.Sleep(time.Millisecond * 100)
+					time.Sleep(time.Microsecond)
 					continue
 				} else {
 					return err
@@ -258,34 +251,31 @@ func (b *BufferPool) FlushAll() error {
 			}
 			break
 		}
+		time.Sleep(time.Millisecond * 4)
 	}
 	return nil
 }
 
 func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, err error) {
-	// TODO: analyse for resource leaks during rollbacks
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
-	newPageId := b.DiskManager.NewPage()
-
-	// new page might be popped from free list. in that case it might already be in a frame marked as freed.
-	if f, ok := b.pageMap[newPageId]; ok {
-		b.pin(newPageId)
-		// TODO: should page lsn be set?
-		lsn := b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), newPageId))
-		if b.frames[f].freed != false {
-			panic("new page was in pool but freed flag is not set")
+	if newPageId := b.fl.Pop(txn); newPageId != 0 {
+		p, err := b.getPage(newPageId) // TODO: it is a new page no need to read its content from disk
+		if err != nil {
+			return nil, err
 		}
 
-		b.frames[f].freed = false
-		b.frames[f].page.SetPageLSN(lsn)
-		return b.frames[f].page, nil
+		lsn := b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), p.GetPageId()))
+		p.SetPageLSN(lsn)
+		p.SetDirty()
+		return p, nil
 	}
+
+	newPageId := b.DiskManager.NewPage()
 
 	// if there is any empty frame, put new page to there.
 	if len(b.emptyFrames) > 0 {
-		log.Println("page will be read in an empty frame")
 		emptyFrameIdx := b.emptyFrames[0]
 		b.emptyFrames = b.emptyFrames[1:]
 
@@ -296,6 +286,7 @@ func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, 
 		b.pin(newPageId)
 		lsn := b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), p.GetPageId()))
 		p.SetPageLSN(lsn)
+		p.SetDirty()
 		return p, nil
 	}
 
@@ -312,12 +303,16 @@ func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, 
 
 	lsn := b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), p.GetPageId()))
 	p.SetPageLSN(lsn)
+	p.SetDirty()
 	return p, nil
 }
 
 func (b *BufferPool) EmptyFrameSize() int {
 	return len(b.emptyFrames)
 }
+
+var s = time.Now()
+var count uint64 = 0
 
 // evictVictim chooses a victim page, writes its data to disk if it is dirty and returns emptied frame's index.
 func (b *BufferPool) evictVictim() (int, error) {
@@ -326,7 +321,6 @@ func (b *BufferPool) evictVictim() (int, error) {
 		return 0, err
 	}
 
-	log.Printf("victim is chosen %v\n", victimFrameIdx)
 	victim := b.frames[victimFrameIdx]
 	if victim.page.GetPinCount() != 0 {
 		panic(fmt.Sprintf("a page is chosen as victim while it's pin count is not zero. pin count: %v, page_id: %v", victim.page.GetPinCount(), victim.page.GetPageId()))
@@ -334,6 +328,12 @@ func (b *BufferPool) evictVictim() (int, error) {
 
 	victimPageId := victim.page.GetPageId()
 	if victim.page.IsDirty() {
+		if n := atomic.AddUint64(&count, 1); n%100 == 0 {
+			log.Printf("eps: %v", float64(count)/time.Since(s).Seconds())
+			atomic.AddUint64(&count, -n)
+			s = time.Now()
+		}
+
 		// if log records for the victim page is not flushed, force flush log manager.
 		if victim.page.GetPageLSN() > b.logManager.GetFlushedLSN() {
 			if err := b.logManager.Flush(); err != nil {
@@ -360,7 +360,7 @@ func NewBufferPool(dbFile string, poolSize int) *BufferPool {
 	}
 	d, _, err := disk.NewDiskManager(dbFile)
 	common.PanicIfErr(err)
-	return &BufferPool{
+	bp := &BufferPool{
 		poolSize:    poolSize,
 		frames:      make([]frame, poolSize),
 		pageMap:     map[uint64]int{},
@@ -370,9 +370,17 @@ func NewBufferPool(dbFile string, poolSize int) *BufferPool {
 		lock:        sync.Mutex{},
 		logManager:  wal.NewLogManager(io.Discard),
 	}
+
+	flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1))
+	if err := bp.DiskManager.WritePage(flHeaderP.GetWholeData(), flHeaderP.GetPageId()); err != nil {
+		log.Fatal("database cannot be created", err)
+	}
+
+	bp.fl = freelist.NewFreeList(transaction.TxnTODO(), &pager{bp}, bp.logManager, true)
+	return bp
 }
 
-func NewBufferPoolWithDM(poolSize int, dm disk.IDiskManager, logManager *wal.LogManager) *BufferPool {
+func NewBufferPoolWithDM(init bool, poolSize int, dm disk.IDiskManager, logManager *wal.LogManager) *BufferPool {
 	emptyFrames := make([]int, poolSize)
 	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i
@@ -382,7 +390,7 @@ func NewBufferPoolWithDM(poolSize int, dm disk.IDiskManager, logManager *wal.Log
 		logManager = wal.NewLogManager(io.Discard)
 	}
 
-	return &BufferPool{
+	bp := &BufferPool{
 		poolSize:    poolSize,
 		frames:      make([]frame, poolSize),
 		pageMap:     map[uint64]int{},
@@ -392,4 +400,13 @@ func NewBufferPoolWithDM(poolSize int, dm disk.IDiskManager, logManager *wal.Log
 		lock:        sync.Mutex{},
 		logManager:  logManager,
 	}
+	if init {
+		flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1))
+		if err := bp.DiskManager.WritePage(flHeaderP.GetWholeData(), flHeaderP.GetPageId()); err != nil {
+			log.Fatal("database cannot be created", err)
+		}
+	}
+
+	bp.fl = freelist.NewFreeList(transaction.TxnTODO(), &pager{bp}, bp.logManager, init)
+	return bp
 }

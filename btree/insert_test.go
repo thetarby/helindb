@@ -64,7 +64,7 @@ func TestAll_Inserts_Should_Be_Found_By_Find_Method(t *testing.T) {
 	defer common.Remove(dbName)
 
 	lm := wal.NewLogManager(dm.GetLogWriter())
-	pool := buffer.NewBufferPoolWithDM(1024, dm, lm)
+	pool := buffer.NewBufferPoolWithDM(true, 1024, dm, lm)
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 3, NewBPP(pool, &PersistentKeySerializer{}, &StringValueSerializer{}, lm))
 	log.SetOutput(io.Discard)
 
@@ -97,7 +97,7 @@ func TestResources_Are_Released(t *testing.T) {
 	defer common.Remove(dbName)
 
 	lm := wal.NewLogManager(dm.GetLogWriter())
-	pool := buffer.NewBufferPoolWithDM(1024, dm, lm)
+	pool := buffer.NewBufferPoolWithDM(true, 1024, dm, lm)
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, lm))
 	log.SetOutput(io.Discard)
 
@@ -108,6 +108,17 @@ func TestResources_Are_Released(t *testing.T) {
 		assert.Zero(t, pool.Replacer.NumPinnedPages())
 	}
 
+	// test count
+	require.Equal(t, n, tree.Count())
+	assert.Zero(t, pool.Replacer.NumPinnedPages())
+
+	// test iterator
+	it := NewTreeIterator(transaction.TxnNoop(), tree)
+	for k, _ := it.Next(); k != nil; k, _ = it.Next() {
+	}
+	assert.Zero(t, pool.Replacer.NumPinnedPages())
+
+	// test find
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(items), func(i, j int) { items[i], items[j] = items[j], items[i] })
 	for _, i := range items {
@@ -116,6 +127,7 @@ func TestResources_Are_Released(t *testing.T) {
 		require.Zero(t, pool.Replacer.NumPinnedPages())
 	}
 
+	// test insert or replace
 	for _, i := range items[:10000] {
 		val := tree.InsertOrReplace(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%06d", i)), fmt.Sprintf("val_replaced_%06d", i))
 		require.False(t, val)
@@ -133,6 +145,7 @@ func TestResources_Are_Released(t *testing.T) {
 		require.Zero(t, pool.Replacer.NumPinnedPages())
 	}
 
+	// test delete
 	for _, i := range items {
 		val := tree.Delete(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%06d", i)))
 		require.True(t, val)

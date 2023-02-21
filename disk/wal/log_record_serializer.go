@@ -45,31 +45,10 @@ func (d *DefaultLogRecordSerializer) Serialize(r *LogRecord, writer LogWriter) {
 			panic("short write")
 		}
 
-		s := [8]byte{}
-		binary.BigEndian.PutUint64(s[:], uint64(len(r.Actives)))
-		n, err = writer.Write(s[:], r.Lsn)
-		if err != nil {
-			panic(err)
-		}
-		if n != len(s) {
-			panic("short write")
-		}
-
-		for _, txnID := range r.Actives {
-			s := [8]byte{}
-			binary.BigEndian.PutUint64(s[:], uint64(txnID))
-			n, err := writer.Write(s[:], r.Lsn)
-			if err != nil {
-				panic(err)
-			}
-			if n != len(s) {
-				panic("short write")
-			}
-		}
-
+		serUint64(writer, r.Actives, r.Lsn)
 		return
 	}
-	if r.T == TypeCommit {
+	if common.OneOf(r.T, TypeCommit, TypeTxnBegin, TypeAbort) {
 		d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.TxnID))
 		d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.Lsn))
 
@@ -79,6 +58,10 @@ func (d *DefaultLogRecordSerializer) Serialize(r *LogRecord, writer LogWriter) {
 		}
 		if n != len(d.area) {
 			panic("short write")
+		}
+
+		if r.T == TypeCommit {
+			serUint64(writer, r.FreedPages, r.Lsn)
 		}
 
 		return
@@ -119,18 +102,6 @@ func (d *DefaultLogRecordSerializer) Serialize(r *LogRecord, writer LogWriter) {
 	}
 }
 
-func (d *DefaultLogRecordSerializer) Size(r *LogRecord) int {
-	size := LogRecordInlineSize
-	if len(r.OldPayload) > 0 {
-		// +2 is for writing length of the payload
-		size += len(r.OldPayload) + 2
-	}
-	if len(r.Payload) > 0 {
-		size += len(r.Payload) + 2
-	}
-	return size
-}
-
 func (d *DefaultLogRecordSerializer) Deserialize(r io.Reader) (*LogRecord, int, error) {
 	src := common.NewStatReader(r)
 	d.area = d.area[:LogRecordInlineSize+2+2]
@@ -142,44 +113,39 @@ func (d *DefaultLogRecordSerializer) Deserialize(r io.Reader) (*LogRecord, int, 
 
 	if LogRecordType(d.area[0]) == TypeCheckpointEnd || LogRecordType(d.area[0]) == TypeCheckpointBegin {
 		var lsn pages.LSN
-		if err := binary.Read(src, binary.BigEndian, &lsn); err != nil {
+		if err := read(src, &lsn); err != nil {
 			return nil, src.TotalRead, err
 		}
 
-		var l uint64
-		t := make([]byte, 8)
-		_, err := src.Read(t)
+		txnList, err := deSerUint64[transaction.TxnID](src)
 		if err != nil {
-			if err == io.EOF {
-				return nil, src.TotalRead, ErrShortRead
-			}
 			return nil, src.TotalRead, err
-		}
-		l = binary.BigEndian.Uint64(t)
-
-		txnList := make([]transaction.TxnID, 0)
-		for i := uint64(0); i < l; i++ {
-			var t uint64
-			if err := binary.Read(src, binary.BigEndian, &t); err != nil {
-				return nil, src.TotalRead, err
-			}
-
-			txnList = append(txnList, transaction.TxnID(t))
 		}
 
 		return &LogRecord{T: LogRecordType(d.area[0]), Lsn: lsn, Actives: txnList}, src.TotalRead, nil
 	}
-	if LogRecordType(d.area[0]) == TypeCommit {
+
+	if common.OneOf(LogRecordType(d.area[0]), TypeCommit, TypeTxnBegin, TypeAbort) {
 		var t uint64
-		if err := binary.Read(src, binary.BigEndian, &t); err != nil {
+		if err := read(src, &t); err != nil {
 			return nil, src.TotalRead, err
 		}
 
 		var lsn pages.LSN
-		if err := binary.Read(src, binary.BigEndian, &lsn); err != nil {
+		if err := read(src, &lsn); err != nil {
 			return nil, src.TotalRead, err
 		}
-		return &LogRecord{T: TypeCommit, Lsn: lsn, TxnID: transaction.TxnID(t)}, src.TotalRead, nil
+
+		lr := &LogRecord{T: TypeCommit, Lsn: lsn, TxnID: transaction.TxnID(t)}
+		if LogRecordType(d.area[0]) == TypeCommit {
+			freed, err := deSerUint64[uint64](src)
+			if err != nil {
+				return nil, src.TotalRead, err
+			}
+			lr.FreedPages = freed
+		}
+
+		return lr, src.TotalRead, nil
 	}
 
 	n, err = src.Read(d.area[1:])
@@ -233,6 +199,77 @@ func (d *DefaultLogRecordSerializer) Deserialize(r io.Reader) (*LogRecord, int, 
 	res.OldPayload = oldpayload
 
 	return &res, src.TotalRead, nil
+}
+
+func (d *DefaultLogRecordSerializer) Size(r *LogRecord) int {
+	size := LogRecordInlineSize
+	if len(r.OldPayload) > 0 {
+		// +2 is for writing length of the payload
+		size += len(r.OldPayload) + 2
+	}
+	if len(r.Payload) > 0 {
+		size += len(r.Payload) + 2
+	}
+	return size
+}
+
+func read(r io.Reader, val any) error {
+	if err := binary.Read(r, binary.BigEndian, val); err != nil {
+		if err == io.ErrUnexpectedEOF {
+			return ErrShortRead
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+func serUint64[T uint64s](w LogWriter, arr []T, lsn pages.LSN) {
+	s := [8]byte{}
+	binary.BigEndian.PutUint64(s[:], uint64(len(arr)))
+	n, err := w.Write(s[:], lsn)
+	if err != nil {
+		panic(err)
+	}
+	if n != len(s) {
+		panic("short write")
+	}
+
+	for _, pageID := range arr {
+		s := [8]byte{}
+		binary.BigEndian.PutUint64(s[:], uint64(pageID))
+		n, err := w.Write(s[:], lsn)
+		if err != nil {
+			panic(err)
+		}
+		if n != len(s) {
+			panic("short write")
+		}
+	}
+}
+
+func deSerUint64[T uint64s](src io.Reader) ([]T, error) {
+	var arrLen uint64
+	if err := read(src, &arrLen); err != nil {
+		return nil, err
+	}
+
+	arr := make([]T, 0)
+	for i := uint64(0); i < arrLen; i++ {
+		var t uint64
+		if err := read(src, &t); err != nil {
+			return nil, err
+		}
+
+		arr = append(arr, T(t))
+	}
+
+	return arr, nil
+}
+
+type uint64s interface {
+	~uint64
 }
 
 //var _ LogRecordSerializer = &JsonLogRecordSerializer{}

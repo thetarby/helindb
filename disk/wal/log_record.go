@@ -18,6 +18,7 @@ const (
 	TypeCheckpointEnd
 	TypeTxnBegin
 	TypeCommit
+	TypeTxnEnd
 	TypeAbort
 )
 
@@ -26,10 +27,11 @@ const (
 )
 
 type LogRecord struct {
-	T       LogRecordType
-	TxnID   transaction.TxnID
-	Lsn     pages.LSN
-	PrevLsn pages.LSN
+	T          LogRecordType
+	TxnID      transaction.TxnID
+	FreedPages []uint64
+	Lsn        pages.LSN
+	PrevLsn    pages.LSN
 
 	// for delete, insert and set
 	Idx     uint16
@@ -87,8 +89,12 @@ func NewClrLogRecord(txnID transaction.TxnID, lsn pages.LSN) *LogRecord {
 	return &LogRecord{T: TypeNewPage, TxnID: txnID, IsClr: true} // type
 }
 
-func NewCommitLogRecord(txnID transaction.TxnID) *LogRecord {
+func NewCommitLogRecord(txnID transaction.TxnID, freed []uint64) *LogRecord {
 	return &LogRecord{T: TypeCommit, TxnID: txnID}
+}
+
+func NewTxnEndLogRecord(txnID transaction.TxnID) *LogRecord {
+	return &LogRecord{T: TypeTxnEnd, TxnID: txnID}
 }
 
 func NewCheckpointBeginLogRecord(activeTxnList ...transaction.TxnID) *LogRecord {

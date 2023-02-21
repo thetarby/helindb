@@ -8,8 +8,16 @@ import (
 )
 
 const (
-	bufSize = 1024 * 16
+	bufSize = 1024 * 64
 )
+
+/*
+	TODO: make log manager interface
+*/
+
+type LogManagerInterface interface {
+	AppendLog(lr *LogRecord) pages.LSN
+}
 
 type LogManager struct {
 	// serializer is used to convert between bytes and LogRecord.
@@ -44,6 +52,20 @@ func (l *LogManager) AppendLog(lr *LogRecord) pages.LSN {
 	lr.Lsn = pages.LSN(atomic.AddUint64(&l.currLsn, 1))
 
 	l.serializer.Serialize(lr, l.gw)
+	return lr.Lsn
+}
+
+// WaitAppendLog is same as AppendLog, but it waits until appended log is flushed. It can be useful to make sure that
+// commit log record is persisted before returning.
+func (l *LogManager) WaitAppendLog(lr *LogRecord) pages.LSN {
+	l.bufM.Lock()
+
+	lr.Lsn = pages.LSN(atomic.AddUint64(&l.currLsn, 1))
+
+	l.serializer.Serialize(lr, l.gw)
+	l.bufM.Unlock()
+
+	l.gw.flushEvent.Wait()
 	return lr.Lsn
 }
 
