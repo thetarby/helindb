@@ -21,6 +21,7 @@ type IPage interface {
 	IsDirty() bool
 	SetDirty()
 	SetClean()
+	Clear()
 	WLatch()
 	WUnlatch()
 	RLatch()
@@ -38,7 +39,7 @@ type IPage interface {
 var _ IPage = &RawPage{}
 
 type RawPage struct {
-	pageId   uint64
+	PageId   uint64
 	isDirty  bool
 	rwLatch  *sync.RWMutex
 	PinCount int
@@ -48,7 +49,7 @@ type RawPage struct {
 
 func NewRawPage(pageId uint64) *RawPage {
 	return &RawPage{
-		pageId:   pageId,
+		PageId:   pageId,
 		isDirty:  false,
 		rwLatch:  &sync.RWMutex{},
 		PinCount: 0,
@@ -82,7 +83,7 @@ func (p *RawPage) GetWholeData() []byte {
 }
 
 func (p *RawPage) GetPageId() uint64 {
-	return p.pageId
+	return p.PageId
 }
 
 func (p *RawPage) GetPinCount() int {
@@ -99,6 +100,12 @@ func (p *RawPage) SetDirty() {
 
 func (p *RawPage) SetClean() {
 	p.isDirty = false
+}
+
+func (p *RawPage) Clear() {
+	for i := 0; i < len(p.Data); i++ {
+		p.Data[i] = 0
+	}
 }
 
 func (p *RawPage) WLatch() {

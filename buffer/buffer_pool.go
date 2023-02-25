@@ -38,22 +38,22 @@ type IBufferPool interface {
 }
 
 type frame struct {
-	page  *pages.RawPage
-	freed bool
+	page *pages.RawPage
 }
 
 var _ IBufferPool = &BufferPool{}
 
 type BufferPool struct {
-	poolSize    int
-	frames      []frame
-	pageMap     map[uint64]int // physical page_id => frame index which keeps that page
-	emptyFrames []int          // list of indexes that points to empty frames in the pool
-	Replacer    IReplacer
-	DiskManager disk.IDiskManager
-	lock        sync.Mutex
-	logManager  *wal.LogManager
-	fl          freelist.FreeList
+	poolSize        int
+	frames          []*frame
+	pageMap         map[uint64]int // physical page_id => frame index which keeps that page
+	emptyFrames     []int          // list of indexes that points to empty frames in the pool
+	Replacer        IReplacer
+	DiskManager     disk.IDiskManager
+	lock            sync.Mutex
+	emptyFramesLock sync.Mutex
+	logManager      *wal.LogManager
+	fl              freelist.FreeList
 }
 
 func (b *BufferPool) GetFreeList() freelist.FreeList {
@@ -71,8 +71,6 @@ func (b *BufferPool) FreePage(txn transaction.Transaction, pageId uint64, log bo
 		if frame.page.PinCount > 1 {
 			return fmt.Errorf("freeing a pinned page, pin count: %v", frame.page.PinCount)
 		}
-
-		frame.freed = true
 	}
 
 	if log {
@@ -97,22 +95,23 @@ func (b *BufferPool) getPage(pageId uint64) (*pages.RawPage, error) {
 	}
 
 	// if page not found in frames and there is an empty frame. read page to frame and pin it.
-	if len(b.emptyFrames) > 0 {
+	if emptyFrameIdx := b.reserveFrame(); emptyFrameIdx >= 0 {
+		if b.frames[emptyFrameIdx] == nil {
+			b.frames[emptyFrameIdx] = &frame{pages.NewRawPage(pageId)}
+		}
+
+		p := b.frames[emptyFrameIdx].page
 		// read page and put it inside the frame
-		pageData, err := b.DiskManager.ReadPage(pageId)
-		if err != nil {
+		if err := b.DiskManager.ReadPage(pageId, p.GetWholeData()); err != nil {
+			b.unReserveFrame(emptyFrameIdx)
 			return nil, err
 		}
 
-		emptyFrameIdx := b.emptyFrames[0]
-		b.emptyFrames = b.emptyFrames[1:]
-
-		p := pages.NewRawPage(pageId)
-		p.Data = pageData
+		p.PageId = pageId
 
 		b.pageMap[pageId] = emptyFrameIdx
-		b.frames[emptyFrameIdx] = frame{page: p}
 		b.pin(pageId)
+
 		return p, nil
 	}
 
@@ -122,16 +121,13 @@ func (b *BufferPool) getPage(pageId uint64) (*pages.RawPage, error) {
 		return nil, err
 	}
 
-	pageData, err := b.DiskManager.ReadPage(pageId)
-	if err != nil {
+	p := b.frames[victimFrameIdx].page
+	if err := b.DiskManager.ReadPage(pageId, p.GetWholeData()); err != nil {
 		return nil, err
 	}
 
-	p := pages.NewRawPage(pageId)
-	p.Data = pageData
-
+	p.PageId = pageId
 	b.pageMap[pageId] = victimFrameIdx
-	b.frames[victimFrameIdx] = frame{page: p}
 	b.pin(pageId)
 	return p, err
 }
@@ -275,14 +271,14 @@ func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, 
 	newPageId := b.DiskManager.NewPage()
 
 	// if there is any empty frame, put new page to there.
-	if len(b.emptyFrames) > 0 {
-		emptyFrameIdx := b.emptyFrames[0]
-		b.emptyFrames = b.emptyFrames[1:]
+	if emptyFrameIdx := b.reserveFrame(); emptyFrameIdx >= 0 {
+		if b.frames[emptyFrameIdx] == nil {
+			b.frames[emptyFrameIdx] = &frame{pages.NewRawPage(newPageId)}
+		}
 
-		p := pages.NewRawPage(newPageId)
+		p := b.frames[emptyFrameIdx].page
 
 		b.pageMap[newPageId] = emptyFrameIdx
-		b.frames[emptyFrameIdx] = frame{page: p}
 		b.pin(newPageId)
 		lsn := b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), p.GetPageId()))
 		p.SetPageLSN(lsn)
@@ -296,9 +292,11 @@ func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, 
 		return nil, err
 	}
 
-	p := pages.NewRawPage(newPageId)
+	p := b.frames[victimIdx].page
+	p.Clear()
+
+	p.PageId = newPageId
 	b.pageMap[newPageId] = victimIdx
-	b.frames[victimIdx] = frame{page: p}
 	b.pin(newPageId)
 
 	lsn := b.logManager.AppendLog(wal.NewAllocPageLogRecord(txn.GetID(), p.GetPageId()))
@@ -309,6 +307,26 @@ func (b *BufferPool) NewPage(txn transaction.Transaction) (page *pages.RawPage, 
 
 func (b *BufferPool) EmptyFrameSize() int {
 	return len(b.emptyFrames)
+}
+
+func (b *BufferPool) reserveFrame() int {
+	b.emptyFramesLock.Lock()
+	defer b.emptyFramesLock.Unlock()
+
+	if len(b.emptyFrames) > 0 {
+		emptyFrameIdx := b.emptyFrames[0]
+		b.emptyFrames = b.emptyFrames[1:]
+		return emptyFrameIdx
+	}
+
+	return -1
+}
+
+func (b *BufferPool) unReserveFrame(idx int) {
+	b.emptyFramesLock.Lock()
+	defer b.emptyFramesLock.Unlock()
+
+	b.emptyFrames = append(b.emptyFrames, idx)
 }
 
 var s = time.Now()
@@ -348,7 +366,6 @@ func (b *BufferPool) evictVictim() (int, error) {
 	}
 
 	delete(b.pageMap, victimPageId)
-	b.frames[victimFrameIdx].page = nil
 
 	return victimFrameIdx, nil
 }
@@ -362,7 +379,7 @@ func NewBufferPool(dbFile string, poolSize int) *BufferPool {
 	common.PanicIfErr(err)
 	bp := &BufferPool{
 		poolSize:    poolSize,
-		frames:      make([]frame, poolSize),
+		frames:      make([]*frame, poolSize),
 		pageMap:     map[uint64]int{},
 		emptyFrames: emptyFrames,
 		Replacer:    NewClockReplacer(poolSize),
@@ -391,14 +408,16 @@ func NewBufferPoolWithDM(init bool, poolSize int, dm disk.IDiskManager, logManag
 	}
 
 	bp := &BufferPool{
-		poolSize:    poolSize,
-		frames:      make([]frame, poolSize),
-		pageMap:     map[uint64]int{},
-		emptyFrames: emptyFrames,
-		Replacer:    NewClockReplacer(poolSize),
-		DiskManager: dm,
-		lock:        sync.Mutex{},
-		logManager:  logManager,
+		poolSize:        poolSize,
+		frames:          make([]*frame, poolSize),
+		pageMap:         map[uint64]int{},
+		emptyFrames:     emptyFrames,
+		Replacer:        NewClockReplacer(poolSize),
+		DiskManager:     dm,
+		lock:            sync.Mutex{},
+		emptyFramesLock: sync.Mutex{},
+		logManager:      logManager,
+		fl:              nil,
 	}
 	if init {
 		flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1))

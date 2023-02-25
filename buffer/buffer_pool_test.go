@@ -3,6 +3,7 @@ package buffer
 import (
 	"encoding/json"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"helin/common"
 	"helin/disk"
 	"helin/transaction"
@@ -88,7 +89,8 @@ func TestBuffer_Pool_Should_Not_Corrupt_Pages(t *testing.T) {
 			println(err.Error())
 		}
 
-		p.Data = randomPages[i]
+		n := copy(p.GetWholeData(), randomPages[i])
+		require.Equal(t, n, len(randomPages[i]))
 
 		b.Unpin(p.GetPageId(), true)
 	}

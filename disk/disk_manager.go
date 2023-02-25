@@ -14,7 +14,7 @@ import (
 type IDiskManager interface {
 	WritePage(data []byte, pageId uint64) error
 	WritePages(data [][]byte, pageId []uint64) error
-	ReadPage(pageId uint64) ([]byte, error)
+	ReadPage(pageId uint64, dest []byte) error
 	NewPage() (pageId uint64)
 	GetCatalogPID() uint64
 	SetCatalogPID(pid uint64)
@@ -135,24 +135,22 @@ func (d *Manager) WritePages(pages [][]byte, pageIds []uint64) error {
 	return nil
 }
 
-func (d *Manager) ReadPage(pageId uint64) ([]byte, error) {
+func (d *Manager) ReadPage(pageId uint64, dest []byte) error {
+	_ = dest[PageSize-1] // bound check
 	_, err := d.file.Seek((int64(PageSize))*int64(pageId), io.SeekStart)
 	if err != nil {
-		return []byte{}, err
+		return err
 	}
 
-	// TODO: update this method to receive destination bytes instead of dynamically allocating and returning it.
-	var data = make([]byte, PageSize)
-
-	n, err := d.file.Read(data[:])
+	n, err := d.file.Read(dest)
 	if err != nil {
-		return []byte{}, err
+		return err
 	}
 	if n != PageSize {
 		panic(fmt.Sprintf("Partial page encountered this should not happen. Page id: %d", pageId))
 	}
 
-	return data[:], nil
+	return nil
 }
 
 func (d *Manager) NewPage() (pageId uint64) {
@@ -226,8 +224,8 @@ func (d *Manager) getHeader() header {
 		return *d.header
 	}
 
-	data, err := d.ReadPage(0)
-	if err == io.EOF {
+	var data = make([]byte, PageSize)
+	if err := d.ReadPage(0, nil); err == io.EOF {
 		d.initHeader()
 		data = make([]byte, PageSize, PageSize)
 	} else if err != nil {
