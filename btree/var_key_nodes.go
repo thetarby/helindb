@@ -454,9 +454,8 @@ func insertAt(txn transaction.Transaction, pager Pager, p *LoggedSlottedPage, id
 func deleteAt(txn transaction.Transaction, pager Pager, p *LoggedSlottedPage, idx int) {
 	old := p.GetAt(idx)
 	if len(old) > maxPayloadSize {
-		// TODO: free overflow page
-		//ptr := DeserializePointer(old[maxPayloadSize:])
-		//CheckErr(pager.Free(ptr))
+		ptr := DeserializePointer(old[maxPayloadSize:])
+		CheckErr(pager.Free(txn, ptr))
 	}
 
 	err := p.DeleteAt(txn, idx)

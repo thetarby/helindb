@@ -20,7 +20,7 @@ func (it *TreeIterator) Next() (common.Key, interface{}) {
 
 	// if there is no element left in node proceed to next node
 	if h.KeyLen == uint16(it.currIdx) {
-		it.currNode.Release(false)
+		it.currNode.Release()
 		if h.Right == 0 {
 			it.closed = true
 			return nil, nil
@@ -38,7 +38,7 @@ func (it *TreeIterator) Next() (common.Key, interface{}) {
 
 func (it *TreeIterator) Close() error {
 	if !it.closed {
-		it.currNode.Release(false)
+		it.currNode.Release()
 	}
 	return nil
 }
@@ -48,8 +48,7 @@ func NewTreeIterator(txn transaction.Transaction, tree *BTree) *TreeIterator {
 	for !curr.IsLeaf() {
 		old := curr
 		curr = tree.pager.GetNodeReleaser(curr.GetValueAt(0).(Pointer), Read)
-		tree.pager.Unpin(old, false)
-		old.RUnLatch()
+		old.Release()
 	}
 
 	return &TreeIterator{

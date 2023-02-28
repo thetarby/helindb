@@ -25,23 +25,19 @@ type BufferPoolPager struct {
 	pool            *buffer.BufferPool
 	keySerializer   KeySerializer
 	valueSerializer ValueSerializer
-	logManager      *wal.LogManager
+	logManager      wal.LogManager
 }
 
 func (b *BufferPoolPager) Free(txn transaction.Transaction, p Pointer) error {
-	// TODO: handle rollback
 	txn.FreePage(uint64(p))
 	return nil
 }
 
-func (b *BufferPoolPager) FreeNode(txn transaction.Transaction, n Node) error {
-	// TODO: handle rollback
+func (b *BufferPoolPager) FreeNode(txn transaction.Transaction, n Node) {
 	txn.FreePage(uint64(n.GetPageId()))
-	return nil
 }
 
 func (b *BufferPoolPager) CreatePage(txn transaction.Transaction) NodePage {
-	// TODO: handle rollback
 	p, err := b.pool.NewPage(txn)
 	common.PanicIfErr(err)
 
@@ -63,7 +59,6 @@ func (b *BufferPoolPager) UnpinByPointer(p Pointer, isDirty bool) {
 
 // NewInternalNode Caller should call unpin with dirty is set
 func (b *BufferPoolPager) NewInternalNode(txn transaction.Transaction, firstPointer Pointer) NodeReleaser {
-	// TODO: handle rollback
 	h := PersistentNodeHeader{
 		IsLeaf: 0,
 		KeyLen: 0,
@@ -87,7 +82,6 @@ func (b *BufferPoolPager) NewInternalNode(txn transaction.Transaction, firstPoin
 }
 
 func (b *BufferPoolPager) NewLeafNode(txn transaction.Transaction) NodeReleaser {
-	// TODO: handle rollback
 	h := PersistentNodeHeader{
 		IsLeaf: 1,
 		KeyLen: 0,
@@ -161,7 +155,7 @@ func (b *BufferPoolPager) Unpin(n Node, isDirty bool) {
 
 type NodeReleaser interface {
 	Node
-	Release(dirty bool)
+	Release()
 }
 
 type readNodeReleaser struct {
@@ -169,7 +163,7 @@ type readNodeReleaser struct {
 	pool *buffer.BufferPool
 }
 
-func (n *readNodeReleaser) Release(bool) {
+func (n *readNodeReleaser) Release() {
 	n.pool.Unpin(uint64(n.GetPageId()), false)
 	n.RUnLatch()
 }
@@ -179,7 +173,7 @@ type writeNodeReleaser struct {
 	pool *buffer.BufferPool
 }
 
-func (n *writeNodeReleaser) Release(isDirty bool) {
+func (n *writeNodeReleaser) Release() {
 	n.pool.Unpin(uint64(n.GetPageId()), false)
 	n.WUnlatch()
 }
@@ -193,7 +187,7 @@ func NewDefaultBPP(pool *buffer.BufferPool, serializer KeySerializer, logWriter 
 	}
 }
 
-func NewBPP(pool *buffer.BufferPool, serializer KeySerializer, valSerializer ValueSerializer, logManager *wal.LogManager) *BufferPoolPager {
+func NewBPP(pool *buffer.BufferPool, serializer KeySerializer, valSerializer ValueSerializer, logManager wal.LogManager) *BufferPoolPager {
 	return &BufferPoolPager{
 		pool:            pool,
 		keySerializer:   serializer,

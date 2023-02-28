@@ -251,6 +251,6 @@ func TestInsert_Internals_2(t *testing.T) {
 		}
 		old := leftMostNode
 		leftMostNode = tree.pager.GetNodeReleaser(leftMostNode.GetRight(), Read)
-		old.Release(false)
+		old.Release()
 	}
 }

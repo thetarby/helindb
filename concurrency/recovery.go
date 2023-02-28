@@ -25,7 +25,7 @@ type DiskManager interface {
 // Recovery encapsulates logic about coming back from a crash. It brings database file to its latest stable state.
 type Recovery struct {
 	logs       wal.LogIterator
-	logManager *wal.LogManager
+	logManager wal.LogManager
 	dm         DiskManager
 }
 

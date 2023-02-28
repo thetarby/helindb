@@ -2,18 +2,15 @@ package disk
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"sort"
 	"sync"
 )
 
 type IDiskManager interface {
 	WritePage(data []byte, pageId uint64) error
-	WritePages(data [][]byte, pageId []uint64) error
 	ReadPage(pageId uint64, dest []byte) error
 	NewPage() (pageId uint64)
 	GetCatalogPID() uint64
@@ -100,41 +97,6 @@ func (d *Manager) WritePage(data []byte, pageId uint64) error {
 	return nil
 }
 
-func (d *Manager) WritePages(pages [][]byte, pageIds []uint64) error {
-	if len(pages) != len(pageIds) {
-		return errors.New("number of data pages is not equal to number of pageIds")
-	}
-
-	sort.Slice(pages, func(i, j int) bool {
-		return pageIds[i] < pageIds[j]
-	})
-
-	sort.Slice(pageIds, func(i, j int) bool {
-		return pageIds[i] < pageIds[j]
-	})
-
-	st := 0
-	for i, currPageId := range pageIds {
-		if i == len(pageIds)-1 {
-			err := d.writePages(pages[st:], pageIds[st])
-			if err != nil {
-				return err
-			}
-			break
-		}
-		nextPageId := pageIds[i+1]
-
-		if nextPageId > currPageId+1 {
-			err := d.writePages(pages[st:i+1], pageIds[st])
-			if err != nil {
-				return err
-			}
-			st = i + 1
-		}
-	}
-	return nil
-}
-
 func (d *Manager) ReadPage(pageId uint64, dest []byte) error {
 	_ = dest[PageSize-1] // bound check
 	_, err := d.file.Seek((int64(PageSize))*int64(pageId), io.SeekStart)
@@ -191,32 +153,6 @@ func (d *Manager) SetCatalogPID(pid uint64) {
 
 func (d *Manager) GetLogWriter() io.Writer {
 	return &SyncWriter{d.logFile}
-}
-
-func (d *Manager) writePages(pages [][]byte, startingPageId uint64) error {
-	_, err := d.file.Seek((int64(PageSize))*int64(startingPageId), io.SeekStart)
-
-	if err != nil {
-		return err
-	}
-
-	write := make([]byte, 0, PageSize*len(pages))
-	for _, datum := range pages {
-		write = append(write, datum...)
-	}
-
-	n, err := d.file.Write(write)
-	if err != nil {
-		panic(err.Error())
-	}
-	if n != PageSize*len(pages) {
-		panic("written bytes are not equal to page size")
-	}
-	if err != nil {
-		panic(err.Error())
-	}
-
-	return nil
 }
 
 func (d *Manager) getHeader() header {

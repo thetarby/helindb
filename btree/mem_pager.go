@@ -23,21 +23,26 @@ type MemPager struct {
 	lock            *sync.Mutex
 	KeySerializer   KeySerializer
 	ValueSerializer ValueSerializer
-	LogManager      *wal.LogManager
+	LogManager      wal.LogManager
 }
 
 // Free implements Pager
-func (*MemPager) Free(txn transaction.Transaction, p Pointer) error {
+func (memPager *MemPager) Free(txn transaction.Transaction, p Pointer) error {
+	memPager.lock.Lock()
+	defer memPager.lock.Unlock()
+
 	delete(memPagerNodeMapping, p)
 	delete(memPagerNodeMapping2, p)
 	return nil
 }
 
 // FreeNode implements Pager
-func (*MemPager) FreeNode(txn transaction.Transaction, n Node) error {
+func (memPager *MemPager) FreeNode(txn transaction.Transaction, n Node) {
+	memPager.lock.Lock()
+	defer memPager.lock.Unlock()
 	delete(memPagerNodeMapping, n.GetPageId())
 	delete(memPagerNodeMapping2, n.GetPageId())
-	return nil
+	return
 }
 
 func (memPager *MemPager) CreatePage(transaction.Transaction) NodePage {
@@ -154,7 +159,7 @@ type memNodeReadReleaser struct {
 	Node
 }
 
-func (n *memNodeReadReleaser) Release(bool) {
+func (n *memNodeReadReleaser) Release() {
 	n.RUnLatch()
 }
 
@@ -162,6 +167,6 @@ type memNodeWriteReleaser struct {
 	Node
 }
 
-func (n *memNodeWriteReleaser) Release(bool) {
+func (n *memNodeWriteReleaser) Release() {
 	n.WUnlatch()
 }

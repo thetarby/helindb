@@ -6,9 +6,11 @@ import (
 	"helin/transaction"
 )
 
+// LSP stands for logging slotted page. It wraps a slotted page and a log manager and logs all page modifying actions
+// so that caller does not need to keep track of logging actions.
 type LSP struct {
 	pages.SlottedPage
-	lm *LogManager
+	lm LogManager
 }
 
 func (p *LSP) InsertAt(txn transaction.Transaction, idx int, data []byte) error {
@@ -43,7 +45,7 @@ func (p *LSP) DeleteAt(txn transaction.Transaction, idx int) error {
 	return nil
 }
 
-func NewLSP(sp pages.SlottedPage, lm *LogManager) LSP {
+func NewLSP(sp pages.SlottedPage, lm LogManager) LSP {
 	return LSP{
 		SlottedPage: sp,
 		lm:          lm,

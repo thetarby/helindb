@@ -15,11 +15,22 @@ const (
 	TODO: make log manager interface
 */
 
-type LogManagerInterface interface {
+type LogManager interface {
+	// AppendLog appends a log record to wal, set its lsn and return it. This method does not directly flush
+	// log buffer's content to disk.
 	AppendLog(lr *LogRecord) pages.LSN
+
+	// WaitAppendLog is same as AppendLog, but it waits until appended log is flushed.
+	WaitAppendLog(lr *LogRecord) pages.LSN
+
+	// GetFlushedLSN returns the latest log's lsn that is flushed to underlying io.Writer.
+	GetFlushedLSN() pages.LSN
+
+	// Flush is an atomic operation that swaps logBuf and flushBuf followed by an fsync of flushBuf.
+	Flush() error
 }
 
-type LogManager struct {
+type LogManagerImpl struct {
 	// serializer is used to convert between bytes and LogRecord.
 	serializer LogRecordSerializer
 
@@ -32,9 +43,9 @@ type LogManager struct {
 	w  io.Writer
 }
 
-func NewLogManager(w io.Writer) *LogManager {
+func NewLogManager(w io.Writer) *LogManagerImpl {
 	// TODO: init lsnCounter
-	return &LogManager{
+	return &LogManagerImpl{
 		serializer:    &DefaultLogRecordSerializer{area: make([]byte, 0, 100)},
 		currLsn:       0,
 		persistentLsn: 0,
@@ -43,9 +54,7 @@ func NewLogManager(w io.Writer) *LogManager {
 	}
 }
 
-// AppendLog appends a log record to wal, set its lsn and return it. This method does not directly flush
-// log buffer's content to disk.
-func (l *LogManager) AppendLog(lr *LogRecord) pages.LSN {
+func (l *LogManagerImpl) AppendLog(lr *LogRecord) pages.LSN {
 	l.bufM.Lock()
 	defer l.bufM.Unlock()
 
@@ -55,9 +64,7 @@ func (l *LogManager) AppendLog(lr *LogRecord) pages.LSN {
 	return lr.Lsn
 }
 
-// WaitAppendLog is same as AppendLog, but it waits until appended log is flushed. It can be useful to make sure that
-// commit log record is persisted before returning.
-func (l *LogManager) WaitAppendLog(lr *LogRecord) pages.LSN {
+func (l *LogManagerImpl) WaitAppendLog(lr *LogRecord) pages.LSN {
 	l.bufM.Lock()
 
 	lr.Lsn = pages.LSN(atomic.AddUint64(&l.currLsn, 1))
@@ -69,23 +76,21 @@ func (l *LogManager) WaitAppendLog(lr *LogRecord) pages.LSN {
 	return lr.Lsn
 }
 
-func (l *LogManager) RunFlusher() {
+func (l *LogManagerImpl) RunFlusher() {
 	l.gw.RunFlusher()
 }
 
-func (l *LogManager) StopFlusher() error {
+func (l *LogManagerImpl) StopFlusher() error {
 	return l.gw.StopFlusher()
 }
 
-// Flush is an atomic operation that swaps logBuf and flushBuf followed by an fsync flushBuf.
-func (l *LogManager) Flush() error {
+func (l *LogManagerImpl) Flush() error {
 	l.bufM.Lock()
 	defer l.bufM.Unlock()
 
 	return l.gw.SwapAndWaitFlush()
 }
 
-// GetFlushedLSN returns latest lsn persisted to disk.
-func (l *LogManager) GetFlushedLSN() pages.LSN {
+func (l *LogManagerImpl) GetFlushedLSN() pages.LSN {
 	return l.gw.latestFlushed
 }

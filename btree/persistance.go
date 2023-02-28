@@ -46,7 +46,7 @@ type Pager interface {
 	Unpin(n Node, isDirty bool)
 
 	Free(txn transaction.Transaction, p Pointer) error
-	FreeNode(txn transaction.Transaction, n Node) error
+	FreeNode(txn transaction.Transaction, n Node)
 
 	UnpinByPointer(p Pointer, isDirty bool)
 

@@ -12,7 +12,6 @@ import (
 	"io"
 	"log"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -52,7 +51,7 @@ type BufferPool struct {
 	DiskManager     disk.IDiskManager
 	lock            sync.Mutex
 	emptyFramesLock sync.Mutex
-	logManager      *wal.LogManager
+	logManager      wal.LogManager
 	fl              freelist.FreeList
 }
 
@@ -329,9 +328,6 @@ func (b *BufferPool) unReserveFrame(idx int) {
 	b.emptyFrames = append(b.emptyFrames, idx)
 }
 
-var s = time.Now()
-var count uint64 = 0
-
 // evictVictim chooses a victim page, writes its data to disk if it is dirty and returns emptied frame's index.
 func (b *BufferPool) evictVictim() (int, error) {
 	victimFrameIdx, err := b.Replacer.ChooseVictim()
@@ -346,12 +342,6 @@ func (b *BufferPool) evictVictim() (int, error) {
 
 	victimPageId := victim.page.GetPageId()
 	if victim.page.IsDirty() {
-		if n := atomic.AddUint64(&count, 1); n%100 == 0 {
-			log.Printf("eps: %v", float64(count)/time.Since(s).Seconds())
-			atomic.AddUint64(&count, -n)
-			s = time.Now()
-		}
-
 		// if log records for the victim page is not flushed, force flush log manager.
 		if victim.page.GetPageLSN() > b.logManager.GetFlushedLSN() {
 			if err := b.logManager.Flush(); err != nil {
@@ -397,7 +387,7 @@ func NewBufferPool(dbFile string, poolSize int) *BufferPool {
 	return bp
 }
 
-func NewBufferPoolWithDM(init bool, poolSize int, dm disk.IDiskManager, logManager *wal.LogManager) *BufferPool {
+func NewBufferPoolWithDM(init bool, poolSize int, dm disk.IDiskManager, logManager wal.LogManager) *BufferPool {
 	emptyFrames := make([]int, poolSize)
 	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i

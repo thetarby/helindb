@@ -56,8 +56,8 @@ func NewBtreeWithPager(txn transaction.Transaction, degree int, pager Pager) *BT
 	meta.setRoot(txn, root.GetPageId())
 	meta.setDegree(txn, degree)
 
-	defer root.Release(true)
-	defer l.Release(true)
+	defer root.Release()
+	defer l.Release()
 	defer meta.WUnlatch()
 	defer pager.UnpinByPointer(meta.GetPageId(), true)
 
@@ -146,12 +146,12 @@ func (tree *BTree) Insert(txn transaction.Transaction, key common.Key, value any
 				newRoot.InsertAt(txn, 0, rightKey, rightNod.(Pointer))
 				tree.setRoot(txn, newRoot.GetPageId())
 
-				newRoot.Release(true)
+				newRoot.Release()
 			}
 
-			popped.Release(true)
+			popped.Release()
 		} else {
-			popped.Release(true)
+			popped.Release()
 			break
 		}
 	}
@@ -173,7 +173,7 @@ func (tree *BTree) InsertOrReplace(txn transaction.Transaction, key common.Key, 
 		leafNode := topOfStack.Node
 		leafNode.setValueAt(txn, topOfStack.Index, value)
 		stack = stack[:len(stack)-1]
-		topOfStack.Node.Release(true)
+		topOfStack.Node.Release()
 		return false
 	}
 
@@ -188,17 +188,17 @@ func (tree *BTree) InsertOrReplace(txn transaction.Transaction, key common.Key, 
 
 		if popped.IsOverFlow(tree.degree) {
 			rightNod, _, rightKey = tree.splitNode(txn, popped, popped.KeyLen()/2)
-			popped.Release(true)
+			popped.Release()
 			if rootLocked && popped.GetPageId() == tree.getRoot() {
 				leftNode := popped
 
 				newRoot := tree.pager.NewInternalNode(txn, leftNode.GetPageId())
 				newRoot.InsertAt(txn, 0, rightKey, rightNod.(Pointer))
 				tree.setRoot(txn, newRoot.GetPageId())
-				newRoot.Release(true)
+				newRoot.Release()
 			}
 		} else {
-			popped.Release(true)
+			popped.Release()
 			break
 		}
 	}
@@ -219,17 +219,17 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 		return false
 	}
 
-	// IMPORTANT NOTE: freeing pages is delayed because if txn fails, during rollback, recovery should allocate the exact
+	// IMPORTANT NOTE: freeing pages should be delayed because if txn fails, during rollback, recovery should allocate the exact
 	// same page because there might be pointers pointing to it. If pages are freed directly another txn can allocate
 	// them immediately. Hence, write locks on pages must be released at the end of the txn after freeing all the pages.
 	toFree := make([]NodeReleaser, 0)
 	defer func() {
 		for _, node := range toFree {
-			CheckErr(tree.pager.FreeNode(txn, node))
+			tree.pager.FreeNode(txn, node)
 		}
 
 		for _, node := range toFree {
-			node.Release(false)
+			node.Release()
 		}
 	}()
 
@@ -243,7 +243,7 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 
 		if len(stack) == 0 {
 			// if no parent left in stack(this is correct only if popped is root) it is done
-			popped.Release(false)
+			popped.Release()
 			return true
 		}
 
@@ -265,24 +265,24 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 				((popped.IsLeaf() && rightSibling.KeyLen() >= (tree.degree/2)+1) ||
 					(!popped.IsLeaf() && rightSibling.KeyLen()+1 > (tree.degree+1)/2)) {
 				tree.redistribute(txn, popped, rightSibling, parent)
-				popped.Release(true)
-				rightSibling.Release(true)
+				popped.Release()
+				rightSibling.Release()
 				//parent.Release(true)
 
 				if leftSibling != nil {
-					leftSibling.Release(false)
+					leftSibling.Release()
 				}
 				return true
 			} else if leftSibling != nil &&
 				((popped.IsLeaf() && leftSibling.KeyLen() >= (tree.degree/2)+1) ||
 					(!popped.IsLeaf() && leftSibling.KeyLen()+1 > (tree.degree+1)/2)) {
 				tree.redistribute(txn, leftSibling, popped, parent)
-				popped.Release(true)
-				leftSibling.Release(true)
+				popped.Release()
+				leftSibling.Release()
 				//parent.Release(true)
 
 				if rightSibling != nil {
-					rightSibling.Release(false)
+					rightSibling.Release()
 				}
 				return true
 			}
@@ -294,11 +294,11 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 
 				toFree = append(toFree, rightSibling)
 
-				popped.Release(true)
+				popped.Release()
 				//parent.Release(true)
 
 				if leftSibling != nil {
-					leftSibling.Release(false)
+					leftSibling.Release()
 				}
 			} else {
 				if leftSibling == nil {
@@ -306,28 +306,28 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 						panic("Both siblings are null for an internal Node! This should not be possible except for root")
 					}
 
-					popped.Release(true)
+					popped.Release()
 					// NOTE: maybe log here while debugging? if it is a leaf node its both left and right nodes can be nil
 					return true
 				}
 				tree.mergeNodes(txn, leftSibling, popped, parent)
 				merged = leftSibling
 
-				leftSibling.Release(true)
+				leftSibling.Release()
 				//parent.Release(true)
 
 				toFree = append(toFree, popped)
 
 				// here it is guaranteed that right sibling is nil
 				if rightSibling != nil {
-					rightSibling.Release(false)
+					rightSibling.Release()
 				}
 			}
 			if rootLocked && parent.GetPageId() == tree.getRoot() && parent.KeyLen() == 0 {
 				tree.setRoot(txn, merged.GetPageId())
 			}
 		} else {
-			popped.Release(true)
+			popped.Release()
 			break
 		}
 	}
@@ -338,7 +338,7 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 func (tree *BTree) Find(key common.Key) any {
 	res, stack := tree.FindAndGetStack(key, Read)
 	for _, pair := range stack {
-		pair.Node.Release(false)
+		pair.Node.Release()
 	}
 
 	return res
@@ -353,12 +353,12 @@ func (tree *BTree) FindSince(key common.Key) []any {
 	for {
 		p := node.GetRight()
 		if p == 0 {
-			node.Release(false)
+			node.Release()
 			break
 		}
 		old := node
 		node = tree.pager.GetNodeReleaser(p, Read)
-		old.Release(false)
+		old.Release()
 		vals := node.GetValues()
 		res = append(res, vals...)
 	}
@@ -393,7 +393,7 @@ func (tree *BTree) Count() int {
 		}
 		old := n
 		n = tree.pager.GetNodeReleaser(n.GetValueAt(0).(Pointer), Read)
-		old.Release(false)
+		old.Release()
 	}
 
 	num := 0
@@ -401,12 +401,12 @@ func (tree *BTree) Count() int {
 		num += len(n.GetValues())
 		r := n.GetRight()
 		if r == 0 {
-			n.Release(false)
+			n.Release()
 			break
 		}
 		old := n
 		n = tree.pager.GetNodeReleaser(r, Read)
-		old.Release(false)
+		old.Release()
 	}
 
 	return num
@@ -425,7 +425,7 @@ func (tree *BTree) Print() {
 
 		node := tree.pager.GetNodeReleaser(queue[i], Read)
 		if node.IsLeaf() {
-			node.Release(false)
+			node.Release()
 			break
 		}
 
@@ -435,21 +435,19 @@ func (tree *BTree) Print() {
 			pointers = append(pointers, val.(Pointer))
 		}
 		queue = append(queue, pointers...)
-		node.Release(false)
+		node.Release()
 	}
 	for _, n := range queue {
 		if n != 0 {
 			currNode := pager.GetNodeReleaser(n, Read)
 			currNode.PrintNode()
-			currNode.Release(false)
+			currNode.Release()
 		} else {
 			fmt.Print("\n ### \n")
 		}
 	}
 }
 
-// findAndGetStack is used to recursively find the given key, and it also passes a stack object recursively to
-// keep the path it followed down to leaf node. value is nil when key does not exist.
 func (tree *BTree) findAndGetStack(node NodeReleaser, key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value any, stackOut []NodeIndexPair) {
 	if node.IsLeaf() {
 		i, found := tree.FindKey(node, key)
@@ -470,7 +468,7 @@ func (tree *BTree) findAndGetStack(node NodeReleaser, key common.Key, stackIn []
 		if mode == Read {
 			// NOTE: root entry lock is released in FindAndGetStack
 			stackOut = stackOut[1:] // TODO: do this better
-			node.Release(false)
+			node.Release()
 		} else if mode == Debug {
 			// do nothing return whole stack
 		} else {
@@ -488,7 +486,7 @@ func (tree *BTree) findAndGetStack(node NodeReleaser, key common.Key, stackIn []
 					if pair.Index == -1 {
 						tree.rootEntryLock.Unlock()
 					} else {
-						pair.Node.Release(false)
+						pair.Node.Release()
 					}
 				}
 				stackOut = stackOut[:0]
@@ -500,6 +498,8 @@ func (tree *BTree) findAndGetStack(node NodeReleaser, key common.Key, stackIn []
 	}
 }
 
+// FindAndGetStack is used to recursively find the given key, and it also passes a stack object recursively to
+// keep the path it followed down to leaf node. value is nil when key does not exist.
 func (tree *BTree) FindAndGetStack(key common.Key, mode TraverseMode) (value any, stackOut []NodeIndexPair) {
 	var stack []NodeIndexPair
 	tree.rootEntryLock.Lock()
@@ -640,7 +640,7 @@ func (tree *BTree) splitInternalNode(txn transaction.Transaction, p Node, idx in
 	// create right node and insert into it
 	// corresponding pointer is in the next index that is why +1
 	rightNode := tree.pager.NewInternalNode(txn, p.GetValueAt(idx+1).(Pointer))
-	defer rightNode.Release(true)
+	defer rightNode.Release()
 
 	for i := idx + 1; i < p.KeyLen(); i++ {
 		rightNode.InsertAt(txn, i-(idx+1), p.GetKeyAt(i), p.GetValueAt(i+1))
@@ -660,7 +660,7 @@ func (tree *BTree) splitLeafNode(txn transaction.Transaction, p Node, idx int) (
 	keyAtRight = p.GetKeyAt(idx)
 
 	rightNode := tree.pager.NewLeafNode(txn)
-	defer rightNode.Release(true)
+	defer rightNode.Release()
 
 	for i := idx; i < p.KeyLen(); i++ {
 		rightNode.InsertAt(txn, i-(idx), p.GetKeyAt(i), p.GetValueAt(i))
@@ -704,6 +704,6 @@ func (tree *BTree) FindKey(p Node, key common.Key) (index int, found bool) {
 
 func release(stack []NodeIndexPair) {
 	for _, pair := range stack {
-		pair.Node.Release(false)
+		pair.Node.Release()
 	}
 }

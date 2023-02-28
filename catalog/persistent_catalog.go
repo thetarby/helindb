@@ -24,7 +24,7 @@ type PersistentCatalog struct {
 	tree strBtree
 	pool *buffer.BufferPool
 	l    *sync.Mutex
-	lm   *wal.LogManager
+	lm   wal.LogManager
 }
 
 func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.IBufferPool, concurrency.CheckpointManager, concurrency.TxnManager) {

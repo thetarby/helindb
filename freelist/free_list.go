@@ -41,7 +41,7 @@ type List struct {
 	pager  flPager
 }
 
-func NewFreeList(txn transaction.Transaction, dm Pager, lm *wal.LogManager, init bool) *List {
+func NewFreeList(txn transaction.Transaction, dm Pager, lm wal.LogManager, init bool) *List {
 	list := &List{
 		lock: sync.Mutex{},
 		pager: flPager{

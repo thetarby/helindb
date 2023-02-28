@@ -7,7 +7,7 @@ import (
 
 type flPager struct {
 	bp Pager
-	lm *wal.LogManager
+	lm wal.LogManager
 }
 
 func (p *flPager) GetPageToRead(pageId uint64) (*readPage, error) {

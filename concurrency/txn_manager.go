@@ -4,10 +4,8 @@ import (
 	"helin/buffer"
 	"helin/disk/wal"
 	"helin/transaction"
-	"log"
 	"sync"
 	"sync/atomic"
-	"time"
 )
 
 type txn struct {
@@ -42,14 +40,14 @@ var _ TxnManager = &TxnManagerImpl{}
 
 type TxnManagerImpl struct {
 	actives    map[transaction.TxnID]*txn
-	lm         *wal.LogManager
+	lm         wal.LogManager
 	r          *Recovery
 	txnCounter atomic.Int64
 	mut        *sync.Mutex
 	pool       buffer.IBufferPool
 }
 
-func NewTxnManager(pool buffer.IBufferPool, lm *wal.LogManager) *TxnManagerImpl {
+func NewTxnManager(pool buffer.IBufferPool, lm wal.LogManager) *TxnManagerImpl {
 	return &TxnManagerImpl{
 		actives:    map[transaction.TxnID]*txn{},
 		lm:         lm,
@@ -70,21 +68,11 @@ func (t *TxnManagerImpl) Begin() transaction.Transaction {
 	return &txn
 }
 
-var s = time.Now()
-
 func (t *TxnManagerImpl) Commit(transaction transaction.Transaction) {
 	t.CommitByID(transaction.GetID())
-	if int(transaction.GetID())%1000 == 0 {
-		log.Printf("txn:%v tps: %v\n", transaction.GetID(), 1000/time.Since(s).Seconds())
-		s = time.Now()
-	}
 }
 
 func (t *TxnManagerImpl) AsyncCommit(transaction transaction.Transaction) {
-	if int(transaction.GetID())%100 == 0 {
-		log.Println("txn: ", transaction.GetID())
-	}
-
 	t.mut.Lock()
 	defer t.mut.Unlock()
 

@@ -14,13 +14,13 @@ func (sp *LoggedSlottedPage) GetPageId() Pointer {
 	return Pointer(sp.SlottedPage.GetPageId())
 }
 
-func InitLoggedSlottedPage(p pages.IPage, lm *wal.LogManager) LoggedSlottedPage {
+func InitLoggedSlottedPage(p pages.IPage, lm wal.LogManager) LoggedSlottedPage {
 	return LoggedSlottedPage{
 		LSP: wal.NewLSP(pages.InitSlottedPage(p), lm),
 	}
 }
 
-func CastLoggedSlottedPage(p pages.IPage, lm *wal.LogManager) LoggedSlottedPage {
+func CastLoggedSlottedPage(p pages.IPage, lm wal.LogManager) LoggedSlottedPage {
 	return LoggedSlottedPage{
 		LSP: wal.NewLSP(pages.CastSlottedPage(p), lm),
 	}
