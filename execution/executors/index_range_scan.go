@@ -21,7 +21,7 @@ func (e *IndexRangeScanExecutor) Init() {
 	if min != nil {
 		e.indexIter = btree.NewTreeIteratorWithKey(e.executorCtx.Txn, min, e.index.Index, e.index.Index.GetPager())
 	} else {
-		e.indexIter = btree.NewTreeIterator(e.executorCtx.Txn, e.index.Index, e.index.Index.GetPager())
+		e.indexIter = btree.NewTreeIterator(e.executorCtx.Txn, e.index.Index)
 	}
 }
 

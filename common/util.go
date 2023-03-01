@@ -1,6 +1,8 @@
 package common
 
 import (
+	"encoding/binary"
+	"fmt"
 	"io"
 	"math/rand"
 	"os"
@@ -62,6 +64,13 @@ func Clone[T any](v []T) []T {
 	return clone
 }
 
+func Ternary[T any](exp bool, a, b T) T {
+	if exp {
+		return a
+	}
+	return b
+}
+
 func Reverse[T any](a []T) []T {
 	l := len(a)
 	r := make([]T, 0)
@@ -70,6 +79,16 @@ func Reverse[T any](a []T) []T {
 	}
 
 	return r
+}
+
+func OneOf[T comparable](a T, l ...T) bool {
+	for i := 0; i < len(l); i++ {
+		if a == l[i] {
+			return true
+		}
+	}
+
+	return false
 }
 
 func Remove(dbName string) {
@@ -92,4 +111,17 @@ func (s *StatReader) Read(p []byte) (n int, err error) {
 
 func NewStatReader(r io.Reader) *StatReader {
 	return &StatReader{r: r}
+}
+
+func Uint64AsBytes(x uint64) []byte {
+	// OPTIMIZATION NOTE: heap alloc
+	res := make([]byte, 8)
+	binary.BigEndian.PutUint64(res, x)
+	return res
+}
+
+func Assert(condition bool, msg string, v ...any) {
+	if !condition {
+		panic(fmt.Sprintf("assertion failed: "+msg, v...))
+	}
 }

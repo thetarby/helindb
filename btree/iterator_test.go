@@ -56,7 +56,7 @@ func TestTreeIterator_Should_Return_All_Values_When_Initialized_Without_A_Key(t 
 		tree.Insert(transaction.TxnNoop(), StringKey(fmt.Sprintf("selam_%05d", i)), fmt.Sprintf("value_%05d", i))
 	}
 
-	it := NewTreeIterator(transaction.TxnNoop(), tree, tree.pager)
+	it := NewTreeIterator(transaction.TxnNoop(), tree)
 	for i := 0; i < n; i++ {
 		_, val := it.Next()
 		assert.Equal(t, fmt.Sprintf("value_%05d", i), val.(string))

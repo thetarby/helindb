@@ -2,32 +2,22 @@ package disk
 
 import (
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"os"
-	"sort"
 	"sync"
 )
 
 type IDiskManager interface {
 	WritePage(data []byte, pageId uint64) error
-	WritePages(data [][]byte, pageId []uint64) error
-	ReadPage(pageId uint64) ([]byte, error)
+	ReadPage(pageId uint64, dest []byte) error
 	NewPage() (pageId uint64)
-	FreePage(pageId uint64)
 	GetCatalogPID() uint64
 	SetCatalogPID(pid uint64)
 	Close() error
 
 	GetLogWriter() io.Writer
-}
-
-type LogFile interface {
-	io.Seeker
-	io.ReadCloser
-	io.Writer
 }
 
 const PageSize int = 4096
@@ -41,7 +31,7 @@ const FlushInstantly bool = false
 type Manager struct {
 	file        *os.File
 	filename    string
-	logFile     LogFile
+	logFile     *os.File
 	logFileName string
 	lastPageId  uint64
 	mu          sync.Mutex
@@ -49,7 +39,7 @@ type Manager struct {
 	header      *header
 }
 
-func NewDiskManager(file string) (IDiskManager, bool, error) {
+func NewDiskManager(file string) (*Manager, bool, error) {
 	d := Manager{}
 	d.serializer = jsonSerializer{}
 	d.filename = file
@@ -74,8 +64,8 @@ func NewDiskManager(file string) (IDiskManager, bool, error) {
 
 	if filesize == 0 {
 		// if it is a new db file
-		d.lastPageId = 1 // first page is reserved, so start from 1
-		d.initHeader()
+		d.lastPageId = 2 // first two page is reserved, so start from 2
+		//d.initHeader()
 		return &d, true, nil
 	} else {
 		d.lastPageId = uint64((int(filesize) / PageSize) - 1)
@@ -107,106 +97,36 @@ func (d *Manager) WritePage(data []byte, pageId uint64) error {
 	return nil
 }
 
-func (d *Manager) WritePages(pages [][]byte, pageIds []uint64) error {
-	if len(pages) != len(pageIds) {
-		return errors.New("number of data pages is not equal to number of pageIds")
-	}
-
-	sort.Slice(pages, func(i, j int) bool {
-		return pageIds[i] < pageIds[j]
-	})
-
-	sort.Slice(pageIds, func(i, j int) bool {
-		return pageIds[i] < pageIds[j]
-	})
-
-	st := 0
-	for i, currPageId := range pageIds {
-		if i == len(pageIds)-1 {
-			err := d.writePages(pages[st:], pageIds[st])
-			if err != nil {
-				return err
-			}
-			break
-		}
-		nextPageId := pageIds[i+1]
-
-		if nextPageId > currPageId+1 {
-			err := d.writePages(pages[st:i+1], pageIds[st])
-			if err != nil {
-				return err
-			}
-			st = i + 1
-		}
-	}
-	return nil
-}
-
-func (d *Manager) ReadPage(pageId uint64) ([]byte, error) {
+func (d *Manager) ReadPage(pageId uint64, dest []byte) error {
+	_ = dest[PageSize-1] // bound check
 	_, err := d.file.Seek((int64(PageSize))*int64(pageId), io.SeekStart)
 	if err != nil {
-		return []byte{}, err
+		return err
 	}
 
-	// TODO: update this method to receive destination bytes instead of dynamically allocating
-	// and returning it.
-	var data = make([]byte, PageSize)
-
-	n, err := d.file.Read(data[:])
+	n, err := d.file.Read(dest)
 	if err != nil {
-		return []byte{}, err
+		return err
 	}
 	if n != PageSize {
 		panic(fmt.Sprintf("Partial page encountered this should not happen. Page id: %d", pageId))
 	}
 
-	return data[:], nil
+	return nil
 }
 
 func (d *Manager) NewPage() (pageId uint64) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	// if pop free list is successful return popped page
-	if p := d.popFreeList(); p != 0 {
-		return p
-	}
+	//// if pop free list is successful return popped page
+	//if p := d.popFreeList(); p != 0 {
+	//	return p
+	//}
 
 	// else allocate new page
 	d.lastPageId++
 	return d.lastPageId
-}
-
-// FreePage appends page with given id to freelist and sets it as tail.
-func (d *Manager) FreePage(pageId uint64) {
-	d.mu.Lock()
-	d.mu.Unlock()
-	h := d.getHeader()
-
-	// if free list is empty
-	if h.freeListHead == 0 {
-		h.freeListHead = pageId
-		h.freeListTail = pageId
-		d.setHeader(h)
-		return
-	}
-
-	// freed page may not be synced to file just yet. in that case ReadPage returns io.EOF and for the consistence of
-	// freelist it needs to be written to disk. Hence, empty bytes are initialized and page is flushed.
-	data, err := d.ReadPage(h.freeListTail)
-	if err == io.EOF {
-		data = make([]byte, PageSize, PageSize)
-	} else if err != nil {
-		panic(err)
-	}
-
-	binary.BigEndian.PutUint64(data, pageId)
-	if err := d.WritePage(data, h.freeListTail); err != nil {
-		panic(err)
-	}
-
-	h.freeListTail = pageId
-	d.setHeader(h)
 }
 
 func (d *Manager) Close() error {
@@ -232,61 +152,7 @@ func (d *Manager) SetCatalogPID(pid uint64) {
 }
 
 func (d *Manager) GetLogWriter() io.Writer {
-	return d.logFile
-}
-
-func (d *Manager) writePages(pages [][]byte, startingPageId uint64) error {
-	_, err := d.file.Seek((int64(PageSize))*int64(startingPageId), io.SeekStart)
-
-	if err != nil {
-		return err
-	}
-
-	write := make([]byte, 0, PageSize*len(pages))
-	for _, datum := range pages {
-		write = append(write, datum...)
-	}
-
-	n, err := d.file.Write(write)
-	if err != nil {
-		panic(err.Error())
-	}
-	if n != PageSize*len(pages) {
-		panic("written bytes are not equal to page size")
-	}
-	if err != nil {
-		panic(err.Error())
-	}
-
-	return nil
-}
-
-func (d *Manager) popFreeList() (pageId uint64) {
-	// if list is empty return 0
-	h := d.getHeader()
-	if h.freeListHead == 0 {
-		return 0
-	}
-
-	// if there is only on entry in free list return that and set head and tail to 0
-	if h.freeListHead == h.freeListTail {
-		pageId = h.freeListHead
-		h.freeListHead, h.freeListTail = 0, 0
-		d.setHeader(h)
-		return
-	}
-
-	// else pop head, read new head and update header
-	pageId = h.freeListHead
-
-	data, err := d.ReadPage(h.freeListHead)
-	if err != nil {
-		panic(err)
-	}
-
-	h.freeListHead = binary.BigEndian.Uint64(data)
-	d.setHeader(h)
-	return
+	return &SyncWriter{d.logFile}
 }
 
 func (d *Manager) getHeader() header {
@@ -294,8 +160,8 @@ func (d *Manager) getHeader() header {
 		return *d.header
 	}
 
-	data, err := d.ReadPage(0)
-	if err == io.EOF {
+	var data = make([]byte, PageSize)
+	if err := d.ReadPage(0, nil); err == io.EOF {
 		d.initHeader()
 		data = make([]byte, PageSize, PageSize)
 	} else if err != nil {
@@ -318,28 +184,34 @@ func (d *Manager) setHeader(h header) {
 
 func (d *Manager) initHeader() {
 	d.setHeader(header{
-		freeListHead: 0,
-		freeListTail: 0,
-		catalogPID:   0,
+		catalogPID: 0,
 	})
 }
 
 type header struct {
-	freeListHead uint64
-	freeListTail uint64
-	catalogPID   uint64
+	catalogPID uint64
 }
 
 func readHeader(data []byte) header {
 	return header{
-		freeListHead: binary.BigEndian.Uint64(data),
-		freeListTail: binary.BigEndian.Uint64(data[8:]),
-		catalogPID:   binary.BigEndian.Uint64(data[16:]),
+		catalogPID: binary.BigEndian.Uint64(data),
 	}
 }
 
 func writeHeader(h header, dest []byte) {
-	binary.BigEndian.PutUint64(dest, h.freeListHead)
-	binary.BigEndian.PutUint64(dest[8:], h.freeListTail)
-	binary.BigEndian.PutUint64(dest[16:], h.catalogPID)
+	binary.BigEndian.PutUint64(dest, h.catalogPID)
+}
+
+// SyncWriter calls fsync after each write, so it guarantees every write is persisted to disk. It is useful for
+// log writer.
+type SyncWriter struct {
+	*os.File
+}
+
+func (r *SyncWriter) Write(d []byte) (int, error) {
+	n, err := r.File.Write(d)
+	if err := r.File.Sync(); err != nil {
+		return n, err
+	}
+	return n, err
 }

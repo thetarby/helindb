@@ -25,13 +25,13 @@ type Pager interface {
 	// NOTE: the node should have a reference(by extending it for example) to the created PersistentPage
 	// so that it can be serialized in the future when its state changes.
 	// NOTE: takes write latch on created node, caller should release it
-	NewInternalNode(txn transaction.Transaction, p Pointer) Node
+	NewInternalNode(txn transaction.Transaction, p Pointer) NodeReleaser
 
 	// NewLeafNode first should create an PersistentPage which points to a byte array.
 	// Then initialize a LeafNode structure.
 	// Finally, it should serialize the structure on to pointed byte array
 	// NOTE: takes write latch on created node, caller should release it
-	NewLeafNode(txn transaction.Transaction) Node
+	NewLeafNode(txn transaction.Transaction) NodeReleaser
 
 	// GetNode returns a Node given a Pointer. Should be able to deserialize a node from byte arr and should be able to
 	// recognize if it is an InternalNode or LeafNode and return the correct type.
@@ -39,12 +39,14 @@ type Pager interface {
 	// release latches when Node is not needed anymore.
 	GetNode(p Pointer, mode TraverseMode) Node
 
+	GetNodeReleaser(p Pointer, mode TraverseMode) NodeReleaser
+
 	// Unpin and UnpinByPointer methods are useful when underlying pager is a persistent one.
 	// For an in memory implementation these methods can be noop.
 	Unpin(n Node, isDirty bool)
 
 	Free(txn transaction.Transaction, p Pointer) error
-	FreeNode(txn transaction.Transaction, n Node) error
+	FreeNode(txn transaction.Transaction, n Node)
 
 	UnpinByPointer(p Pointer, isDirty bool)
 

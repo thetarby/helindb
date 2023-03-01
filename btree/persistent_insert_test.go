@@ -28,7 +28,8 @@ func TestPersistent_Insert_Should_Split_Root_When_It_Has_M_Keys(t *testing.T) {
 	tree.Insert(transaction.TxnNoop(), PersistentKey(5), p)
 	tree.Insert(transaction.TxnNoop(), PersistentKey(3), p)
 
-	res, stack := tree.FindAndGetStack(PersistentKey(5), Read)
+	res, stack := tree.FindAndGetStack(PersistentKey(5), Debug)
+	release(stack)
 	assert.Len(t, stack, 2)
 	assert.Equal(t, p, res.(SlotPointer))
 	assert.Equal(t, PersistentKey(3), tree.GetRoot(Read).GetKeyAt(0))

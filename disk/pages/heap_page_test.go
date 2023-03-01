@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"helin/common"
-	"helin/disk"
 	"testing"
 )
 
@@ -19,7 +18,7 @@ type SlotIdxOffsetPair struct {
 func newSlottedPageTestInstance() HeapPage {
 	p := HeapPage{RawPage: *NewRawPage(1)}
 	p.SetHeader(HeapPageHeader{
-		FreeSpacePointer: uint32(disk.PageSize),
+		FreeSpacePointer: uint32(len(p.GetData())),
 		SLotArrLen:       0,
 	})
 	return p

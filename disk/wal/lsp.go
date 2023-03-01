@@ -6,29 +6,46 @@ import (
 	"helin/transaction"
 )
 
+// LSP stands for logging slotted page. It wraps a slotted page and a log manager and logs all page modifying actions
+// so that caller does not need to keep track of logging actions.
 type LSP struct {
 	pages.SlottedPage
-	lm *LogManager
+	lm LogManager
 }
 
 func (p *LSP) InsertAt(txn transaction.Transaction, idx int, data []byte) error {
-	p.lm.AppendLog(NewInsertLogRecord(txn.GetID(), uint16(idx), data))
-	return p.SlottedPage.InsertAt(idx, data)
+	if err := p.SlottedPage.InsertAt(idx, data); err != nil {
+		return err
+	}
+
+	lsn := p.lm.AppendLog(NewInsertLogRecord(txn.GetID(), uint16(idx), data, p.GetPageId()))
+	p.SetPageLSN(lsn)
+	return nil
 }
 
 func (p *LSP) SetAt(txn transaction.Transaction, idx int, data []byte) error {
 	old := common.Clone(p.GetAt(idx))
-	p.lm.AppendLog(NewSetLogRecord(txn.GetID(), uint16(idx), data, old))
-	return p.SlottedPage.SetAt(idx, data)
+	if err := p.SlottedPage.SetAt(idx, data); err != nil {
+		return err
+	}
+
+	lsn := p.lm.AppendLog(NewSetLogRecord(txn.GetID(), uint16(idx), data, old, p.GetPageId()))
+	p.SetPageLSN(lsn)
+	return nil
 }
 
 func (p *LSP) DeleteAt(txn transaction.Transaction, idx int) error {
 	deleted := common.Clone(p.GetAt(idx))
-	p.lm.AppendLog(NewDeleteLogRecord(txn.GetID(), uint16(idx), deleted))
-	return p.SlottedPage.DeleteAt(idx)
+	if err := p.SlottedPage.DeleteAt(idx); err != nil {
+		return err
+	}
+
+	lsn := p.lm.AppendLog(NewDeleteLogRecord(txn.GetID(), uint16(idx), deleted, p.GetPageId()))
+	p.SetPageLSN(lsn)
+	return nil
 }
 
-func NewLSP(sp pages.SlottedPage, lm *LogManager) LSP {
+func NewLSP(sp pages.SlottedPage, lm LogManager) LSP {
 	return LSP{
 		SlottedPage: sp,
 		lm:          lm,

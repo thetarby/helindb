@@ -25,21 +25,19 @@ type BufferPoolPager struct {
 	pool            *buffer.BufferPool
 	keySerializer   KeySerializer
 	valueSerializer ValueSerializer
-	logManager      *wal.LogManager
+	logManager      wal.LogManager
 }
 
 func (b *BufferPoolPager) Free(txn transaction.Transaction, p Pointer) error {
-	// TODO: handle rollback
-	return b.pool.FreePage(txn, uint64(p))
+	txn.FreePage(uint64(p))
+	return nil
 }
 
-func (b *BufferPoolPager) FreeNode(txn transaction.Transaction, n Node) error {
-	// TODO: handle rollback
-	return b.pool.FreePage(txn, uint64(n.GetPageId()))
+func (b *BufferPoolPager) FreeNode(txn transaction.Transaction, n Node) {
+	txn.FreePage(uint64(n.GetPageId()))
 }
 
 func (b *BufferPoolPager) CreatePage(txn transaction.Transaction) NodePage {
-	// TODO: handle rollback
 	p, err := b.pool.NewPage(txn)
 	common.PanicIfErr(err)
 
@@ -60,8 +58,7 @@ func (b *BufferPoolPager) UnpinByPointer(p Pointer, isDirty bool) {
 }
 
 // NewInternalNode Caller should call unpin with dirty is set
-func (b *BufferPoolPager) NewInternalNode(txn transaction.Transaction, firstPointer Pointer) Node {
-	// TODO: handle rollback
+func (b *BufferPoolPager) NewInternalNode(txn transaction.Transaction, firstPointer Pointer) NodeReleaser {
 	h := PersistentNodeHeader{
 		IsLeaf: 0,
 		KeyLen: 0,
@@ -81,16 +78,17 @@ func (b *BufferPoolPager) NewInternalNode(txn transaction.Transaction, firstPoin
 	// write first pointer
 	node.setValueAt(txn, 0, firstPointer)
 
-	return &node
+	return &writeNodeReleaser{&node, b.pool}
 }
 
-func (b *BufferPoolPager) NewLeafNode(txn transaction.Transaction) Node {
-	// TODO: handle rollback
+func (b *BufferPoolPager) NewLeafNode(txn transaction.Transaction) NodeReleaser {
 	h := PersistentNodeHeader{
 		IsLeaf: 1,
 		KeyLen: 0,
 	}
 
+	// TODO: if page is popped from freelist here it is modified without logging
+	// but a txn release lock on freed page when it commits so no one can modify it.
 	p, err := b.pool.NewPage(txn)
 	common.PanicIfErr(err)
 	p.WLatch()
@@ -103,7 +101,7 @@ func (b *BufferPoolPager) NewLeafNode(txn transaction.Transaction) Node {
 	// write header
 	node.SetHeader(txn, &h)
 
-	return &node
+	return &writeNodeReleaser{&node, b.pool}
 }
 
 func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
@@ -133,8 +131,51 @@ func (b *BufferPoolPager) GetNode(p Pointer, mode TraverseMode) Node {
 	}
 }
 
+func (b *BufferPoolPager) GetNodeReleaser(p Pointer, mode TraverseMode) NodeReleaser {
+	n := b.GetNode(p, mode)
+	if n == nil {
+		return nil
+	}
+	if mode == Read {
+		return &readNodeReleaser{
+			Node: n,
+			pool: b.pool,
+		}
+	} else {
+		return &writeNodeReleaser{
+			Node: n,
+			pool: b.pool,
+		}
+	}
+}
+
 func (b *BufferPoolPager) Unpin(n Node, isDirty bool) {
 	b.pool.Unpin(uint64(n.GetPageId()), isDirty)
+}
+
+type NodeReleaser interface {
+	Node
+	Release()
+}
+
+type readNodeReleaser struct {
+	Node
+	pool *buffer.BufferPool
+}
+
+func (n *readNodeReleaser) Release() {
+	n.pool.Unpin(uint64(n.GetPageId()), false)
+	n.RUnLatch()
+}
+
+type writeNodeReleaser struct {
+	Node
+	pool *buffer.BufferPool
+}
+
+func (n *writeNodeReleaser) Release() {
+	n.pool.Unpin(uint64(n.GetPageId()), false)
+	n.WUnlatch()
 }
 
 func NewDefaultBPP(pool *buffer.BufferPool, serializer KeySerializer, logWriter io.Writer) *BufferPoolPager {
@@ -146,7 +187,7 @@ func NewDefaultBPP(pool *buffer.BufferPool, serializer KeySerializer, logWriter 
 	}
 }
 
-func NewBPP(pool *buffer.BufferPool, serializer KeySerializer, valSerializer ValueSerializer, logManager *wal.LogManager) *BufferPoolPager {
+func NewBPP(pool *buffer.BufferPool, serializer KeySerializer, valSerializer ValueSerializer, logManager wal.LogManager) *BufferPoolPager {
 	return &BufferPoolPager{
 		pool:            pool,
 		keySerializer:   serializer,

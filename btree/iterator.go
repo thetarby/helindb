@@ -9,7 +9,7 @@ type TreeIterator struct {
 	txn      transaction.Transaction
 	tree     *BTree
 	curr     Pointer
-	currNode Node
+	currNode NodeReleaser
 	closed   bool
 	currIdx  int
 	pager    Pager
@@ -20,15 +20,14 @@ func (it *TreeIterator) Next() (common.Key, interface{}) {
 
 	// if there is no element left in node proceed to next node
 	if h.KeyLen == uint16(it.currIdx) {
-		it.pager.Unpin(it.currNode, false)
-		it.currNode.RUnLatch()
+		it.currNode.Release()
 		if h.Right == 0 {
 			it.closed = true
 			return nil, nil
 		}
 
 		it.curr = h.Right
-		it.currNode = it.pager.GetNode(it.curr, Read)
+		it.currNode = it.pager.GetNodeReleaser(it.curr, Read)
 		it.currIdx = 0
 	}
 
@@ -39,19 +38,17 @@ func (it *TreeIterator) Next() (common.Key, interface{}) {
 
 func (it *TreeIterator) Close() error {
 	if !it.closed {
-		it.pager.Unpin(it.currNode, false)
-		it.currNode.RUnLatch()
+		it.currNode.Release()
 	}
 	return nil
 }
 
-func NewTreeIterator(txn transaction.Transaction, tree *BTree, pager Pager) *TreeIterator {
+func NewTreeIterator(txn transaction.Transaction, tree *BTree) *TreeIterator {
 	curr := tree.GetRoot(Read)
 	for !curr.IsLeaf() {
 		old := curr
-		curr = tree.pager.GetNode(curr.GetValueAt(0).(Pointer), Read)
-		tree.pager.Unpin(old, false)
-		old.RUnLatch()
+		curr = tree.pager.GetNodeReleaser(curr.GetValueAt(0).(Pointer), Read)
+		old.Release()
 	}
 
 	return &TreeIterator{
@@ -60,14 +57,13 @@ func NewTreeIterator(txn transaction.Transaction, tree *BTree, pager Pager) *Tre
 		curr:     curr.GetPageId(),
 		currNode: curr,
 		currIdx:  0,
-		pager:    pager,
+		pager:    tree.pager,
 	}
 }
 
 func NewTreeIteratorWithKey(txn transaction.Transaction, key common.Key, tree *BTree, pager Pager) *TreeIterator {
 	_, stack := tree.FindAndGetStack(key, Read)
 	leaf, idx := stack[len(stack)-1].Node, stack[len(stack)-1].Index
-	tree.unpinAll(stack[:len(stack)-1])
 
 	return &TreeIterator{
 		txn:      txn,

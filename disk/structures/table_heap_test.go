@@ -15,8 +15,7 @@ import (
 )
 
 func TestTableHeap(t *testing.T) {
-	id, _ := uuid.NewUUID()
-	dbName := id.String()
+	dbName := uuid.New().String()
 	defer common.Remove(dbName)
 
 	pool := buffer.NewBufferPool(dbName, 2)
