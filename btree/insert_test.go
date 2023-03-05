@@ -59,7 +59,7 @@ func TestInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
 func TestAll_Inserts_Should_Be_Found_By_Find_Method(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	dm, _, err := disk.NewDiskManager(dbName)
+	dm, _, err := disk.NewDiskManager(dbName, false)
 	require.NoError(t, err)
 	defer common.Remove(dbName)
 
@@ -92,7 +92,7 @@ func TestAll_Inserts_Should_Be_Found_By_Find_Method(t *testing.T) {
 
 func TestResources_Are_Released(t *testing.T) {
 	dbName := uuid.New().String()
-	dm, _, err := disk.NewDiskManager(dbName)
+	dm, _, err := disk.NewDiskManager(dbName, false)
 	require.NoError(t, err)
 	defer common.Remove(dbName)
 

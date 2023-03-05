@@ -107,7 +107,7 @@ func (r *Recovery) Recover() error {
 	for id, status := range activeTxn {
 		if status == "commit" {
 			if err := r.CompleteTxn(id); err != nil {
-				return fmt.Errorf("redo error %w", err)
+				return fmt.Errorf("redo complete error %w", err)
 			}
 		}
 	}

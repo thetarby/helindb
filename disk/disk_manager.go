@@ -22,12 +22,6 @@ type IDiskManager interface {
 
 const PageSize int = 4096
 
-// FlushInstantly should normally be set to true. If it is false then data might be lost even after a successful write
-// operation when power loss occurs before os flushes its io buffers. But when it is false, one thread tests runs faster
-// thanks to io scheduling of os, so for development it could be set to false. Setting it to false should not change
-// the validity of any tests unless a test is simulating a power loss.
-const FlushInstantly bool = false
-
 type Manager struct {
 	file        *os.File
 	filename    string
@@ -37,10 +31,16 @@ type Manager struct {
 	mu          sync.Mutex
 	serializer  IHeaderSerializer
 	header      *header
+
+	// fsync should normally be set to true. If it is false then data might be lost even after a successful write
+	// operation when power loss occurs before os flushes its io buffers. But when it is false, one thread tests runs faster
+	// thanks to io scheduling of os, so for development it could be set to false. Setting it to false should not change
+	// the validity of any tests unless a test is simulating a power loss.
+	fsync bool
 }
 
-func NewDiskManager(file string) (*Manager, bool, error) {
-	d := Manager{}
+func NewDiskManager(file string, fsync bool) (*Manager, bool, error) {
+	d := Manager{fsync: fsync}
 	d.serializer = jsonSerializer{}
 	d.filename = file
 	d.logFileName = file + ".log"
@@ -88,7 +88,7 @@ func (d *Manager) WritePage(data []byte, pageId uint64) error {
 		panic("written bytes are not equal to page size")
 	}
 
-	if FlushInstantly {
+	if d.fsync {
 		if err := d.file.Sync(); err != nil {
 			panic(err)
 		}
@@ -161,7 +161,7 @@ func (d *Manager) getHeader() header {
 	}
 
 	var data = make([]byte, PageSize)
-	if err := d.ReadPage(0, nil); err == io.EOF {
+	if err := d.ReadPage(0, data); err == io.EOF {
 		d.initHeader()
 		data = make([]byte, PageSize, PageSize)
 	} else if err != nil {

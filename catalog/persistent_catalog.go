@@ -28,7 +28,7 @@ type PersistentCatalog struct {
 }
 
 func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.IBufferPool, concurrency.CheckpointManager, concurrency.TxnManager) {
-	dm, created, err := disk.NewDiskManager(file)
+	dm, created, err := disk.NewDiskManager(file, true)
 	common.PanicIfErr(err)
 	if created {
 		lm := wal.NewLogManager(dm.GetLogWriter())

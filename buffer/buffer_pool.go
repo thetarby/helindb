@@ -221,16 +221,15 @@ func (b *BufferPool) FlushAll() error {
 		return err
 	}
 
+	// take a list of all pages in the page map at the time of calling.
 	b.lock.Lock()
 	pooledPages := make([]uint64, 0)
-	for _, frame := range b.frames {
-		if frame.page != nil {
-			pooledPages = append(pooledPages, frame.page.GetPageId())
-		}
+	for pid := range b.pageMap {
+		pooledPages = append(pooledPages, pid)
 	}
 	b.lock.Unlock()
 
-	// flush all dirty pages. if TryFlush fails wait some time and try again.
+	// flush all pages. if TryFlush fails wait some time and try again.
 	for _, pid := range pooledPages {
 		for {
 			if err := b.TryFlush(pid); err != nil {
@@ -365,7 +364,7 @@ func NewBufferPool(dbFile string, poolSize int) *BufferPool {
 	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i
 	}
-	d, _, err := disk.NewDiskManager(dbFile)
+	d, _, err := disk.NewDiskManager(dbFile, false)
 	common.PanicIfErr(err)
 	bp := &BufferPool{
 		poolSize:    poolSize,
