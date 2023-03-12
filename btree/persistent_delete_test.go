@@ -55,9 +55,9 @@ func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 	}
 
 	for i := 0; i < n; i++ {
-		val := tree.Find(PersistentKey(i))
+		val := tree.Get(PersistentKey(i))
 		if val == nil {
-			tree.Find(PersistentKey(i))
+			tree.Get(PersistentKey(i))
 			tree.Print()
 		}
 		assert.Equal(t, SlotPointer{
@@ -67,7 +67,7 @@ func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 		tree.Delete(transaction.TxnNoop(), PersistentKey(i))
 		// println("deleted %v", i)
 
-		val = tree.Find(PersistentKey(i))
+		val = tree.Get(PersistentKey(i))
 		assert.Nil(t, val)
 	}
 }

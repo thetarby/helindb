@@ -39,7 +39,7 @@ func TestInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {
 		tree.Insert(transaction.TxnNoop(), PersistentKey(i), strconv.Itoa(i))
 	}
 
-	isInserted := tree.InsertOrReplace(transaction.TxnNoop(), PersistentKey(500), "new_500")
+	isInserted := tree.Set(transaction.TxnNoop(), PersistentKey(500), "new_500")
 
 	assert.False(t, isInserted)
 }
@@ -50,8 +50,8 @@ func TestInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
 		tree.Insert(transaction.TxnNoop(), PersistentKey(i), strconv.Itoa(i))
 	}
 
-	tree.InsertOrReplace(transaction.TxnNoop(), PersistentKey(500), "new_500")
-	val := tree.Find(PersistentKey(500))
+	tree.Set(transaction.TxnNoop(), PersistentKey(500), "new_500")
+	val := tree.Get(PersistentKey(500))
 
 	assert.Contains(t, val.(string), "new_500")
 }
@@ -83,7 +83,7 @@ func TestAll_Inserts_Should_Be_Found_By_Find_Method(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(arr), func(i, j int) { arr[i], arr[j] = arr[j], arr[i] })
 	for _, item := range arr {
-		val := tree.Find(PersistentKey(item))
+		val := tree.Get(PersistentKey(item))
 		assert.NotNil(t, val)
 		assert.Equal(t, strconv.Itoa(item), val.(string))
 		assert.Zero(t, pool.Replacer.NumPinnedPages())
@@ -122,14 +122,14 @@ func TestResources_Are_Released(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	rand.Shuffle(len(items), func(i, j int) { items[i], items[j] = items[j], items[i] })
 	for _, i := range items {
-		val := tree.Find(StringKey(fmt.Sprintf("key_%06d", i))).(string)
+		val := tree.Get(StringKey(fmt.Sprintf("key_%06d", i))).(string)
 		require.Equal(t, fmt.Sprintf("val_%06d", i), val)
 		require.Zero(t, pool.Replacer.NumPinnedPages())
 	}
 
 	// test insert or replace
 	for _, i := range items[:10000] {
-		val := tree.InsertOrReplace(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%06d", i)), fmt.Sprintf("val_replaced_%06d", i))
+		val := tree.Set(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%06d", i)), fmt.Sprintf("val_replaced_%06d", i))
 		require.False(t, val)
 		require.Zero(t, pool.Replacer.NumPinnedPages())
 	}
@@ -140,7 +140,7 @@ func TestResources_Are_Released(t *testing.T) {
 			val = fmt.Sprintf("val_replaced_%06d", item)
 		}
 
-		found := tree.Find(StringKey(key)).(string)
+		found := tree.Get(StringKey(key)).(string)
 		require.Equal(t, found, val)
 		require.Zero(t, pool.Replacer.NumPinnedPages())
 	}

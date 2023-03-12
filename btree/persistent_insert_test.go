@@ -48,7 +48,7 @@ func TestPersistentInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *test
 		})
 	}
 
-	isInserted := tree.InsertOrReplace(transaction.TxnNoop(), PersistentKey(500), SlotPointer{
+	isInserted := tree.Set(transaction.TxnNoop(), PersistentKey(500), SlotPointer{
 		PageId:  uint64(1500),
 		SlotIdx: int16(1500),
 	})
@@ -73,10 +73,10 @@ func TestPersistentEvery_Inserted_Should_Be_Found(t *testing.T) {
 	}
 
 	for i := 0; i < n; i++ {
-		val := tree.Find(PersistentKey(i))
+		val := tree.Get(PersistentKey(i))
 		if val == nil {
 			//tree.Print()
-			val = tree.Find(PersistentKey(i))
+			val = tree.Get(PersistentKey(i))
 		}
 		assert.Equal(t, SlotPointer{
 			PageId:  uint64(i),
@@ -102,7 +102,7 @@ func TestPersistentEvery_Inserted_Should_Be_Found_VarSized(t *testing.T) {
 	}
 
 	for i := 0; i < n; i++ {
-		val := tree.Find(StringKey(fmt.Sprintf("sa_%v", i)))
+		val := tree.Get(StringKey(fmt.Sprintf("sa_%v", i)))
 
 		assert.Equal(t, fmt.Sprintf("as_%v", i), val.(string))
 	}
@@ -136,8 +136,8 @@ func TestPersistentInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *tes
 		tree.Insert(transaction.TxnNoop(), PersistentKey(i), strconv.Itoa(i))
 	}
 
-	tree.InsertOrReplace(transaction.TxnNoop(), PersistentKey(500), "new_500")
-	val := tree.Find(PersistentKey(500))
+	tree.Set(transaction.TxnNoop(), PersistentKey(500), "new_500")
+	val := tree.Get(PersistentKey(500))
 
 	assert.Contains(t, val.(string), "new_500")
 }
@@ -177,7 +177,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 		v[j] = t
 	})
 	for _, i := range v {
-		val := newTreeReference.Find(i)
+		val := newTreeReference.Get(i)
 		assert.Equal(t, SlotPointer{
 			PageId:  uint64(i),
 			SlotIdx: int16(i),
@@ -205,7 +205,7 @@ func TestPersistent_Find_Should_Unpin_All_Nodes_It_Pinned(t *testing.T) {
 		}
 	}
 
-	val := tree.Find(PersistentKey(999))
+	val := tree.Get(PersistentKey(999))
 	assert.NotNil(t, val)
 	assert.Zero(t, pool.Replacer.NumPinnedPages())
 }

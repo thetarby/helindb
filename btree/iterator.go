@@ -15,7 +15,7 @@ type TreeIterator struct {
 	pager    Pager
 }
 
-func (it *TreeIterator) Next() (common.Key, interface{}) {
+func (it *TreeIterator) Next() (common.Key, any) {
 	h := it.currNode.GetHeader()
 
 	// if there is no element left in node proceed to next node

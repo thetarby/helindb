@@ -127,11 +127,11 @@ func TestConcurrent_Deletes(t *testing.T) {
 			wg.Wait()
 
 			for _, v := range inserted[:50_000] {
-				assert.Nil(t, tree.Find(PersistentKey(v)))
+				assert.Nil(t, tree.Get(PersistentKey(v)))
 
 			}
 			for _, v := range inserted[50_000:] {
-				p := tree.Find(PersistentKey(v)).(SlotPointer)
+				p := tree.Get(PersistentKey(v)).(SlotPointer)
 				require.Equal(t, uint64(v), p.PageId)
 			}
 
@@ -255,7 +255,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 
 	// assert not found
 	for _, v := range toDelete {
-		assert.Nil(t, tree.Find(StringKey(fmt.Sprintf("key_%v", v))))
+		assert.Nil(t, tree.Get(StringKey(fmt.Sprintf("key_%v", v))))
 	}
 }
 
@@ -274,7 +274,7 @@ func FuzzConcurrent_Inserts(f *testing.F) {
 			// NOTE: without overflow pages, it fails this test
 			return
 		}
-		tree.InsertOrReplace(transaction.TxnNoop(), StringKey(key), fmt.Sprintf("val_%v", key))
+		tree.Set(transaction.TxnNoop(), StringKey(key), fmt.Sprintf("val_%v", key))
 
 		// assert they are sorted
 		it := NewTreeIterator(transaction.TxnNoop(), tree)
@@ -333,7 +333,7 @@ func TestConcurrent_Inserts3(t *testing.T) {
 	// assert inserted keys
 	t.Logf("inserted %v keys", len(inserted))
 	for _, k := range inserted {
-		val := tree.Find(StringKey(k))
+		val := tree.Get(StringKey(k))
 		require.Equal(t, fmt.Sprintf("val_%v", k), val)
 	}
 }
@@ -343,7 +343,7 @@ func writer(tree *BTree, n int) []string {
 	for i := 0; i < n; i++ {
 		k := common.RandStr(1, 1000)
 		v := fmt.Sprintf("val_%v", k)
-		tree.InsertOrReplace(transaction.TxnNoop(), StringKey(k), v)
+		tree.Set(transaction.TxnNoop(), StringKey(k), v)
 		res = append(res, k)
 	}
 

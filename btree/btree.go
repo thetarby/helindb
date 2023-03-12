@@ -157,7 +157,7 @@ func (tree *BTree) Insert(txn transaction.Transaction, key common.Key, value any
 	}
 }
 
-func (tree *BTree) InsertOrReplace(txn transaction.Transaction, key common.Key, value any) (isInserted bool) {
+func (tree *BTree) Set(txn transaction.Transaction, key common.Key, value any) (isInserted bool) {
 	i, stack := tree.FindAndGetStack(key, Insert)
 	rootLocked := false
 	if len(stack) > 0 && stack[0].Index == -1 {
@@ -335,7 +335,7 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 	return true
 }
 
-func (tree *BTree) Find(key common.Key) any {
+func (tree *BTree) Get(key common.Key) any {
 	res, stack := tree.FindAndGetStack(key, Read)
 	for _, pair := range stack {
 		pair.Node.Release()

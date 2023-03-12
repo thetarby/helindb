@@ -179,14 +179,14 @@ type strBtree struct {
 }
 
 func (tree *strBtree) Set(txn transaction.Transaction, key, val string) {
-	tree.InsertOrReplace(txn, btree.StringKey(key), val)
+	tree.BTree.Set(txn, btree.StringKey(key), val)
 }
 
 func (tree *strBtree) Get(key string) string {
-	val := tree.Find(btree.StringKey(key))
+	val := tree.BTree.Get(btree.StringKey(key))
 	if val == nil {
 		return ""
 	}
 
-	return tree.Find(btree.StringKey(key)).(string)
+	return tree.BTree.Get(btree.StringKey(key)).(string)
 }

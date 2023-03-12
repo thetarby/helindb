@@ -160,5 +160,5 @@ func (index *IndexInfo) UpdateTupleKey(tuple *Tuple, val any) {
 	}
 
 	tk := NewTupleKey(index.Schema, vals...)
-	index.Index.InsertOrReplace(nil, &tk, val)
+	index.Index.Set(nil, &tk, val)
 }
