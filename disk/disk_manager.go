@@ -28,7 +28,8 @@ type Manager struct {
 	logFile     *os.File
 	logFileName string
 	lastPageId  uint64
-	mu          sync.Mutex
+	globalMu    sync.Mutex
+	seekMu      sync.Mutex
 	serializer  IHeaderSerializer
 	header      *header
 
@@ -75,6 +76,9 @@ func NewDiskManager(file string, fsync bool) (*Manager, bool, error) {
 }
 
 func (d *Manager) WritePage(data []byte, pageId uint64) error {
+	d.seekMu.Lock()
+	defer d.seekMu.Unlock()
+
 	_, err := d.file.Seek((int64(PageSize))*int64(pageId), io.SeekStart)
 	if err != nil {
 		return err
@@ -98,6 +102,9 @@ func (d *Manager) WritePage(data []byte, pageId uint64) error {
 }
 
 func (d *Manager) ReadPage(pageId uint64, dest []byte) error {
+	d.seekMu.Lock()
+	defer d.seekMu.Unlock()
+
 	_ = dest[PageSize-1] // bound check
 	_, err := d.file.Seek((int64(PageSize))*int64(pageId), io.SeekStart)
 	if err != nil {
@@ -116,15 +123,9 @@ func (d *Manager) ReadPage(pageId uint64, dest []byte) error {
 }
 
 func (d *Manager) NewPage() (pageId uint64) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+	d.globalMu.Lock()
+	defer d.globalMu.Unlock()
 
-	//// if pop free list is successful return popped page
-	//if p := d.popFreeList(); p != 0 {
-	//	return p
-	//}
-
-	// else allocate new page
 	d.lastPageId++
 	return d.lastPageId
 }
@@ -137,18 +138,18 @@ func (d *Manager) Close() error {
 }
 
 func (d *Manager) GetCatalogPID() uint64 {
-	d.mu.Lock()
+	d.globalMu.Lock()
 	h := d.getHeader()
-	d.mu.Unlock()
+	d.globalMu.Unlock()
 	return h.catalogPID
 }
 
 func (d *Manager) SetCatalogPID(pid uint64) {
-	d.mu.Lock()
+	d.globalMu.Lock()
 	h := d.getHeader()
 	h.catalogPID = pid
 	d.setHeader(h)
-	d.mu.Unlock()
+	d.globalMu.Unlock()
 }
 
 func (d *Manager) GetLogWriter() io.Writer {

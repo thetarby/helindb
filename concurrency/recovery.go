@@ -155,7 +155,7 @@ func (r *Recovery) RollbackTxn(id transaction.TxnID) {
 }
 
 // CompleteTxn completes a committed transaction that has some incomplete pending actions
-// (it can only freeing pages for now).
+// (it only includes freeing pages for now).
 func (r *Recovery) CompleteTxn(id transaction.TxnID) error {
 	logs := wal.NewTxnLogIterator(id, r.logs)
 
