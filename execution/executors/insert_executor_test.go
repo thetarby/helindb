@@ -65,11 +65,10 @@ func TestInsertExecutor_Returns_ErrNoTuple_When_All_Is_Inserted(t *testing.T) {
 
 	// create context and the plan
 	ctx := execution.ExecutorContext{
-		Txn:         nil,
-		Catalog:     ctg,
-		Pool:        pool,
-		LockManager: nil,
-		TxnManager:  nil,
+		Txn:        nil,
+		Catalog:    ctg,
+		Pool:       pool,
+		TxnManager: nil,
 	}
 	plan := plans.NewRawInsertPlanNode(rows, table.OID)
 
