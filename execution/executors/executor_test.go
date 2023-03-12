@@ -53,11 +53,10 @@ func TestSeqScanExecutor_Equal_Comparison(t *testing.T) {
 
 	// create context and the plan
 	ctx := execution.ExecutorContext{
-		Txn:         nil,
-		Catalog:     ctg,
-		Pool:        pool,
-		LockManager: nil,
-		TxnManager:  nil,
+		Txn:        nil,
+		Catalog:    ctg,
+		Pool:       pool,
+		TxnManager: nil,
 	}
 	plan := plans.NewRawInsertPlanNode(rows, table.OID)
 
@@ -136,11 +135,10 @@ func TestSeqScanExecutor_Greater_Than_Comparison(t *testing.T) {
 
 	// create context and the plan
 	ctx := execution.ExecutorContext{
-		Txn:         nil,
-		Catalog:     ctg,
-		Pool:        pool,
-		LockManager: nil,
-		TxnManager:  nil,
+		Txn:        nil,
+		Catalog:    ctg,
+		Pool:       pool,
+		TxnManager: nil,
 	}
 	plan := plans.NewRawInsertPlanNode(rows, table.OID)
 
@@ -223,11 +221,10 @@ func TestIndexRangeScanExecutor(t *testing.T) {
 
 	// create context and the plan
 	ctx := execution.ExecutorContext{
-		Txn:         nil,
-		Catalog:     ctg,
-		Pool:        pool,
-		LockManager: nil,
-		TxnManager:  nil,
+		Txn:        nil,
+		Catalog:    ctg,
+		Pool:       pool,
+		TxnManager: nil,
 	}
 	plan := plans.NewRawInsertPlanNode(rows, table.OID)
 
@@ -333,11 +330,10 @@ func TestIndexRangeScanExecutorOnFloat(t *testing.T) {
 
 	// create context and the plan
 	ctx := execution.ExecutorContext{
-		Txn:         nil,
-		Catalog:     ctg,
-		Pool:        pool,
-		LockManager: nil,
-		TxnManager:  nil,
+		Txn:        nil,
+		Catalog:    ctg,
+		Pool:       pool,
+		TxnManager: nil,
 	}
 	plan := plans.NewRawInsertPlanNode(rows, table.OID)
 
@@ -413,11 +409,10 @@ func TestNestedLoopJoinExecutor_Join_With_Self(t *testing.T) {
 
 	// create context and the plan
 	ctx := execution.ExecutorContext{
-		Txn:         nil,
-		Catalog:     ctg,
-		Pool:        pool,
-		LockManager: nil,
-		TxnManager:  nil,
+		Txn:        nil,
+		Catalog:    ctg,
+		Pool:       pool,
+		TxnManager: nil,
 	}
 	plan := plans.NewRawInsertPlanNode(rows, table.OID)
 
@@ -542,11 +537,10 @@ func TestNestedLoopJoinExecutor_Should_Do_Inner_Join(t *testing.T) {
 
 	// create context and the plan
 	ctx := execution.ExecutorContext{
-		Txn:         nil,
-		Catalog:     ctg,
-		Pool:        pool,
-		LockManager: nil,
-		TxnManager:  nil,
+		Txn:        nil,
+		Catalog:    ctg,
+		Pool:       pool,
+		TxnManager: nil,
 	}
 	plan := plans.NewRawInsertPlanNode(namesTableRows, names.OID)
 	plan2 := plans.NewRawInsertPlanNode(agesTableRows, ages.OID)

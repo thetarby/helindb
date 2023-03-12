@@ -39,10 +39,10 @@ func PrevToStart(it LogIterator) error {
 
 func PrevToType(it LogIterator, t LogRecordType) error {
 	lr, err := it.Curr()
-	if err != nil {
+	if err != nil && err != ErrIteratorNotInitialized {
 		return err
 	}
-	if lr.Type() == t {
+	if err != ErrIteratorNotInitialized && lr.Type() == t {
 		return nil
 	}
 
@@ -60,10 +60,10 @@ func PrevToType(it LogIterator, t LogRecordType) error {
 
 func PrevToTxn(it LogIterator, txn transaction.TxnID) error {
 	lr, err := it.Curr()
-	if err != nil {
+	if err != nil && err != ErrIteratorNotInitialized {
 		return err
 	}
-	if lr.TxnID == txn {
+	if err != ErrIteratorNotInitialized && lr.TxnID == txn {
 		return nil
 	}
 
@@ -81,10 +81,10 @@ func PrevToTxn(it LogIterator, txn transaction.TxnID) error {
 
 func NextToTxn(it LogIterator, txn transaction.TxnID) error {
 	lr, err := it.Curr()
-	if err != nil {
+	if err != nil && err != ErrIteratorNotInitialized {
 		return err
 	}
-	if lr.TxnID == txn {
+	if err != ErrIteratorNotInitialized && lr.TxnID == txn {
 		return nil
 	}
 
@@ -95,27 +95,6 @@ func NextToTxn(it LogIterator, txn transaction.TxnID) error {
 		}
 
 		if lr.TxnID == txn {
-			return nil
-		}
-	}
-}
-
-func NextToType(it LogIterator, t LogRecordType) error {
-	lr, err := it.Curr()
-	if err != nil {
-		return err
-	}
-	if lr.Type() == t {
-		return nil
-	}
-
-	for {
-		lr, err := it.Next()
-		if err != nil {
-			return err
-		}
-
-		if lr.T == t {
 			return nil
 		}
 	}

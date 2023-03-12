@@ -107,7 +107,7 @@ func (r *Recovery) Recover() error {
 	for id, status := range activeTxn {
 		if status == "commit" {
 			if err := r.CompleteTxn(id); err != nil {
-				return fmt.Errorf("redo error %w", err)
+				return fmt.Errorf("redo complete error %w", err)
 			}
 		}
 	}
@@ -155,7 +155,7 @@ func (r *Recovery) RollbackTxn(id transaction.TxnID) {
 }
 
 // CompleteTxn completes a committed transaction that has some incomplete pending actions
-// (it can only freeing pages for now).
+// (it only includes freeing pages for now).
 func (r *Recovery) CompleteTxn(id transaction.TxnID) error {
 	logs := wal.NewTxnLogIterator(id, r.logs)
 

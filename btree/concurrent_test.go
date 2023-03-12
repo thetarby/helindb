@@ -60,7 +60,7 @@ func TestConcurrent_Inserts(t *testing.T) {
 func TestConcurrent_Inserts2(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	dm, _, err := disk.NewDiskManager(dbName)
+	dm, _, err := disk.NewDiskManager(dbName, false)
 	require.NoError(t, err)
 	defer common.Remove(dbName)
 
@@ -92,7 +92,7 @@ func TestConcurrent_Deletes(t *testing.T) {
 		t.Run("concurrent deletes", func(t *testing.T) {
 			id, _ := uuid.NewUUID()
 			dbName := id.String()
-			dm, _, err := disk.NewDiskManager(dbName)
+			dm, _, err := disk.NewDiskManager(dbName, false)
 			require.NoError(t, err)
 			defer common.Remove(dbName)
 
@@ -179,10 +179,9 @@ func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 }
 
 func TestConcurrent_Hammer(t *testing.T) {
-	log.SetOutput(io.Discard)
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
-	dm, _, err := disk.NewDiskManager(dbName)
+	dm, _, err := disk.NewDiskManager(dbName, false)
 	require.NoError(t, err)
 	defer common.Remove(dbName)
 
@@ -197,6 +196,8 @@ func TestConcurrent_Hammer(t *testing.T) {
 	for _, i := range toDelete {
 		tree.Insert(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("key_%v_val_%v", i, i))
 	}
+
+	t.Log("populated tree")
 
 	rand.Seed(42)
 

@@ -44,10 +44,10 @@ type TxnManagerImpl struct {
 	r          *Recovery
 	txnCounter atomic.Int64
 	mut        *sync.Mutex
-	pool       buffer.IBufferPool
+	pool       buffer.Pool
 }
 
-func NewTxnManager(pool buffer.IBufferPool, lm wal.LogManager) *TxnManagerImpl {
+func NewTxnManager(pool buffer.Pool, lm wal.LogManager) *TxnManagerImpl {
 	return &TxnManagerImpl{
 		actives:    map[transaction.TxnID]*txn{},
 		lm:         lm,
@@ -72,6 +72,7 @@ func (t *TxnManagerImpl) Commit(transaction transaction.Transaction) {
 	t.CommitByID(transaction.GetID())
 }
 
+// AsyncCommit does not wait for commit record to be flushed.
 func (t *TxnManagerImpl) AsyncCommit(transaction transaction.Transaction) {
 	t.mut.Lock()
 	defer t.mut.Unlock()
@@ -97,9 +98,7 @@ func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) {
 	t.mut.Lock()
 	delete(t.actives, id)
 	for _, page := range txn.freedPages {
-		if err := t.pool.FreePage(txn, page, true); err != nil {
-			panic(err)
-		}
+		t.pool.FreePage(txn, page, true)
 	}
 	t.lm.AppendLog(wal.NewTxnEndLogRecord(id))
 	t.mut.Unlock()
