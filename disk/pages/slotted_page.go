@@ -92,6 +92,10 @@ func (sp *SlottedPage) setHeader(h SlottedPageHeader) {
 }
 
 func (sp *SlottedPage) GetAt(idx int) []byte {
+	if int(sp.GetHeader().SlotArrSize) <= idx {
+		return nil
+	}
+
 	entry := sp.getSlotArrAt(idx)
 
 	d := sp.GetData()
