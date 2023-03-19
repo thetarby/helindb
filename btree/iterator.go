@@ -16,17 +16,15 @@ type TreeIterator struct {
 }
 
 func (it *TreeIterator) Next() (common.Key, any) {
-	h := it.currNode.GetHeader()
-
 	// if there is no element left in node proceed to next node
-	if h.KeyLen == uint16(it.currIdx) {
+	for it.currNode.KeyLen() == (it.currIdx) {
 		it.currNode.Release()
-		if h.Right == 0 {
+		if it.currNode.GetRight() == 0 {
 			it.closed = true
 			return nil, nil
 		}
 
-		it.curr = h.Right
+		it.curr = it.currNode.GetRight()
 		it.currNode = it.pager.GetNodeReleaser(it.curr, Read)
 		it.currIdx = 0
 	}
