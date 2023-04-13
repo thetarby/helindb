@@ -113,9 +113,12 @@ func (sp *SlottedPage) InsertAt(idx int, data []byte) error {
 
 		sp.SetDirty()
 		return nil
-	} else {
+	} else if err != nil {
 		return err
 	}
+
+	sp.SetDirty()
+	return nil
 }
 
 func (sp *SlottedPage) SetAt(idx int, data []byte) error {
