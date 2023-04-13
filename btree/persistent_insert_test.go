@@ -5,6 +5,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"helin/buffer"
 	"helin/common"
+	"helin/disk"
 	"helin/disk/wal"
 	"helin/transaction"
 	"io"
@@ -143,12 +144,16 @@ func TestPersistentInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *tes
 }
 
 func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopened(t *testing.T) {
-	id, _ := uuid.NewUUID()
-	dbName := id.String()
+	dbName := uuid.New().String()
 	defer common.Remove(dbName)
 
+	dm, _, err := disk.NewDiskManager(dbName, false)
+	require.NoError(t, err)
+
+	lm := wal.NewLogManager(dm.GetLogWriter())
 	poolSize := 64
-	pool := buffer.NewBufferPool(dbName, poolSize)
+	pool := buffer.NewBufferPoolWithDM(true, 64, dm, lm)
+
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 80, NewDefaultBPP(pool, &PersistentKeySerializer{}, io.Discard))
 	log.SetOutput(io.Discard)
 
@@ -165,10 +170,15 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 		})
 	}
 
-	require.NoError(t, tree.pager.(*BufferPoolPager).pool.FlushAll())
-	require.NoError(t, tree.pager.(*BufferPoolPager).pool.DiskManager.Close())
+	require.NoError(t, pool.FlushAll())
+	require.NoError(t, dm.Close())
 
-	newPool := buffer.NewBufferPool(dbName, poolSize)
+	dm, _, err = disk.NewDiskManager(dbName, false)
+	require.NoError(t, err)
+
+	lm = wal.NewLogManager(dm.GetLogWriter())
+
+	newPool := buffer.NewBufferPoolWithDM(false, poolSize, dm, lm)
 	newTreeReference := ConstructBtreeByMeta(tree.metaPID, NewDefaultBPP(newPool, &PersistentKeySerializer{}, io.Discard))
 
 	rand.Shuffle(len(v), func(i, j int) {

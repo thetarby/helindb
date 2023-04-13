@@ -226,9 +226,6 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 	defer func() {
 		for _, node := range toFree {
 			tree.pager.FreeNode(txn, node)
-		}
-
-		for _, node := range toFree {
 			node.Release()
 		}
 	}()
