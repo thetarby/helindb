@@ -11,10 +11,6 @@ const (
 	bufSize = 1024 * 64
 )
 
-/*
-	TODO: make log manager interface
-*/
-
 type LogManager interface {
 	// AppendLog appends a log record to wal, set its lsn and return it. This method does not directly flush
 	// log buffer's content to disk.

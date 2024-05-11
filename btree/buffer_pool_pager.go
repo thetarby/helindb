@@ -22,7 +22,7 @@ func (p BtreePage) GetPageId() Pointer {
 var _ Pager = &BufferPoolPager{}
 
 type BufferPoolPager struct {
-	pool            *buffer.BufferPool
+	pool            buffer.Pool
 	keySerializer   KeySerializer
 	valueSerializer ValueSerializer
 	logManager      wal.LogManager
@@ -160,7 +160,7 @@ type NodeReleaser interface {
 
 type readNodeReleaser struct {
 	Node
-	pool *buffer.BufferPool
+	pool buffer.Pool
 }
 
 func (n *readNodeReleaser) Release() {
@@ -170,7 +170,7 @@ func (n *readNodeReleaser) Release() {
 
 type writeNodeReleaser struct {
 	Node
-	pool *buffer.BufferPool
+	pool buffer.Pool
 }
 
 func (n *writeNodeReleaser) Release() {
@@ -178,7 +178,7 @@ func (n *writeNodeReleaser) Release() {
 	n.WUnlatch()
 }
 
-func NewDefaultBPP(pool *buffer.BufferPool, serializer KeySerializer, logWriter io.Writer) *BufferPoolPager {
+func NewDefaultBPP(pool buffer.Pool, serializer KeySerializer, logWriter io.Writer) *BufferPoolPager {
 	return &BufferPoolPager{
 		pool:            pool,
 		keySerializer:   serializer,
@@ -187,7 +187,7 @@ func NewDefaultBPP(pool *buffer.BufferPool, serializer KeySerializer, logWriter 
 	}
 }
 
-func NewBPP(pool *buffer.BufferPool, serializer KeySerializer, valSerializer ValueSerializer, logManager wal.LogManager) *BufferPoolPager {
+func NewBPP(pool buffer.Pool, serializer KeySerializer, valSerializer ValueSerializer, logManager wal.LogManager) *BufferPoolPager {
 	return &BufferPoolPager{
 		pool:            pool,
 		keySerializer:   serializer,

@@ -32,9 +32,12 @@ func NewDefaultLogRecordSerializer() *DefaultLogRecordSerializer {
 }
 
 func (d *DefaultLogRecordSerializer) Serialize(r *LogRecord, writer LogWriter) {
+	common.Assert(r.T != TypeInvalid, "tried to serialize invalid log record type")
+
 	d.area = d.area[:0]
 	d.area = append(d.area, byte(r.T))
-	if r.T == TypeCheckpointBegin || r.T == TypeCheckpointEnd {
+
+	if common.OneOf(r.T, TypeCheckpointBegin, TypeCheckpointEnd) {
 		d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.Lsn))
 
 		n, err := writer.Write(d.area, r.Lsn)
@@ -48,6 +51,7 @@ func (d *DefaultLogRecordSerializer) Serialize(r *LogRecord, writer LogWriter) {
 		serUint64(writer, r.Actives, r.Lsn)
 		return
 	}
+
 	if common.OneOf(r.T, TypeCommit, TypeTxnBegin, TypeAbort) {
 		d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.TxnID))
 		d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.Lsn))
@@ -72,7 +76,9 @@ func (d *DefaultLogRecordSerializer) Serialize(r *LogRecord, writer LogWriter) {
 	d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.PrevLsn))
 	d.area = binary.BigEndian.AppendUint16(d.area, r.Idx)
 	d.area = binary.BigEndian.AppendUint64(d.area, r.PageID)
-	d.area = binary.BigEndian.AppendUint64(d.area, r.PrevPageID)
+	d.area = binary.BigEndian.AppendUint64(d.area, uint64(r.UndoNext))
+	d.area = append(d.area, common.Ternary[uint8](r.IsClr, 1, 0))
+	d.area = append(d.area, common.Ternary[uint8](r.RedoOnly, 1, 0))
 	d.area = binary.BigEndian.AppendUint16(d.area, uint16(len(r.Payload)))
 	d.area = binary.BigEndian.AppendUint16(d.area, uint16(len(r.OldPayload)))
 	n, err := writer.Write(d.area, r.Lsn)
@@ -110,8 +116,10 @@ func (d *DefaultLogRecordSerializer) Deserialize(r io.Reader) (*LogRecord, int, 
 	if err != nil {
 		return nil, src.TotalRead, err
 	}
-
-	if LogRecordType(d.area[0]) == TypeCheckpointEnd || LogRecordType(d.area[0]) == TypeCheckpointBegin {
+	if LogRecordType(d.area[0]) == 0 {
+		println("yey")
+	}
+	if common.OneOf(LogRecordType(d.area[0]), TypeCheckpointEnd, TypeCheckpointBegin) {
 		var lsn pages.LSN
 		if err := read(src, &lsn); err != nil {
 			return nil, src.TotalRead, err
@@ -166,12 +174,14 @@ func (d *DefaultLogRecordSerializer) Deserialize(r io.Reader) (*LogRecord, int, 
 	res.PrevLsn = pages.LSN(binary.BigEndian.Uint64(d.area[17:]))
 	res.Idx = binary.BigEndian.Uint16(d.area[25:])
 	res.PageID = binary.BigEndian.Uint64(d.area[27:])
-	res.PrevPageID = binary.BigEndian.Uint64(d.area[35:])
-	lenp := binary.BigEndian.Uint16(d.area[43:])
-	lenop := binary.BigEndian.Uint16(d.area[45:])
+	res.UndoNext = pages.LSN(binary.BigEndian.Uint64(d.area[35:]))
+	res.IsClr = common.Ternary(uint8(d.area[43]) != 0, true, false)
+	res.RedoOnly = common.Ternary(uint8(d.area[44]) != 0, true, false)
+	lenp := binary.BigEndian.Uint16(d.area[45:])
+	lenop := binary.BigEndian.Uint16(d.area[47:])
 
 	payload := make([]byte, lenp)
-	oldpayload := make([]byte, lenop)
+	oldPayload := make([]byte, lenop)
 
 	n, err = src.Read(payload)
 	if err != nil {
@@ -184,19 +194,19 @@ func (d *DefaultLogRecordSerializer) Deserialize(r io.Reader) (*LogRecord, int, 
 		return nil, src.TotalRead, ErrShortRead
 	}
 
-	n, err = src.Read(oldpayload)
+	n, err = src.Read(oldPayload)
 	if err != nil {
 		if err == io.EOF {
 			return nil, src.TotalRead, ErrShortRead
 		}
 		return nil, src.TotalRead, err
 	}
-	if n != len(oldpayload) {
+	if n != len(oldPayload) {
 		return nil, src.TotalRead, ErrShortRead
 	}
 
 	res.Payload = payload
-	res.OldPayload = oldpayload
+	res.OldPayload = oldPayload
 
 	return &res, src.TotalRead, nil
 }

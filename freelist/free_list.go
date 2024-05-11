@@ -2,7 +2,6 @@ package freelist
 
 import (
 	"encoding/binary"
-	"errors"
 	"helin/common"
 	"helin/disk/pages"
 	"helin/disk/wal"
@@ -19,11 +18,17 @@ type Pager interface {
 	Unpin(pageId uint64, isDirty bool) bool
 }
 
+/*
+	Freelist operations are atomic. Pop and Add operations appends page free and alloc log records. If header page lsn
+	is greater than any page free or alloc log record's lsn, it can safely be considered fully committed. Otherwise,
+	it is not committed.
+*/
+
 type FreeList interface {
 	IsIn(pageID uint64) (bool, error)
-	Remove(txn transaction.Transaction, pageID uint64) error
-	Pop(txn transaction.Transaction) (pageId uint64)
-	Add(txn transaction.Transaction, pageId uint64)
+	Pop(txn transaction.TxnID) (pageId uint64)
+	Add(txn transaction.TxnID, pageId uint64)
+	AddInRecovery(txn transaction.TxnID, pageId uint64, undoNext pages.LSN)
 	GetHeaderPageLsn() pages.LSN
 }
 
@@ -36,22 +41,25 @@ type Header struct {
 var _ FreeList = &List{}
 
 type List struct {
-	lock   sync.Mutex
-	header *Header
-	pager  flPager
+	lock          sync.Mutex
+	header        *Header
+	pager         flPager
+	log           wal.LogManager
+	enableLogging bool
 }
 
-func NewFreeList(txn transaction.Transaction, dm Pager, lm wal.LogManager, init bool) *List {
+func NewFreeList(dm Pager, lm wal.LogManager, init bool) *List {
 	list := &List{
 		lock: sync.Mutex{},
 		pager: flPager{
 			bp: dm,
 			lm: lm,
 		},
+		log: lm,
 	}
 
 	if init {
-		list.initHeader(txn)
+		list.initHeader()
 	}
 	return list
 }
@@ -87,68 +95,8 @@ func (f *List) IsIn(pageID uint64) (bool, error) {
 	}
 }
 
-func (f *List) Remove(txn transaction.Transaction, pageID uint64) error {
-	f.lock.Lock()
-	defer f.lock.Unlock()
-
-	// if list is empty return false
-	h := f.getHeader()
-	if h.freeListHead == 0 {
-		return errors.New("cannot delete from empty free list")
-	}
-
-	// if removed page is head, directly use pop operation
-	if pageID == h.freeListHead {
-		f.Pop(nil)
-		return nil
-	}
-
-	nextPageID, prevPageID := h.freeListHead, h.freeListHead
-	for {
-		if nextPageID == pageID {
-			// do deletion
-			prevPage, err := f.pager.GetPageToWrite(prevPageID)
-			if err != nil {
-				return err
-			}
-
-			nextPage, err := f.pager.GetPageToRead(nextPageID)
-			if err != nil {
-				return err
-			}
-
-			if err := prevPage.SetAt(txn, 0, nextPage.GetAt(0)); err != nil {
-				return err
-			}
-			prevPage.Release()
-			nextPage.Release()
-
-			if nextPageID == h.freeListTail {
-				h.freeListTail = prevPageID
-				f.setHeader(txn, h)
-			}
-
-			return nil
-		}
-
-		if nextPageID == h.freeListTail {
-			break
-		}
-
-		// parse next page id
-		p, err := f.pager.GetPageToRead(h.freeListHead)
-		if err != nil {
-			panic(err)
-		}
-
-		nextPageID = binary.BigEndian.Uint64(p.GetAt(0))
-		p.Release()
-	}
-
-	return errors.New("page cannot be found in free list")
-}
-
-func (f *List) Pop(txn transaction.Transaction) (pageId uint64) {
+// Pop pops a page from free list. Unlike Add, this operation can be undone by simply adding page back to free list.
+func (f *List) Pop(txn transaction.TxnID) (pageId uint64) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -162,7 +110,8 @@ func (f *List) Pop(txn transaction.Transaction) (pageId uint64) {
 	if h.freeListHead == h.freeListTail {
 		pageId = h.freeListHead
 		h.freeListHead, h.freeListTail = 0, 0
-		f.setHeader(txn, h)
+
+		f.setHeader(txn, pageId, h, false, pages.ZeroLSN)
 		return
 	}
 
@@ -177,11 +126,14 @@ func (f *List) Pop(txn transaction.Transaction) (pageId uint64) {
 	h.freeListHead = binary.BigEndian.Uint64(p.GetAt(0))
 	p.Release()
 
-	f.setHeader(txn, h)
+	f.setHeader(txn, pageId, h, false, pages.ZeroLSN)
 	return
 }
 
-func (f *List) Add(txn transaction.Transaction, pageId uint64) {
+// Add adds page to free list. Note that this operation converts pages to SlottedPage and conversion operations are
+// not logged, meaning this operation cannot be undone. Transactions should only free pages after they are committed
+// so that page free operations are never rolled back.
+func (f *List) Add(txn transaction.TxnID, pageId uint64) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -191,7 +143,7 @@ func (f *List) Add(txn transaction.Transaction, pageId uint64) {
 	if h.freeListHead == 0 {
 		h.freeListHead = pageId
 		h.freeListTail = pageId
-		f.setHeader(txn, h)
+		f.setHeader(txn, pageId, h, true, pages.ZeroLSN)
 		return
 	}
 
@@ -202,15 +154,54 @@ func (f *List) Add(txn transaction.Transaction, pageId uint64) {
 		panic(err)
 	}
 
+	// TODO: what about this?
 	if err := p.SetAt(txn, 0, common.Uint64AsBytes(pageId)); err != nil {
 		panic(err)
 	}
 	p.Release()
 
 	h.freeListTail = pageId
-	f.setHeader(txn, h)
+
+	f.setHeader(txn, pageId, h, true, pages.ZeroLSN)
 }
 
+func (f *List) AddInRecovery(txn transaction.TxnID, pageId uint64, undoNext pages.LSN) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	h := f.getHeader()
+
+	// if free list is empty
+	if h.freeListHead == 0 {
+		h.freeListHead = pageId
+		h.freeListTail = pageId
+		f.setHeader(txn, pageId, h, true, undoNext)
+		return
+	}
+
+	// freed page may not be synced to file just yet. in that case ReadPage returns io.EOF and for the consistence of
+	// freelist it needs to be written to disk. Hence, empty bytes are initialized and page is flushed.
+	p, err := f.pager.GetPageToWrite(h.freeListTail)
+	if err != nil {
+		panic(err)
+	}
+
+	// TODO: what about this?
+	if err := p.SetAt(txn, 0, common.Uint64AsBytes(pageId)); err != nil {
+		panic(err)
+	}
+	p.Release()
+
+	h.freeListTail = pageId
+
+	f.setHeader(txn, pageId, h, true, undoNext)
+}
+
+// GetHeaderPageLsn returns the latest lsn that modified the header page of the free list. This can be used to
+// decide if a page free or alloc log operation has been fully flushed to persistent storage by comparing log's lsn and
+// the header page lsn. Since free and alloc operations are committed atomically only after header page is modified,
+// if a free page log record has smaller lsn than header page lsn, it is safe to say that operation has been persisted to
+// disk and there is no need for a redo.
 func (f *List) GetHeaderPageLsn() pages.LSN {
 	// no need to lock because header page is constant
 	p, err := f.pager.GetPageToRead(HeaderPageID)
@@ -241,7 +232,7 @@ func (f *List) getHeader() Header {
 	return h
 }
 
-func (f *List) setHeader(txn transaction.Transaction, h Header) {
+func (f *List) setHeader(txn transaction.TxnID, pageID uint64, h Header, isFree bool, undoNext pages.LSN) {
 	f.header = &h
 
 	p, err := f.pager.GetPageToWrite(HeaderPageID)
@@ -251,18 +242,32 @@ func (f *List) setHeader(txn transaction.Transaction, h Header) {
 
 	headerB := make([]byte, 24)
 	writeHeader(h, headerB)
-	if err := p.SetAt(txn, 0, headerB); err != nil {
-		panic(err)
+	if isFree {
+		if err := p.SetAtFree(txn, pageID, 0, headerB, undoNext); err != nil {
+			panic(err)
+		}
+	} else {
+		if err := p.SetAtAlloc(txn, pageID, 0, headerB, undoNext); err != nil {
+			panic(err)
+		}
 	}
-	p.Release()
+	defer p.Release()
 }
 
-func (f *List) initHeader(txn transaction.Transaction) {
-	f.setHeader(txn, Header{
+func (f *List) initHeader() {
+	f.setHeader(transaction.TxnTODO().GetID(), 0, Header{
 		freeListHead: 0,
 		freeListTail: 0,
 		catalogPID:   0,
-	})
+	}, false, pages.ZeroLSN)
+}
+
+func (f *List) appendLog(record *wal.LogRecord) pages.LSN {
+	if f.enableLogging {
+		return f.log.AppendLog(record)
+	}
+
+	return pages.ZeroLSN
 }
 
 func ReadHeader(data []byte) Header {

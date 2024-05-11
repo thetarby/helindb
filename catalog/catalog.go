@@ -92,7 +92,7 @@ type InMemCatalog struct {
 	nextIndexOID IndexOID
 	indexOIDLock *sync.Mutex
 
-	pool *buffer.BufferPool
+	pool buffer.Pool
 }
 
 func (c *InMemCatalog) CreateTable(txn transaction.Transaction, tableName string, schema Schema) *TableInfo {
@@ -240,7 +240,7 @@ func (c *InMemCatalog) getNextIndexOID() IndexOID {
 	return c.nextIndexOID
 }
 
-func NewCatalog(pool *buffer.BufferPool) Catalog {
+func NewCatalog(pool buffer.Pool) Catalog {
 	return &InMemCatalog{
 		tables:       make(map[TableOID]*TableInfo),
 		tableNames:   make(map[string]TableOID),

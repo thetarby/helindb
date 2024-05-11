@@ -72,3 +72,6 @@ we have a correctness problem because that page might be flushed(buffer pool can
 before changing its state to dirty. That could lead to missing updates in crash recovery.
 
 buffer pool holds global lock when doing io 
+
+IMPORTANT NOTE: 
+  if txn creates a page and frees it and then rolls back. undoing free is required   

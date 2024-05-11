@@ -34,7 +34,7 @@ type ITableHeap interface {
 }
 
 type TableHeap struct {
-	Pool        *buffer.BufferPool
+	Pool        buffer.Pool
 	FirstPageID uint64
 	LastPageID  uint64
 }
@@ -168,14 +168,14 @@ func (t *TableHeap) GetFirstPage() (*pages.HeapPage, error) {
 	return pages.AsHeapPage(rawPage), nil
 }
 
-func NewTableHeap(pool *buffer.BufferPool, firstPageId uint64) *TableHeap {
+func NewTableHeap(pool buffer.Pool, firstPageId uint64) *TableHeap {
 	return &TableHeap{
 		Pool:        pool,
 		FirstPageID: firstPageId,
 	}
 }
 
-func NewTableHeapWithTxn(pool *buffer.BufferPool, txn transaction.Transaction) (*TableHeap, error) {
+func NewTableHeapWithTxn(pool buffer.Pool, txn transaction.Transaction) (*TableHeap, error) {
 	p, err := pool.NewPage(transaction.TxnTODO())
 	if err != nil {
 		return nil, err

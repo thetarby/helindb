@@ -22,7 +22,6 @@ func TestDefaultLogRecordSerializer(t *testing.T) {
 		Payload:    []byte("sa"),
 		OldPayload: []byte("as"),
 		PageID:     123,
-		PrevPageID: 123,
 	}, gw)
 
 	require.NoError(t, gw.SwapAndWaitFlush())

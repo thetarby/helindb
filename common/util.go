@@ -125,3 +125,29 @@ func Assert(condition bool, msg string, v ...any) {
 		panic(fmt.Sprintf("assertion failed: "+msg, v...))
 	}
 }
+
+type AssertType struct {
+	condition bool
+	msg       string
+	v         []any
+	onFail    []func()
+}
+
+func Assert2(condition bool, msg string, v ...any) *AssertType {
+	return &AssertType{condition: condition, msg: msg, v: v}
+}
+
+func (a *AssertType) OnFail(f ...func()) *AssertType {
+	a.onFail = append(a.onFail, f...)
+	return a
+}
+
+func (a *AssertType) Check() {
+	if !a.condition {
+		for _, f := range a.onFail {
+			f()
+		}
+
+		panic(fmt.Sprintf("assertion failed: "+a.msg, a.v...))
+	}
+}

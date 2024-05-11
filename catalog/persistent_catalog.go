@@ -22,7 +22,7 @@ var _ Catalog = &PersistentCatalog{}
 
 type PersistentCatalog struct {
 	tree strBtree
-	pool *buffer.BufferPool
+	pool buffer.Pool
 	l    *sync.Mutex
 	lm   wal.LogManager
 }
