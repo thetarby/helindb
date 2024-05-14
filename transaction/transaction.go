@@ -1,10 +1,15 @@
 package transaction
 
-import "sync/atomic"
+import (
+	"helin/disk/pages"
+	"sync/atomic"
+)
 
 type Transaction interface {
 	GetID() TxnID
 	FreePage(pageID uint64)
+	SetPrevLsn(pages.LSN)
+	GetPrevLsn() pages.LSN
 }
 
 func TxnTODO() Transaction {
@@ -26,6 +31,14 @@ var _ Transaction = &txnNoop{}
 
 type txnNoop struct {
 	id TxnID
+}
+
+func (t txnNoop) SetPrevLsn(lsn pages.LSN) {
+	return
+}
+
+func (t txnNoop) GetPrevLsn() pages.LSN {
+	return pages.ZeroLSN
 }
 
 func (t txnNoop) FreePage(pageID uint64) {

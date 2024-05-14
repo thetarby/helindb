@@ -2,15 +2,29 @@ package concurrency
 
 import (
 	"helin/buffer"
+	"helin/disk/pages"
 	"helin/disk/wal"
 	"helin/transaction"
+	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 )
+
+var _ transaction.Transaction = &txn{}
 
 type txn struct {
 	id         transaction.TxnID
 	freedPages []uint64
+	prevLsn    pages.LSN
+}
+
+func (t *txn) SetPrevLsn(lsn pages.LSN) {
+	t.prevLsn = lsn
+}
+
+func (t *txn) GetPrevLsn() pages.LSN {
+	return t.prevLsn
 }
 
 func (t *txn) GetID() transaction.TxnID {
@@ -33,6 +47,9 @@ type TxnManager interface {
 	BlockAllTransactions()
 	ResumeTransactions()
 
+	BlockNewTransactions()
+	ResumeNewTransactions()
+
 	ActiveTransactions() []transaction.TxnID
 }
 
@@ -44,6 +61,7 @@ type TxnManagerImpl struct {
 	r          *Recovery
 	txnCounter atomic.Int64
 	mut        *sync.Mutex
+	newTxn     *sync.RWMutex
 	pool       buffer.Pool
 }
 
@@ -54,11 +72,15 @@ func NewTxnManager(pool buffer.Pool, lm wal.LogManager) *TxnManagerImpl {
 		r:          nil,
 		txnCounter: atomic.Int64{},
 		mut:        &sync.Mutex{},
+		newTxn:     &sync.RWMutex{},
 		pool:       pool,
 	}
 }
 
 func (t *TxnManagerImpl) Begin() transaction.Transaction {
+	t.newTxn.RLock()
+	defer t.newTxn.RUnlock()
+
 	t.mut.Lock()
 	defer t.mut.Unlock()
 
@@ -68,8 +90,15 @@ func (t *TxnManagerImpl) Begin() transaction.Transaction {
 	return &txn
 }
 
+var s = time.Now()
+
+// Commit waits until commit record is flushed. Hence, it guarantees that txn is committed to persistent storage.
 func (t *TxnManagerImpl) Commit(transaction transaction.Transaction) {
 	t.CommitByID(transaction.GetID())
+	if int(transaction.GetID())%5000 == 0 {
+		log.Printf("txn:%v tps: %v\n", transaction.GetID(), 5000/time.Since(s).Seconds())
+		s = time.Now()
+	}
 }
 
 // AsyncCommit does not wait for commit record to be flushed.
@@ -98,7 +127,10 @@ func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) {
 	t.mut.Lock()
 	delete(t.actives, id)
 	for _, page := range txn.freedPages {
-		t.pool.FreePage(txn, page, true)
+		if err := t.pool.FreePage(txn, page, true); err != nil {
+			// TODO: handle this
+			panic(err)
+		}
 	}
 	t.lm.AppendLog(wal.NewTxnEndLogRecord(id))
 	t.mut.Unlock()
@@ -109,6 +141,10 @@ func (t *TxnManagerImpl) AbortByID(id transaction.TxnID) {
 	// 2. create clr logs that are basically logical negations of corresponding logs
 	// 3. apply clr records and append them to wal
 	// 4. append abort log
+
+	// create a log iterator starting from given lsn
+	//lsn := t.lm.WaitAppendLog(wal.NewAbortLogRecord(id))
+	//wal.NewTxnLogIterator(id)
 
 	logs := wal.NewTxnLogIterator(id, nil)
 	for {
@@ -123,7 +159,7 @@ func (t *TxnManagerImpl) AbortByID(id transaction.TxnID) {
 			break
 		}
 
-		if err := t.r.Undo(lr); err != nil {
+		if err := t.r.Undo(lr, 0); err != nil {
 			panic(err)
 		}
 	}
@@ -135,6 +171,14 @@ func (t *TxnManagerImpl) BlockAllTransactions() {
 
 func (t *TxnManagerImpl) ResumeTransactions() {
 	t.mut.Unlock()
+}
+
+func (t *TxnManagerImpl) BlockNewTransactions() {
+	t.newTxn.Lock()
+}
+
+func (t *TxnManagerImpl) ResumeNewTransactions() {
+	t.newTxn.Unlock()
 }
 
 func (t *TxnManagerImpl) ActiveTransactions() []transaction.TxnID {

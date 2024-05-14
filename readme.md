@@ -72,3 +72,7 @@ we have a correctness problem because that page might be flushed(buffer pool can
 before changing its state to dirty. That could lead to missing updates in crash recovery.
 
 buffer pool holds global lock when doing io 
+
+### Thoughts:
+* if txn creates a page and frees it and then rolls back. Undoing free is required.
+  * it is not possible if freeing is guaranteed to happen after txn commits. Even page is created during transaction and then freed. It will be in txn's free list but will not be actually freed until txn commits. 

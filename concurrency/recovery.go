@@ -8,6 +8,7 @@ import (
 	"helin/common"
 	"helin/disk/pages"
 	"helin/disk/wal"
+	"helin/freelist"
 	"helin/transaction"
 	"io"
 	"log"
@@ -18,7 +19,8 @@ type DiskManager interface {
 	GetPage(pageId uint64) (*pages.SlottedPage, error)
 	Unpin(pageId uint64)
 	NewPage(pageId uint64) (*pages.SlottedPage, error)
-	FreePage(pageID uint64) error
+	FreePage(txn transaction.TxnID, pageID uint64)
+	FreePageInRecovery(txn transaction.TxnID, pageID uint64, undoNext pages.LSN)
 	GetFreeListLsn() pages.LSN
 }
 
@@ -98,12 +100,12 @@ func (r *Recovery) Recover() error {
 		}
 	}
 
-	log.Println("these transactions will be rolled back:")
+	log.Println("active transactions during crash:")
 	for id, status := range activeTxn {
 		log.Printf("active txn: %v, status: %v\n", id, status)
 	}
 
-	// Complete all transactions are active and committed.
+	// Complete all transactions that are active and committed.
 	for id, status := range activeTxn {
 		if status == "commit" {
 			if err := r.CompleteTxn(id); err != nil {
@@ -145,8 +147,11 @@ func (r *Recovery) RollbackTxn(id transaction.TxnID) {
 		}
 
 		common.Assert(lr.Type() != wal.TypeCommit, "rollback called on committed txn: %v", id)
+		common.Assert(lr.Type() != wal.TypeFreePage, "free page cannot be undone txn: %v", id)
+		common.Assert(lr.Type() != wal.TypeFreePageSet, "free page cannot be undone txn: %v", id)
 
-		if err := r.Undo(lr); err != nil {
+		// TODO: undo next
+		if err := r.Undo(lr, 0); err != nil {
 			panic(err)
 		}
 	}
@@ -184,26 +189,23 @@ func (r *Recovery) CompleteTxn(id transaction.TxnID) error {
 		}
 
 		// assertions
-		common.Assert(lr.Type() == wal.TypeFreePage, "encountered a log record other than TypeFreePage after TypeCommit")
+		common.Assert(lr.Type() == wal.TypeFreePage || lr.Type() == wal.TypeFreePageSet, "encountered a log record other than TypeFreePage after TypeCommit")
 		common.Assert(toFree[lr.PageID], "txn freed a page that is not in FreedPages")
 
-		// 1. compare freelist lsn with log's lsn and free page if log's lsn is larger.
-		if r.dm.GetFreeListLsn() < lr.Lsn {
-			if err := r.dm.FreePage(lr.PageID); err != nil {
-				return fmt.Errorf("CompleteTxn error: %w", err)
-			}
-		}
+		// no need to do anything when TypeFreePageSet
+		if lr.Type() == wal.TypeFreePage {
+			// assertions
+			common.Assert(toFree[lr.PageID], "txn freed a page that is not in FreedPages")
+			common.Assert(r.dm.GetFreeListLsn() < lr.Lsn, "complete txn encountered a log record that is not redone")
 
-		// 2. delete pageID from toFree.
-		delete(toFree, lr.PageID)
+			// delete pageID from toFree.
+			delete(toFree, lr.PageID)
+		}
 	}
 
 	// 3. for all remaining pages in toFree, free all pages and append corresponding TypeFreePage log records.
 	for page := range toFree {
-		r.logManager.AppendLog(wal.NewFreePageLogRecord(id, page))
-		if err := r.dm.FreePage(page); err != nil {
-			return fmt.Errorf("CompleteTxn error: %w", err)
-		}
+		r.dm.FreePage(id, page)
 	}
 
 	// 4. append end record and complete txn
@@ -214,20 +216,36 @@ func (r *Recovery) CompleteTxn(id transaction.TxnID) error {
 // Redo applies change in the log record if page's pageLsn is smaller than log's lsn and updates pageLsn,
 // if not, this is a noop since changes are already on the page.
 func (r *Recovery) Redo(lr *wal.LogRecord) error {
-	// TODO: HANDLE CLR RECORDS
-	p, err := r.dm.GetPage(lr.PageID)
-	if err != nil {
-		if err == io.EOF && lr.Type() == wal.TypeNewPage {
-			p, err = r.dm.NewPage(lr.PageID)
-			if err != nil {
-				return err
+	if lr.Type() == wal.TypeNewPage && !lr.IsPop() {
+		// if this is a new page which is not popped from free list, it might not make it to the disk yet, meaning
+		// it would return EOF if one tries to read it from disk.
+		p, err := r.dm.GetPage(lr.PageID)
+		if err != nil {
+			if err == io.EOF {
+				p, err = r.dm.NewPage(lr.PageID)
+				if err != nil {
+					return err
+				}
+
+				p.SetDirty()
+				r.dm.Unpin(lr.PageID)
+				return nil
 			}
 
-			p.SetPageLSN(lr.Lsn)
-			p.SetDirty()
-		} else {
 			return err
 		}
+	}
+
+	pageID := lr.PageID
+	if lr.Type() == wal.TypeFreePage {
+		// if it is a free page log record, page id represents freed page's id but, we want to modify free list
+		// hence fetch free list header page.
+		pageID = freelist.HeaderPageID
+	}
+
+	p, err := r.dm.GetPage(pageID)
+	if err != nil {
+		return err
 	}
 	defer r.dm.Unpin(lr.PageID)
 
@@ -239,6 +257,7 @@ func (r *Recovery) Redo(lr *wal.LogRecord) error {
 		p.SetDirty()
 	}
 
+	// note that if this is a TypeFreePage log record p.GetPageLSN() returns free list's lsn.
 	if p.GetPageLSN() >= lr.Lsn {
 		return nil
 	}
@@ -257,7 +276,15 @@ func (r *Recovery) Redo(lr *wal.LogRecord) error {
 		if err := p.DeleteAt(int(lr.Idx)); err != nil {
 			return err
 		}
-	case wal.TypeSet:
+	case wal.TypeSet, wal.TypeFreePageSet:
+		if d := p.GetAt(int(lr.Idx)); bytes.Compare(d, lr.OldPayload) != 0 {
+			return errors.New("payload is different than logged")
+		}
+
+		if err := p.SetAt(int(lr.Idx), lr.Payload); err != nil {
+			return err
+		}
+	case wal.TypeFreePage:
 		if d := p.GetAt(int(lr.Idx)); bytes.Compare(d, lr.OldPayload) != 0 {
 			return errors.New("payload is different than logged")
 		}
@@ -266,18 +293,15 @@ func (r *Recovery) Redo(lr *wal.LogRecord) error {
 			return err
 		}
 	case wal.TypeNewPage:
-		//if ok, err := r.dm.IsInFreeList(lr.PageID); err != nil {
-		//	return err
-		//} else if ok {
-		//	if err := r.dm.RemoveFromFreelist(lr.PageID); err != nil {
-		//		return err
-		//	}
-		//}
-		// do nothing, handled above
-	case wal.TypeFreePage:
-		// handled in complete
+		if d := p.GetAt(int(lr.Idx)); bytes.Compare(d, lr.OldPayload) != 0 {
+			return errors.New("payload is different than logged")
+		}
+
+		if err := p.SetAt(int(lr.Idx), lr.Payload); err != nil {
+			return err
+		}
 	default:
-		panic("implement me")
+		panic("unknown log type")
 	}
 
 	// then update page lsn
@@ -290,14 +314,12 @@ func (r *Recovery) Redo(lr *wal.LogRecord) error {
 // Undo appends a clr entry for given log and undoes it. Note that undo is not a conditional operation unlike redo,
 // meaning, there is no need to compare pageLsn etc. All log records are always undone unconditionally. This is
 // because undo phase starts after redo phase completed and that means all log records are already known to be applied.
-func (r *Recovery) Undo(lr *wal.LogRecord) error {
+func (r *Recovery) Undo(lr *wal.LogRecord, undoNext pages.LSN) error {
 	// 1. create clr
 	// 2. append clr to wal
 	// 3. fetch page from buffer pool and cast it to slotted page
 	// 4. undo action taken by log
 
-	// IMPORTANT NOTE: when rolling back free page if a page with different id is created, btree nodes may point to
-	// the old page id.
 	if lr.Type() == wal.TypeCommit {
 		return fmt.Errorf("undoing committed txn: %v", lr.TxnID)
 	}
@@ -316,27 +338,46 @@ func (r *Recovery) Undo(lr *wal.LogRecord) error {
 		panic("corrupted redo phase")
 	}
 
-	r.logManager.AppendLog(lr.Clr()) // TODO: should we wait for flush?
-	if lr.PageID == 4250 {
-		println("asd")
-	}
 	switch lr.Type() {
 	case wal.TypeDelete:
 		common.PanicIfErr(p.InsertAt(int(lr.Idx), lr.OldPayload))
+
+		// append clr
+		lr = wal.NewInsertLogRecord(lr.TxnID, lr.Idx, lr.Payload, p.GetPageId())
+		lr.IsClr = true
+		lr.UndoNext = undoNext
+		lsn := r.logManager.AppendLog(lr)
+		p.SetPageLSN(lsn)
 	case wal.TypeSet:
 		d := p.GetAt(int(lr.Idx))
 		if bytes.Compare(d, lr.Payload) != 0 {
 			return fmt.Errorf("payload is different than logged: %v", base64.StdEncoding.EncodeToString(d))
 		}
+
 		common.PanicIfErr(p.SetAt(int(lr.Idx), lr.OldPayload))
+
+		// append clr
+		lr = wal.NewSetLogRecord(lr.TxnID, lr.Idx, lr.OldPayload, d, lr.PageID)
+		lr.IsClr = true
+		lr.UndoNext = undoNext
+		lsn := r.logManager.AppendLog(lr)
+		p.SetPageLSN(lsn)
 	case wal.TypeInsert:
 		d := p.GetAt(int(lr.Idx))
 		if bytes.Compare(d, lr.Payload) != 0 {
 			panic("payload is different than logged")
 		}
+
 		common.PanicIfErr(p.DeleteAt(int(lr.Idx)))
+
+		// append clr
+		lr = wal.NewDeleteLogRecord(lr.TxnID, lr.Idx, d, lr.PageID)
+		lr.IsClr = true
+		lr.UndoNext = undoNext
+		lsn := r.logManager.AppendLog(lr)
+		p.SetPageLSN(lsn)
 	case wal.TypeNewPage:
-		common.PanicIfErr(r.dm.FreePage(lr.PageID))
+		r.dm.FreePageInRecovery(lr.TxnID, lr.PageID, undoNext)
 	default:
 		return fmt.Errorf("unrecognized log record type encountered for undo, type: %v", lr.Type())
 	}
