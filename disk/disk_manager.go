@@ -16,47 +16,39 @@ type IDiskManager interface {
 	GetCatalogPID() uint64
 	SetCatalogPID(pid uint64)
 	Close() error
-
-	GetLogWriter() io.Writer
 }
 
-const PageSize int = 4096
+const PageUsableSize int = PageSize - 16 // TODO IMPORTANT: move this
+const PageSize int = 4096 * 2
 
 type Manager struct {
-	file        *os.File
-	filename    string
-	logFile     *os.File
-	logFileName string
-	lastPageId  uint64
-	globalMu    sync.Mutex
-	seekMu      sync.Mutex
-	serializer  IHeaderSerializer
-	header      *header
+	file       *os.File
+	filename   string
+	lastPageId uint64
+	globalMu   sync.Mutex
+	seekMu     sync.Mutex
+	serializer IHeaderSerializer
+	header     *header
 
 	// fsync should normally be set to true. If it is false then data might be lost even after a successful write
 	// operation when power loss occurs before os flushes its io buffers. But when it is false, one thread tests runs faster
 	// thanks to io scheduling of os, so for development it could be set to false. Setting it to false should not change
 	// the validity of any tests unless a test is simulating a power loss.
 	fsync bool
+
+	count int32
 }
 
 func NewDiskManager(file string, fsync bool) (*Manager, bool, error) {
 	d := Manager{fsync: fsync}
 	d.serializer = jsonSerializer{}
 	d.filename = file
-	d.logFileName = file + ".log"
 
 	f, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, os.ModePerm)
 	if err != nil {
 		return nil, false, err
 	}
 
-	lf, err := os.OpenFile(d.logFileName, os.O_CREATE|os.O_RDWR, os.ModePerm)
-	if err != nil {
-		return nil, false, err
-	}
-
-	d.logFile = lf
 	d.file = f
 	stats, _ := f.Stat()
 
@@ -75,7 +67,7 @@ func NewDiskManager(file string, fsync bool) (*Manager, bool, error) {
 	return &d, false, nil
 }
 
-func (d *Manager) WritePage(data []byte, pageId uint64) error {
+func (d *Manager) WritePage2(data []byte, pageId uint64) error {
 	d.seekMu.Lock()
 	defer d.seekMu.Unlock()
 
@@ -101,7 +93,7 @@ func (d *Manager) WritePage(data []byte, pageId uint64) error {
 	return nil
 }
 
-func (d *Manager) ReadPage(pageId uint64, dest []byte) error {
+func (d *Manager) ReadPage2(pageId uint64, dest []byte) error {
 	d.seekMu.Lock()
 	defer d.seekMu.Unlock()
 
@@ -122,6 +114,38 @@ func (d *Manager) ReadPage(pageId uint64, dest []byte) error {
 	return nil
 }
 
+func (d *Manager) WritePage(data []byte, pageId uint64) error {
+	n, err := d.file.WriteAt(data, (int64(PageSize))*int64(pageId))
+	if err != nil {
+		return err
+	}
+	if n != PageSize {
+		panic("written bytes are not equal to page size")
+	}
+
+	if d.fsync {
+		if err := d.file.Sync(); err != nil {
+			panic(err)
+		}
+	}
+
+	return nil
+}
+
+func (d *Manager) ReadPage(pageId uint64, dest []byte) error {
+	_ = dest[PageSize-1] // bound check
+
+	n, err := d.file.ReadAt(dest, (int64(PageSize))*int64(pageId))
+	if err != nil {
+		return err
+	}
+	if n != PageSize {
+		panic(fmt.Sprintf("Partial page encountered this should not happen. Page id: %d", pageId))
+	}
+
+	return nil
+}
+
 func (d *Manager) NewPage() (pageId uint64) {
 	d.globalMu.Lock()
 	defer d.globalMu.Unlock()
@@ -131,9 +155,6 @@ func (d *Manager) NewPage() (pageId uint64) {
 }
 
 func (d *Manager) Close() error {
-	if err := d.logFile.Close(); err != nil {
-		return err
-	}
 	return d.file.Close()
 }
 
@@ -150,10 +171,6 @@ func (d *Manager) SetCatalogPID(pid uint64) {
 	h.catalogPID = pid
 	d.setHeader(h)
 	d.globalMu.Unlock()
-}
-
-func (d *Manager) GetLogWriter() io.Writer {
-	return &SyncWriter{d.logFile}
 }
 
 func (d *Manager) getHeader() header {

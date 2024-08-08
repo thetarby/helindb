@@ -5,7 +5,6 @@ import (
 	"helin/disk/pages"
 	"helin/disk/wal"
 	"helin/transaction"
-	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,10 +16,15 @@ type txn struct {
 	id         transaction.TxnID
 	freedPages []uint64
 	prevLsn    pages.LSN
+	undoing    []byte
 }
 
 func newTxn(id transaction.TxnID, freedPages []uint64, prevLsn pages.LSN) *txn {
 	return &txn{id: id, freedPages: freedPages, prevLsn: prevLsn}
+}
+
+func (t *txn) SetUndoingLog(bytes []byte) {
+	t.undoing = bytes
 }
 
 func (t *txn) SetPrevLsn(lsn pages.LSN) {
@@ -41,6 +45,10 @@ func (t *txn) GetID() transaction.TxnID {
 
 func (t *txn) FreePage(pageID uint64) {
 	t.freedPages = append(t.freedPages, pageID)
+}
+
+func (t *txn) GetUndoingLog() []byte {
+	return t.undoing
 }
 
 // TxnManager keeps track of running transactions.
@@ -92,10 +100,12 @@ func (t *TxnManagerImpl) Begin() transaction.Transaction {
 	t.mut.Lock()
 	defer t.mut.Unlock()
 
-	id := t.txnCounter.Add(1)
-	txn := txn{id: transaction.TxnID(id)}
-	t.actives[txn.GetID()] = &txn
-	return &txn
+	// lsn is used as txnID
+	lsn := t.lm.AppendLog(nil, wal.NewTxnStarterLogRecord())
+	txn := newTxn(transaction.TxnID(lsn), nil, 0)
+	t.actives[txn.GetID()] = txn
+
+	return txn
 }
 
 var s = time.Now()
@@ -104,11 +114,6 @@ var s = time.Now()
 func (t *TxnManagerImpl) Commit(transaction transaction.Transaction) error {
 	if err := t.CommitByID(transaction.GetID()); err != nil {
 		return err
-	}
-
-	if int(transaction.GetID())%5000 == 0 {
-		log.Printf("txn:%v tps: %v\n", transaction.GetID(), 5000/time.Since(s).Seconds())
-		s = time.Now()
 	}
 
 	return nil
@@ -166,10 +171,10 @@ func (t *TxnManagerImpl) AbortByID(id transaction.TxnID) {
 
 	// create a log iterator starting from given lsn
 	//lsn := t.lm.WaitAppendLog(wal.NewAbortLogRecord(id))
-	//wal.NewTxnLogIterator(id)
+	//wal.NewTxnBackwardLogIterator(id)
 
 	// TODO: implement this
-	//logs := wal.NewTxnLogIterator(id, nil)
+	//logs := wal.NewTxnBackwardLogIterator(id, nil)
 	//for {
 	//	lr, err := logs.Prev()
 	//	if err != nil {

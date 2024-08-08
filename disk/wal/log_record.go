@@ -13,19 +13,17 @@ const (
 	TypeInsert
 	TypeSet
 	TypeDelete
+	TypeCopyAt
 	TypeNewPage
 	TypeFreePage
 	TypeFreePageSet
+	TypePageFormat
 	TypeCheckpointBegin
 	TypeCheckpointEnd
-	TypeTxnBegin
+	TypeTxnStarter
 	TypeCommit
 	TypeTxnEnd
 	TypeAbort
-)
-
-const (
-	LogRecordInlineSize = 1 + 8 + 8 + 8 + 2 + 8 + 8 + 1 + 1
 )
 
 type LogRecord struct {
@@ -42,14 +40,21 @@ type LogRecord struct {
 	// for update
 	OldPayload []byte
 
-	// for new page
-	PageID uint64
+	// for free list logs
+	PageID     uint64
+	TailPageID uint64
+	HeadPageID uint64
+
+	// for page formats
+	PageType uint64
 
 	// indicates if this is a clr log record
 	IsClr bool
 
 	UndoNext pages.LSN
 	Actives  []transaction.TxnID
+
+	Raw []byte
 }
 
 func (l *LogRecord) Type() LogRecordType {
@@ -62,6 +67,9 @@ func (l *LogRecord) IsPop() bool {
 }
 
 func (l *LogRecord) GetTxnID() transaction.TxnID {
+	if l.T == TypeTxnStarter {
+		return transaction.TxnID(l.Lsn)
+	}
 	return l.TxnID
 }
 
@@ -75,6 +83,14 @@ func NewDeleteLogRecord(txnID transaction.TxnID, idx uint16, deleted []byte, pag
 
 func NewSetLogRecord(txnID transaction.TxnID, idx uint16, payload, oldPayload []byte, pageID uint64) *LogRecord {
 	return &LogRecord{T: TypeSet, TxnID: txnID, Idx: idx, Payload: payload, OldPayload: oldPayload, PageID: pageID}
+}
+
+func NewCopyAtLogRecord(txnID transaction.TxnID, offset uint16, payload, oldPayload []byte, pageID uint64) *LogRecord {
+	return &LogRecord{T: TypeCopyAt, TxnID: txnID, Idx: offset, Payload: payload, OldPayload: oldPayload, PageID: pageID}
+}
+
+func NewPageFormatLogRecord(txnID transaction.TxnID, pageType, pageID uint64) *LogRecord {
+	return &LogRecord{T: TypePageFormat, TxnID: txnID, PageType: pageType, PageID: pageID}
 }
 
 func NewAllocPageLogRecord(txnID transaction.TxnID, idx uint16, payload, oldPayload []byte, pageID uint64) *LogRecord {
@@ -101,6 +117,10 @@ func NewCommitLogRecord(txnID transaction.TxnID, freed []uint64) *LogRecord {
 	return &LogRecord{T: TypeCommit, TxnID: txnID, FreedPages: freed}
 }
 
+func NewTxnStarterLogRecord() *LogRecord {
+	return &LogRecord{T: TypeTxnStarter}
+}
+
 func NewTxnEndLogRecord(txnID transaction.TxnID) *LogRecord {
 	return &LogRecord{T: TypeTxnEnd, TxnID: txnID}
 }
@@ -109,6 +129,6 @@ func NewCheckpointBeginLogRecord(activeTxnList ...transaction.TxnID) *LogRecord 
 	return &LogRecord{T: TypeCheckpointBegin, Actives: activeTxnList}
 }
 
-func NewCheckpointEndLogRecord(activeTxnList ...transaction.TxnID) *LogRecord {
-	return &LogRecord{T: TypeCheckpointEnd, Actives: activeTxnList}
+func NewCheckpointEndLogRecord(startLSN pages.LSN, activeTxnList ...transaction.TxnID) *LogRecord {
+	return &LogRecord{T: TypeCheckpointEnd, Actives: activeTxnList, PrevLsn: startLSN}
 }

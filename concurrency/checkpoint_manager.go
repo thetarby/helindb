@@ -32,7 +32,7 @@ func (c *CheckpointManagerImpl) TakeCheckpoint() error {
 
 	c.txnManager.BlockAllTransactions()
 	actives := c.txnManager.ActiveTransactions()
-	c.logManager.AppendLog(nil, wal.NewCheckpointBeginLogRecord(actives...))
+	startLSN := c.logManager.AppendLog(nil, wal.NewCheckpointBeginLogRecord(actives...))
 	c.txnManager.ResumeTransactions()
 
 	// flush all dirty pages
@@ -44,7 +44,7 @@ func (c *CheckpointManagerImpl) TakeCheckpoint() error {
 	// write checkpoint end
 	c.txnManager.BlockAllTransactions()
 	actives = c.txnManager.ActiveTransactions()
-	c.logManager.AppendLog(nil, wal.NewCheckpointEndLogRecord(actives...))
+	c.logManager.AppendLog(nil, wal.NewCheckpointEndLogRecord(startLSN, actives...))
 	c.txnManager.ResumeTransactions()
 
 	return nil

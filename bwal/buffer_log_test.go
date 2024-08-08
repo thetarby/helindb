@@ -109,7 +109,7 @@ func TestBufferedLogWriter_Write(t *testing.T) {
 				assert.NoError(t, err)
 
 				sw := &failingSegmentWriter{buf: f, behaviour: "fail_always_after_first"}
-				lw := newBufferedLogWriter(8192, 0, sw)
+				lw := newBufferedLogWriter(8192, 0, 0, sw)
 				lw.RunFlusher()
 
 				type log struct {
@@ -211,7 +211,7 @@ func TestBufferedLogWriter_Write_Retry(t *testing.T) {
 				assert.NoError(t, err)
 
 				sw := &failingSegmentWriter{buf: f, behaviour: "fail_occasionally"}
-				lw := newBufferedLogWriter(8192*4, 0, sw)
+				lw := newBufferedLogWriter(8192*4, 0, 0, sw)
 				lw.RunFlusher()
 
 				type log struct {

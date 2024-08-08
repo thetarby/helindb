@@ -61,40 +61,42 @@ func (r *BufferedLogReader) SkipToLSN(lsn uint64) ([]byte, error) {
 	return res, nil
 }
 
-func (r *BufferedLogReader) Next() ([]byte, error) {
+func (r *BufferedLogReader) Next() ([]byte, uint64, error) {
 	nextLSN := uint64(0)
 	if r.currLSN != nil {
 		nextLSN = *r.currLSN + uint64(r.currLogRecordHeader.Size) + uint64(LogRecordHeaderSize)
 	} else {
 		s, err := r.segmentReader.FrontTruncatedSize()
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 
 		nextLSN = s
 	}
 
-	return r.SkipToLSN(nextLSN)
+	l, err := r.SkipToLSN(nextLSN)
+	return l, nextLSN, err
 }
 
-func (r *BufferedLogReader) Prev() ([]byte, error) {
+func (r *BufferedLogReader) Prev() ([]byte, uint64, error) {
 	if r.currLSN == nil {
-		return nil, ErrAtFirst // TODO is this OK?
+		return nil, 0, ErrAtFirst // TODO is this OK?
 	}
 	if *r.currLSN == 0 {
-		return nil, ErrAtFirst
+		return nil, 0, ErrAtFirst
 	}
 
-	l, err := r.SkipToLSN(r.currLogRecordHeader.PrevLSN)
+	prevLSN := r.currLogRecordHeader.PrevLSN
+	l, err := r.SkipToLSN(prevLSN)
 	if err != nil {
 		if errors.Is(err, ErrOutOfBounds) {
-			return nil, ErrAtFirst
+			return nil, 0, ErrAtFirst
 		}
 
-		return nil, err
+		return nil, 0, err
 	}
 
-	return l, nil
+	return l, prevLSN, nil
 }
 
 func (r *BufferedLogReader) Reset() {
@@ -114,7 +116,7 @@ func (r *BufferedLogReader) LastLSN() ([]byte, error) {
 	}
 
 	for {
-		curr, err := r.Next()
+		curr, _, err := r.Next()
 		if err != nil {
 			if errors.Is(err, ErrAtLast) {
 				break
@@ -133,7 +135,7 @@ func (r *BufferedLogReader) RepairWAL() error {
 	defer r.Reset()
 
 	_, err := r.LastLSN()
-	if err == nil {
+	if err == nil || errors.Is(err, ErrNoSegmentFile) {
 		return nil
 	}
 

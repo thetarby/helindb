@@ -7,7 +7,7 @@ import (
 	"helin/disk"
 	"helin/disk/pages"
 	"helin/disk/wal"
-	"helin/freelist"
+	"helin/freelist/pfreelistv1"
 	"helin/transaction"
 	"log"
 	"sync"
@@ -33,7 +33,12 @@ type Pool interface {
 	// EmptyFrameSize returns the number empty frames which does not hold data of any physical page
 	EmptyFrameSize() int
 
-	GetFreeList() freelist.FreeList
+	GetFreeList() FreeList
+}
+
+type FreeList interface {
+	Pop(txn transaction.Transaction) (pageId uint64, err error)
+	Add(txn transaction.Transaction, pageId uint64) error
 }
 
 type frame struct {
@@ -55,7 +60,7 @@ type PoolV1 struct {
 	Replacer    IReplacer
 	DiskManager disk.IDiskManager
 	logManager  wal.LogManager
-	fl          freelist.FreeList
+	fl          FreeList
 
 	// xLock is exclusive lock which should be acquired before changing buffer pool's state. State of buffer pool
 	// includes pin count of frames, pageMap and emptyFrames. Before changing any of those, xLock must be acquired.
@@ -69,7 +74,7 @@ type PoolV1 struct {
 	evicting uint64
 }
 
-func (b *PoolV1) GetFreeList() freelist.FreeList {
+func (b *PoolV1) GetFreeList() FreeList {
 	return b.fl
 }
 
@@ -446,7 +451,7 @@ func NewBufferPool(dbFile string, poolSize int, lm wal.LogManager) *PoolV1 {
 		log.Fatal("database cannot be created", err)
 	}
 
-	bp.fl = freelist.NewFreeList(bp, bp.logManager, true)
+	bp.fl = pfreelistv1.NewBPFreeList(bp, bp.logManager, true)
 	return bp
 }
 
@@ -473,6 +478,6 @@ func NewBufferPoolWithDM(init bool, poolSize int, dm disk.IDiskManager, logManag
 		}
 	}
 
-	bp.fl = freelist.NewFreeList(bp, bp.logManager, init)
+	bp.fl = pfreelistv1.NewBPFreeList(bp, bp.logManager, init)
 	return bp
 }

@@ -73,7 +73,7 @@ type BufferedLogWriter struct {
 	broker *Broker[uint64]
 }
 
-func newBufferedLogWriter(size int, totalWritten uint64, w SegmentWriter) *BufferedLogWriter {
+func newBufferedLogWriter(size int, totalWritten, prevLSN uint64, w SegmentWriter) *BufferedLogWriter {
 	sm := &sync.Mutex{}
 	b := NewBroker[uint64]()
 	go b.Start()
@@ -90,6 +90,7 @@ func newBufferedLogWriter(size int, totalWritten uint64, w SegmentWriter) *Buffe
 		writerMut:    &sync.Mutex{},
 		logTimeout:   time.Millisecond * 8,
 		totalWritten: totalWritten,
+		latestInBuf:  prevLSN,
 		broker:       b,
 	}
 }
@@ -105,12 +106,25 @@ func OpenBufferedLogWriter(bufSize int, segmentSize uint64, dir string) (*Buffer
 		return nil, err
 	}
 
+	prevLSN := uint64(0)
+	r := OpenBufferedLogReader(dir, segmentSize)
+	if err := r.RepairWAL(); err != nil {
+		return nil, err
+	}
+
+	l, err := r.LastLSN()
+	if err != nil && !errors.Is(err, ErrNoSegmentFile) {
+		return nil, err
+	} else {
+		prevLSN = totalSegmentSize - uint64(len(l)) - uint64(LogRecordHeaderSize)
+	}
+
 	sw, err := NewSegmentFS().OpenSegmentWriter(dir, segmentSize)
 	if err != nil {
 		return nil, err
 	}
 
-	return newBufferedLogWriter(bufSize, totalSegmentSize, sw), nil
+	return newBufferedLogWriter(bufSize, totalSegmentSize, prevLSN, sw), nil
 }
 
 func (w *BufferedLogWriter) Write(log []byte) (lsn uint64, err error) {

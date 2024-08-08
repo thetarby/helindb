@@ -3,6 +3,7 @@ package wal
 import (
 	"encoding/json"
 	"errors"
+	"helin/disk/pages"
 	"helin/transaction"
 	"io"
 )
@@ -22,6 +23,11 @@ type LogIterator interface {
 	Next() (*LogRecord, error)
 	Prev() (*LogRecord, error)
 	Curr() (*LogRecord, error)
+	Skip(lsn pages.LSN) (*LogRecord, error)
+}
+
+type BackwardIterator interface {
+	Prev() (*LogRecord, error)
 }
 
 func PrevToStart(it LogIterator) error {
@@ -79,27 +85,6 @@ func PrevToTxn(it LogIterator, txn transaction.TxnID) error {
 	}
 }
 
-func NextToTxn(it LogIterator, txn transaction.TxnID) error {
-	lr, err := it.Curr()
-	if err != nil && !errors.Is(err, ErrIteratorNotInitialized) {
-		return err
-	}
-	if !errors.Is(err, ErrIteratorNotInitialized) && lr.TxnID == txn {
-		return nil
-	}
-
-	for {
-		lr, err := it.Next()
-		if err != nil {
-			return err
-		}
-
-		if lr.TxnID == txn {
-			return nil
-		}
-	}
-}
-
 // SkipClr should move iterator until clr logs are finished
 func SkipClr(it LogIterator) error {
 	panic("implement me")
@@ -134,79 +119,68 @@ func ToJsonLines(it LogIterator, writer io.Writer) error {
 	}
 }
 
-// txnLogIterator is a LogIterator that iterates only on a transaction's log records.
-type txnLogIterator struct {
+// TxnBackwardLogIterator is a LogIterator that iterates only on a transaction's log records.
+type TxnBackwardLogIterator struct {
 	logIter LogIterator
-	curr    *LogRecord
+	init    bool
 	txnID   transaction.TxnID
+	lsn     pages.LSN // last lsn of the txn
 }
 
-var _ LogIterator = &txnLogIterator{}
-
-func (t *txnLogIterator) Next() (*LogRecord, error) {
-	if _, err := t.logIter.Next(); err != nil {
-		return nil, err
-	}
-
-	if err := NextToTxn(t.logIter, t.txnID); err != nil {
-		return nil, err
-	}
-
-	curr, err := t.logIter.Curr()
-	if err != nil {
-		return nil, err
-	}
-
-	t.curr = curr
-	return curr, nil
-}
-
-func (t *txnLogIterator) Prev() (*LogRecord, error) {
-	if t.curr == nil {
-		if err := PrevToTxn(t.logIter, t.txnID); err != nil {
-			return nil, err
-		}
-
-		curr, err := t.logIter.Curr()
+func (t *TxnBackwardLogIterator) Prev() (*LogRecord, error) {
+	if !t.init {
+		lr, err := t.logIter.Skip(t.lsn)
 		if err != nil {
 			return nil, err
 		}
 
-		t.curr = curr
-		return curr, nil
+		t.init = true
+		return lr, nil
 	}
 
-	_, err := t.logIter.Prev()
+	lr, err := t.logIter.Curr()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := PrevToTxn(t.logIter, t.txnID); err != nil {
-		return nil, err
+	if lr.PrevLsn == pages.ZeroLSN {
+		return nil, ErrIteratorAtBeginning
 	}
 
-	curr, err := t.logIter.Curr()
-	if err != nil {
-		return nil, err
-	}
-
-	t.curr = curr
-	return curr, nil
+	return t.logIter.Skip(lr.PrevLsn)
 }
 
-func (t *txnLogIterator) Curr() (*LogRecord, error) {
-	if t.curr == nil {
-		return nil, ErrIteratorNotInitialized
-	}
-
-	return t.curr, nil
-}
-
-// NewTxnLogIterator creates a txn log iterator starting from the latest log record with given txn id.
-func NewTxnLogIterator(id transaction.TxnID, iter LogIterator) LogIterator {
-	return &txnLogIterator{
+// NewTxnBackwardLogIterator creates a txn log iterator starting from the latest log record with given txn id.
+func NewTxnBackwardLogIterator(txn transaction.Transaction, iter LogIterator) *TxnBackwardLogIterator {
+	return &TxnBackwardLogIterator{
 		logIter: iter,
-		curr:    nil,
-		txnID:   id,
+		init:    false,
+		txnID:   txn.GetID(),
+		lsn:     txn.GetPrevLsn(),
 	}
+}
+
+type TxnBackwardLogIteratorSkipClr struct {
+	it *TxnBackwardLogIterator
+}
+
+func (t *TxnBackwardLogIteratorSkipClr) Prev() (*LogRecord, error) {
+	lr, err := t.it.Prev()
+	if err != nil {
+		return nil, err
+	}
+
+	if lr.IsClr {
+		if lr.UndoNext == pages.ZeroLSN {
+			return nil, ErrIteratorAtBeginning
+		}
+
+		return t.it.logIter.Skip(lr.UndoNext)
+	} else {
+		return lr, err
+	}
+}
+
+func NewTxnBackwardLogIteratorSkipClr(txn transaction.Transaction, iter LogIterator) *TxnBackwardLogIteratorSkipClr {
+	return &TxnBackwardLogIteratorSkipClr{it: NewTxnBackwardLogIterator(txn, iter)}
 }

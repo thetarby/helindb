@@ -1,9 +1,11 @@
 package catalog
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
-	"helin/btree"
+	"helin/btree/btree"
+	"helin/btree/pbtree"
 	"helin/buffer"
 	"helin/common"
 	"helin/concurrency"
@@ -15,7 +17,7 @@ import (
 )
 
 const (
-	degree = 70
+	degree = 10
 )
 
 var _ Catalog = &PersistentCatalog{}
@@ -27,12 +29,15 @@ type PersistentCatalog struct {
 	lm   wal.LogManager
 }
 
-func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.Pool, concurrency.CheckpointManager, concurrency.TxnManager) {
-	dm, created, err := disk.NewDiskManager(file, true)
+func OpenCatalog(file string, poolSize int, fsync bool) (*PersistentCatalog, buffer.Pool, concurrency.CheckpointManager, concurrency.TxnManager) {
+	dbFileName := file + ".helin"
+	logDir := file + "_logs"
+
+	dm, created, err := disk.NewDiskManager(dbFileName, fsync)
 	common.PanicIfErr(err)
 	if created {
 		// TODO: get these as parameters
-		lm, err := wal.OpenBWALLogManager(512*1024, 16*1024*1024, "log_"+file, wal.NewJsonLogSerDe())
+		lm, err := wal.OpenBWALLogManager(512*1024, 16*1024*1024, logDir, wal.NewJsonLogSerDe())
 		if err != nil {
 			panic(err)
 		}
@@ -42,9 +47,13 @@ func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.Pool, co
 		cm := concurrency.NewCheckpointManager(pool, lm, tm)
 
 		// NOTE: maybe use global serializers instead of initializing structs
-		bpp := btree.NewBPP(pool, &btree.StringKeySerializer{}, &btree.StringValueSerializer{}, lm)
-		catalogStore := btree.NewBtreeWithPager(transaction.TxnNoop(), degree, bpp)
+		pager2 := btree.NewPager2(pbtree.NewBufferPoolBPager(pool, lm), &btree.StringKeySerializer{}, &btree.StringValueSerializer{})
+		catalogStore := btree.NewBtreeWithPager(transaction.TxnTODO(), degree, pager2)
 		dm.SetCatalogPID(uint64(catalogStore.GetMetaPID()))
+		if err := pool.FlushAll(); err != nil {
+			panic(err)
+		}
+
 		return &PersistentCatalog{
 			tree: strBtree{*catalogStore},
 			pool: pool,
@@ -53,17 +62,17 @@ func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.Pool, co
 		}, pool, cm, tm
 	}
 
-	lm, err := wal.OpenBWALLogManager(16*1024, 16*1024*1024, "log_"+file, wal.NewJsonLogSerDe())
+	lm, err := wal.OpenBWALLogManager(512*1024, 16*1024*1024, logDir, wal.NewJsonLogSerDe())
 	if err != nil {
 		panic(err)
 	}
 
-	pool := buffer.NewBufferPoolV2WithDM(true, poolSize, dm, lm)
+	pool := buffer.NewBufferPoolV2WithDM(false, poolSize, dm, lm)
 	tm := concurrency.NewTxnManager(pool, lm)
 	cm := concurrency.NewCheckpointManager(pool, lm, tm)
 
-	bpp := btree.NewBPP(pool, &btree.StringKeySerializer{}, &btree.StringValueSerializer{}, lm)
-	catalogStore := btree.ConstructBtreeByMeta(btree.Pointer(dm.GetCatalogPID()), bpp)
+	pager2 := btree.NewPager2(pbtree.NewBufferPoolBPager(pool, lm), &btree.StringKeySerializer{}, &btree.StringValueSerializer{})
+	catalogStore := btree.ConstructBtreeByMeta(btree.Pointer(dm.GetCatalogPID()), pager2)
 	return &PersistentCatalog{
 		tree: strBtree{*catalogStore},
 		pool: pool,
@@ -80,8 +89,8 @@ func (p *PersistentCatalog) CreateStore(txn transaction.Transaction, name string
 	oid := p.getNextIndexOID(txn)
 	p.setStoreByName(txn, name, IndexOID(oid))
 
-	pager := btree.NewBPP(p.pool, &btree.StringKeySerializer{}, &btree.StringValueSerializer{}, p.lm)
-	tree := btree.NewBtreeWithPager(transaction.TxnNoop(), degree, pager)
+	pager := btree.NewPager2(pbtree.NewBufferPoolBPager(p.pool, p.lm), &btree.StringKeySerializer{}, &btree.StringValueSerializer{})
+	tree := btree.NewBtreeWithPager(txn, degree, pager)
 
 	s := StoreInfo{
 		Name:                name,
@@ -97,39 +106,17 @@ func (p *PersistentCatalog) CreateStore(txn transaction.Transaction, name string
 
 func (p *PersistentCatalog) GetStore(txn transaction.Transaction, name string) *btree.BTree {
 	inf := p.getStoreByOID(p.getStoreByName(name))
+	if inf == nil {
+		return nil
+	}
 
-	pager := btree.NewBPP(p.pool, &btree.StringKeySerializer{}, &btree.StringValueSerializer{}, p.lm)
+	pager := btree.NewPager2(pbtree.NewBufferPoolBPager(p.pool, p.lm), &btree.StringKeySerializer{}, &btree.StringValueSerializer{})
 	return btree.ConstructBtreeByMeta(btree.Pointer(inf.MetaPID), pager)
 }
 
-func (p *PersistentCatalog) CreateTable(txn transaction.Transaction, tableName string, schema Schema) *TableInfo {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (p *PersistentCatalog) GetTable(name string) *TableInfo {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (p *PersistentCatalog) GetTableByOID(oid TableOID) *TableInfo {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (p *PersistentCatalog) CreateBtreeIndex(txn transaction.Transaction, indexName string, tableName string, columnIndexes []int, isUnique bool) (*IndexInfo, error) {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (p *PersistentCatalog) GetIndexByOID(indexOID IndexOID) *IndexInfo {
-	//TODO implement me
-	panic("implement me")
-}
-
-func (p *PersistentCatalog) GetTableIndexes(tableName string) []IndexInfo {
-	//TODO implement me
-	panic("implement me")
+func (p *PersistentCatalog) ListStores() []string {
+	keys := p.tree.ListKeys()
+	return keys
 }
 
 func (p *PersistentCatalog) getStoreByName(name string) IndexOID {
@@ -152,6 +139,10 @@ func (p *PersistentCatalog) setStoreByName(txn transaction.Transaction, name str
 }
 
 func (p *PersistentCatalog) getStoreByOID(id IndexOID) *StoreInfo {
+	if id == NullIndexOID {
+		return nil
+	}
+
 	key := fmt.Sprintf("index_oid_%v", id)
 	s := StoreInfo{}
 	s.Deserialize([]byte(p.tree.Get(key)))
@@ -196,4 +187,20 @@ func (tree *strBtree) Get(key string) string {
 	}
 
 	return tree.BTree.Get(btree.StringKey(key)).(string)
+}
+
+func (tree *strBtree) ListKeys() []string {
+	val := tree.BTree.FindSince(btree.StringKey("index_oid"))
+	if val == nil {
+		return nil
+	}
+
+	res := make([]string, 0)
+	for _, re := range val {
+		info := StoreInfo{}
+		json.Unmarshal([]byte(re.(string)), &info)
+		res = append(res, info.Name)
+	}
+
+	return res
 }

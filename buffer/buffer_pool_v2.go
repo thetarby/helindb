@@ -1,11 +1,13 @@
 package buffer
 
 import (
+	"errors"
 	"fmt"
+	"helin/common"
 	"helin/disk"
 	"helin/disk/pages"
 	"helin/disk/wal"
-	"helin/freelist"
+	"helin/freelist/pfreelistv1"
 	"helin/transaction"
 	"log"
 	"sync"
@@ -23,7 +25,7 @@ type PoolV2 struct {
 	DiskManager     disk.IDiskManager
 	emptyFramesLock sync.Mutex
 	logManager      wal.LogManager
-	fl              freelist.FreeList
+	fl              FreeList
 
 	// PoolV2 has only one global lock for its state. Threads does not hold lock when doing io. Io requests is issued
 	// by frames in parallel. lock is only acquired when changing or checking pool's state, meaning, reserving,
@@ -36,7 +38,7 @@ type PoolV2 struct {
 	evictCond *sync.Cond
 }
 
-func (b *PoolV2) GetFreeList() freelist.FreeList {
+func (b *PoolV2) GetFreeList() FreeList {
 	return b.fl
 }
 
@@ -245,6 +247,71 @@ func (b *PoolV2) TryFlush(pageId uint64) error {
 
 // FlushAll determines all dirty pages at the time of call and syncs all of them to disk. It blocks until all
 // determined dirty pages are synced.
+func (b *PoolV2) FlushAll2() error {
+	if err := b.logManager.Flush(); err != nil {
+		return err
+	}
+
+	// take a list of all pages in the page map at the time of calling.
+	b.lock.Lock()
+	pooledPages := make([]uint64, 0)
+	b.pageMap.Range(func(key, value any) bool {
+		pooledPages = append(pooledPages, key.(uint64))
+		return true
+	})
+
+	b.lock.Unlock()
+
+	/*
+		// flush in parallel maybe like this?
+		wg := sync.WaitGroup{}
+		for _, chunk := range common.Chunks(pooledPages, 10) {
+			wg.Add(1)
+			go func(arr []uint64) {
+				defer wg.Done()
+				for _, pid := range arr {
+					for {
+						if err := b.TryFlush(pid); err != nil {
+							if errors.Is(err, ErrPageNotFoundInPageMap) {
+								// if it is not in page map, it is already evicted and synced hence we can continue.
+								break
+							} else if errors.Is(err, ErrRLockFailed) {
+								time.Sleep(time.Microsecond)
+								continue
+							} else {
+								panic(err)
+							}
+						}
+						break
+					}
+					// time.Sleep(time.Millisecond * 4)
+				}
+			}(chunk)
+		}
+		wg.Wait()
+	*/
+
+	// flush all pages. if TryFlush fails wait some time and try again.
+	for _, pid := range pooledPages {
+		for {
+			if err := b.TryFlush(pid); err != nil {
+				if errors.Is(err, ErrPageNotFoundInPageMap) {
+					// if it is not in page map, it is already evicted and synced hence we can continue.
+					break
+				} else if errors.Is(err, ErrRLockFailed) {
+					time.Sleep(time.Microsecond)
+					continue
+				} else {
+					return err
+				}
+			}
+			break
+		}
+		// time.Sleep(time.Millisecond * 4)
+	}
+	return nil
+}
+
 func (b *PoolV2) FlushAll() error {
 	if err := b.logManager.Flush(); err != nil {
 		return err
@@ -260,25 +327,46 @@ func (b *PoolV2) FlushAll() error {
 
 	b.lock.Unlock()
 
-	// flush all pages. if TryFlush fails wait some time and try again.
-	for _, pid := range pooledPages {
-		for {
-			if err := b.TryFlush(pid); err != nil {
-				if err == ErrPageNotFoundInPageMap {
-					// if it is not in page map, it is already evicted and synced hence we can continue.
-					break
-				} else if err == ErrRLockFailed {
-					time.Sleep(time.Microsecond)
-					continue
-				} else {
-					return err
-				}
-			}
-			break
-		}
-		time.Sleep(time.Millisecond * 4)
+	if len(pooledPages) == 0 {
+		return nil
 	}
-	return nil
+
+	// flush in parallel maybe like this?
+	wg := sync.WaitGroup{}
+	errMut := sync.Mutex{}
+	errs := make([]error, 0)
+	chunkSize := (len(pooledPages) / 512) + 1
+	for _, chunk := range common.Chunks(pooledPages, chunkSize) {
+		wg.Add(1)
+
+		go func(arr []uint64) {
+			defer wg.Done()
+
+			for _, pid := range arr {
+				for {
+					if err := b.TryFlush(pid); err != nil {
+						if errors.Is(err, ErrPageNotFoundInPageMap) {
+							// if it is not in page map, it is already evicted and synced hence we can continue.
+							break
+						} else if errors.Is(err, ErrRLockFailed) {
+							time.Sleep(time.Microsecond)
+							continue
+						} else {
+							errMut.Lock()
+							errs = append(errs, err)
+							errMut.Unlock()
+							return
+						}
+					}
+					break
+				}
+				// time.Sleep(time.Millisecond * 4)
+			}
+		}(chunk)
+	}
+	wg.Wait()
+
+	return errors.Join(errs...)
 }
 
 func (b *PoolV2) NewPage(txn transaction.Transaction) (page *pages.RawPage, err error) {
@@ -298,21 +386,25 @@ func (b *PoolV2) NewPage(txn transaction.Transaction) (page *pages.RawPage, err 
 		b.set(victimPageID, -1)
 	}
 
+	// TODO: fix this
+	b.lock.Unlock()
+
 	newPageId, err := b.fl.Pop(txn)
 	if err != nil {
-		b.lock.Unlock()
 		return nil, err
 	}
 
+	b.lock.Lock()
+
 	if newPageId == 0 {
 		newPageId = b.DiskManager.NewPage()
+		b.logManager.AppendLog(txn, wal.NewDiskAllocPageLogRecord(txn.GetID(), newPageId))
 	}
 
 	frame := b.frames[availableFrameIdx]
 
 	frame.page.PageId = newPageId
 	b.set(newPageId, availableFrameIdx)
-	b.logManager.AppendLog(txn, wal.NewDiskAllocPageLogRecord(txn.GetID(), newPageId))
 
 	b.lock.Unlock()
 	if err := frame.Resolve(); err != nil {
@@ -324,6 +416,11 @@ func (b *PoolV2) NewPage(txn transaction.Transaction) (page *pages.RawPage, err 
 
 func (b *PoolV2) EmptyFrameSize() int {
 	return len(b.emptyFrames)
+}
+
+func (b *PoolV2) WithFL(fl FreeList) *PoolV2 {
+	b.fl = fl
+	return b
 }
 
 // reserveFrame should be called after lock is acquired
@@ -415,13 +512,38 @@ func NewBufferPoolV2WithDM(init bool, poolSize int, dm disk.IDiskManager, logMan
 		fl:              nil,
 	}
 	if init {
+		// TODO: convert not logged
 		flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1, disk.PageSize))
 		if err := bp.DiskManager.WritePage(flHeaderP.GetWholeData(), flHeaderP.GetPageId()); err != nil {
 			log.Fatal("database cannot be created", err)
 		}
 	}
 
-	bp.fl = freelist.NewFreeList(bp, bp.logManager, init)
+	bp.fl = pfreelistv1.NewBPFreeList(bp, bp.logManager, init)
+	bp.evictCond = sync.NewCond(&bp.lock)
+
+	return bp
+}
+
+func NewBufferPoolV2(poolSize int, dm disk.IDiskManager, logManager wal.LogManager) *PoolV2 {
+	emptyFrames := make([]int, poolSize)
+	for i := 0; i < poolSize; i++ {
+		emptyFrames[i] = i
+	}
+
+	bp := &PoolV2{
+		poolSize:        poolSize,
+		frames:          make([]*frame, poolSize),
+		pageMap:         sync.Map{},
+		emptyFrames:     emptyFrames,
+		Replacer:        NewClockReplacer(poolSize),
+		DiskManager:     dm,
+		lock:            sync.Mutex{},
+		emptyFramesLock: sync.Mutex{},
+		logManager:      logManager,
+		fl:              nil,
+	}
+
 	bp.evictCond = sync.NewCond(&bp.lock)
 
 	return bp

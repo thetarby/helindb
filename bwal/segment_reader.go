@@ -14,6 +14,7 @@ import (
 
 var ErrUninitializedSegmentFile = errors.New("segment file is not initialized")
 var ErrOutOfBounds = errors.New("tried to seek out of file bounds")
+var ErrNoSegmentFile = errors.New("there is no segment files")
 
 var _ io.ReadSeeker = &SegmentReaderImpl{}
 
@@ -198,12 +199,18 @@ func (r *SegmentReaderImpl) LastSegment() (uint64, error) {
 		return 0, err
 	}
 
+	found := false
 	maxSegment := uint64(0)
 	for _, entry := range entries {
 		s, err := segmentNameToSegment(entry)
 		if err == nil {
+			found = true
 			maxSegment = max(maxSegment, s)
 		}
+	}
+
+	if !found {
+		return 0, ErrNoSegmentFile
 	}
 
 	return maxSegment, nil
@@ -215,12 +222,18 @@ func (r *SegmentReaderImpl) LastSegmentHeader() (*SegmentHeader, error) {
 		return nil, err
 	}
 
+	found := false
 	maxSegment := uint64(0)
 	for _, entry := range entries {
 		s, err := segmentNameToSegment(entry)
 		if err == nil {
+			found = true
 			maxSegment = max(maxSegment, s)
 		}
+	}
+
+	if !found {
+		return nil, ErrNoSegmentFile
 	}
 
 	return r.segmentHeader(maxSegment)

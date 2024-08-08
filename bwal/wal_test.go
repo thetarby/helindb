@@ -26,7 +26,7 @@ func makeTmpDir(t *testing.T) string {
 
 func initWAL(dir string, segmentSize uint64, bufSize int) *BufferedLogWriter {
 	sw := NewSegmentWriter(dir, 0, segmentSize)
-	lw := newBufferedLogWriter(bufSize, 0, sw)
+	lw := newBufferedLogWriter(bufSize, 0, 0, sw)
 
 	return lw
 }
@@ -128,7 +128,7 @@ func TestWal_Next(t *testing.T) {
 			br := OpenBufferedLogReader(dir, uint64(segmentSize))
 			i := 0
 			for {
-				l, err := br.Next()
+				l, _, err := br.Next()
 				if err != nil {
 					if errors.Is(err, ErrAtLast) {
 						assert.Equal(t, len(logs), i)
@@ -185,7 +185,7 @@ func TestWal_Prev(t *testing.T) {
 
 			i := len(logs) - 2
 			for {
-				l, err := br.Prev()
+				l, _, err := br.Prev()
 				if err != nil {
 					if errors.Is(err, ErrAtFirst) {
 						assert.Equal(t, -1, i)
@@ -234,12 +234,12 @@ func TestBufferedLogReader_RepairWAL(t *testing.T) {
 
 	// assert all found until last log
 	for i := 0; i < 99_999; i++ {
-		l, err := r.Next()
+		l, _, err := r.Next()
 		assert.NoError(t, err)
 		assert.Equal(t, []byte(fmt.Sprintf("log_%v", i+1)), l)
 	}
 
-	_, err = r.Next()
+	_, _, err = r.Next()
 	assert.ErrorIs(t, err, ErrAtLast)
 }
 
@@ -279,7 +279,7 @@ func TestBufferedLogReader_TruncateUntil(t *testing.T) {
 		assert.NoError(t, lr.TruncateUntil(logs[20_000].lsn))
 
 		for _, log := range logs[20_000:] {
-			l, err := lr.Next()
+			l, _, err := lr.Next()
 			assert.NoError(t, err)
 			assert.Equal(t, []byte(log.log), l)
 		}
@@ -325,12 +325,12 @@ func TestBufferedLogReader_TruncateUntil(t *testing.T) {
 		assert.Equal(t, []byte(logs[10_000].log), l)
 
 		for _, log := range logs[10_001:] {
-			l, err := lr.Prev()
+			l, _, err := lr.Prev()
 			assert.NoError(t, err)
 			assert.Equal(t, []byte(log.log), l)
 		}
 
-		_, err = lr.Prev()
+		_, _, err = lr.Prev()
 		assert.ErrorIs(t, err, ErrAtFirst)
 	})
 }

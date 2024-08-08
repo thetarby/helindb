@@ -29,8 +29,8 @@ type IPage interface {
 	TryWLatch() bool
 	IncrPinCount()
 	DecrPinCount()
-	SetRecLSN(l LSN)
-	GetRecLSN() LSN
+	SetType(l uint64)
+	GetType() uint64
 	SetPageLSN(l LSN)
 	GetPageLSN() LSN
 }
@@ -131,16 +131,16 @@ func (p *RawPage) TryWLatch() bool {
 	return p.rwLatch.TryLock()
 }
 
-func (p *RawPage) SetRecLSN(l LSN) {
-	binary.BigEndian.PutUint64(p.Data, uint64(l))
+func (p *RawPage) SetType(t uint64) {
+	binary.BigEndian.PutUint64(p.Data, t)
+}
+
+func (p *RawPage) GetType() uint64 {
+	return binary.BigEndian.Uint64(p.Data)
 }
 
 func (p *RawPage) SetPageLSN(l LSN) {
 	binary.BigEndian.PutUint64(p.Data[8:], uint64(l))
-}
-
-func (p *RawPage) GetRecLSN() LSN {
-	return LSN(binary.BigEndian.Uint64(p.Data))
 }
 
 func (p *RawPage) GetPageLSN() LSN {
