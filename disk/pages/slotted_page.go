@@ -5,7 +5,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"helin/common"
 	"sort"
+)
+
+const (
+	TypeNotFormatted = 0
+	TypeSlottedPage  = 1
+	TypeCopyAtPage   = 2
 )
 
 var ErrNotEnoughSpace = errors.New("SlottedPage: not enough space")
@@ -60,8 +67,8 @@ func (sp *SlottedPage) FillFactor() float32 {
 	return float32(filled) / float32(payloadSize)
 }
 
-// EmptySpace returns number of used bytes including slot entries and payload. Fragmented bytes are considered empty
-// hence this actually returns number of bytes between slots and payloads as if page is vacuumed.
+// EmptySpace returns number of unused bytes including slot entries and payload. Fragmented bytes are considered empty
+// hence this actually returns number of bytes between slots and payloads as if page is vacuumed. (logical empty space)
 func (sp *SlottedPage) EmptySpace() int {
 	h := sp.GetHeader()
 	return int(h.FreeSpacePointer) + int(h.EmptyBytes) - (int(h.SlotArrSize)*SlotArrEntrySize + HeaderSize)
@@ -84,6 +91,10 @@ func (sp *SlottedPage) GetHeader() SlottedPageHeader {
 	}
 }
 
+func (sp *SlottedPage) Count() uint16 {
+	return sp.GetHeader().SlotArrSize
+}
+
 func (sp *SlottedPage) setHeader(h SlottedPageHeader) {
 	d := sp.GetData()
 	binary.BigEndian.PutUint16(d, h.FreeSpacePointer)
@@ -92,6 +103,10 @@ func (sp *SlottedPage) setHeader(h SlottedPageHeader) {
 }
 
 func (sp *SlottedPage) GetAt(idx int) []byte {
+	if int(sp.GetHeader().SlotArrSize) <= idx {
+		return nil
+	}
+
 	entry := sp.getSlotArrAt(idx)
 
 	d := sp.GetData()
@@ -101,7 +116,7 @@ func (sp *SlottedPage) GetAt(idx int) []byte {
 }
 
 func (sp *SlottedPage) InsertAt(idx int, data []byte) error {
-	if err := sp.insertAt(idx, data); err == ErrNotEnoughSpace {
+	if err := sp.insertAt(idx, data); errors.Is(err, ErrNotEnoughSpace) {
 		sp.Vacuum()
 		if err := sp.insertAt(idx, data); err != nil {
 			return err
@@ -109,9 +124,12 @@ func (sp *SlottedPage) InsertAt(idx int, data []byte) error {
 
 		sp.SetDirty()
 		return nil
-	} else {
+	} else if err != nil {
 		return err
 	}
+
+	sp.SetDirty()
+	return nil
 }
 
 func (sp *SlottedPage) SetAt(idx int, data []byte) error {
@@ -307,6 +325,8 @@ func (sp *SlottedPage) values() []byte {
 
 // InitSlottedPage formats underlying page as a slotting page. Hence, it modifies the page unlike CastSlottedPage.
 func InitSlottedPage(p IPage) SlottedPage {
+	common.ZeroBytes(p.GetData())
+	p.SetType(TypeSlottedPage)
 	sp := SlottedPage{p}
 
 	sp.setHeader(SlottedPageHeader{
@@ -319,5 +339,6 @@ func InitSlottedPage(p IPage) SlottedPage {
 
 // CastSlottedPage interprets underlying page as a SlottedPage. It does not do any modification on the page's data.
 func CastSlottedPage(p IPage) SlottedPage {
+	common.Assert(p.GetType() == TypeSlottedPage, "page is not a slotted page, it is %v", p.GetType())
 	return SlottedPage{p}
 }

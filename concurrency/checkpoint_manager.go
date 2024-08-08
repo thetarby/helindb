@@ -12,7 +12,7 @@ type CheckpointManager interface {
 }
 
 type CheckpointManagerImpl struct {
-	pool       *buffer.BufferPool
+	pool       buffer.Pool
 	logManager wal.LogManager
 	txnManager TxnManager
 	lock       sync.Mutex
@@ -32,7 +32,7 @@ func (c *CheckpointManagerImpl) TakeCheckpoint() error {
 
 	c.txnManager.BlockAllTransactions()
 	actives := c.txnManager.ActiveTransactions()
-	c.logManager.AppendLog(wal.NewCheckpointBeginLogRecord(actives...))
+	startLSN := c.logManager.AppendLog(nil, wal.NewCheckpointBeginLogRecord(actives...))
 	c.txnManager.ResumeTransactions()
 
 	// flush all dirty pages
@@ -44,12 +44,12 @@ func (c *CheckpointManagerImpl) TakeCheckpoint() error {
 	// write checkpoint end
 	c.txnManager.BlockAllTransactions()
 	actives = c.txnManager.ActiveTransactions()
-	c.logManager.AppendLog(wal.NewCheckpointEndLogRecord(actives...))
+	c.logManager.AppendLog(nil, wal.NewCheckpointEndLogRecord(startLSN, actives...))
 	c.txnManager.ResumeTransactions()
 
 	return nil
 }
 
-func NewCheckpointManager(pool *buffer.BufferPool, logManager wal.LogManager, txnManager TxnManager) *CheckpointManagerImpl {
+func NewCheckpointManager(pool buffer.Pool, logManager wal.LogManager, txnManager TxnManager) *CheckpointManagerImpl {
 	return &CheckpointManagerImpl{pool: pool, logManager: logManager, txnManager: txnManager}
 }

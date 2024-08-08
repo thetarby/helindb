@@ -7,6 +7,11 @@ package structures
 	Schema related info is kept in catalog.Tuple type which is derived from Row type
 */
 
+type Rid struct {
+	PageID  uint64
+	SlotIdx uint16
+}
+
 type IRow interface {
 	Serialize(dest []byte)
 	Deserialize(from []byte)

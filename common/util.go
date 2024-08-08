@@ -91,9 +91,27 @@ func OneOf[T comparable](a T, l ...T) bool {
 	return false
 }
 
+func Chunks[T any](arr []T, chunkSize int) [][]T {
+	if len(arr) == 0 {
+		return nil
+	}
+
+	divided := make([][]T, (len(arr)+chunkSize-1)/chunkSize)
+	prev := 0
+	i := 0
+	till := len(arr) - chunkSize
+	for prev < till {
+		next := prev + chunkSize
+		divided[i] = arr[prev:next]
+		prev = next
+		i++
+	}
+	divided[i] = arr[prev:]
+	return divided
+}
+
 func Remove(dbName string) {
 	PanicIfErr(os.Remove(dbName))
-	PanicIfErr(os.Remove(dbName + ".log"))
 }
 
 var _ io.Reader = &StatReader{}
@@ -123,5 +141,23 @@ func Uint64AsBytes(x uint64) []byte {
 func Assert(condition bool, msg string, v ...any) {
 	if !condition {
 		panic(fmt.Sprintf("assertion failed: "+msg, v...))
+	}
+}
+
+// Exists returns whether the given file or directory exists
+func Exists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func ZeroBytes(d []byte) {
+	for i := 0; i < len(d); i++ {
+		d[i] = 0
 	}
 }

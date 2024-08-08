@@ -44,17 +44,17 @@ pool but each buffer pool can have different size)
 
 - [ ] If replacer had accounted for forced wal flushes and avoided them it would increase performance 
 
-- [ ] More than one overflow pages in B+ tree
+- [x] More than one overflow pages in B+ tree
 
 - [ ] B+ tree try insert with read lock traversal 
 
-- [ ] Refactor B+ tree split logic so that nodes are split in the middle in terms of bytes with variable sized keys
+- [x] Refactor B+ tree split logic so that nodes are split in the middle in terms of bytes with variable sized keys
 
 - [ ] Write better random load tests for B+ tree index with concurrent inserts and deletes
 
 - [ ] Define page_id type and use it everywhere instead of uint64
 
-- [ ] What happens if crash happens in the middle of initializing slotted page
+- [x] CheckpointID might be good
 
 free page is not undoable once a page is freed its content is
 not logged hence action cannot be undone. That means new page
@@ -72,3 +72,7 @@ we have a correctness problem because that page might be flushed(buffer pool can
 before changing its state to dirty. That could lead to missing updates in crash recovery.
 
 buffer pool holds global lock when doing io 
+
+### Thoughts:
+* if txn creates a page and frees it and then rolls back. Undoing free is required.
+  * it is not possible if freeing is guaranteed to happen after txn commits. Even page is created during transaction and then freed. It will be in txn's free list but will not be actually freed until txn commits. 

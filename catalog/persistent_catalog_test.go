@@ -22,7 +22,7 @@ package catalog
 //	ctl, pool := OpenCatalog("test.helin", 50)
 //	tree := ctl.GetStore(nil, "store1")
 //	for i := 0; i < 10000; i++ {
-//		tree.InsertOrReplace(btree.StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("val_%v", i))
+//		tree.Set(btree.StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("val_%v", i))
 //	}
 //	require.NoError(t, pool.FlushAll())
 //}
@@ -30,7 +30,7 @@ package catalog
 //func TestName4(t *testing.T) {
 //	ctl, _ := OpenCatalog("test.helin", 50)
 //	tree := ctl.GetStore(nil, "store1")
-//	v := tree.Find(btree.StringKey("key2"))
+//	v := tree.Get(btree.StringKey("key2"))
 //	println(v.(string))
 //}
 //
@@ -39,7 +39,7 @@ package catalog
 //	tree := ctl.GetStore(nil, "store1")
 //	for i := 0; i < 10000; i++ {
 //		key := fmt.Sprintf("key_%v", i)
-//		v := tree.Find(btree.StringKey(key))
+//		v := tree.Get(btree.StringKey(key))
 //		t.Logf("key: %v, val: %v", key, v.(string))
 //	}
 //}
@@ -55,7 +55,7 @@ package catalog
 //	ctl, pool := OpenCatalog("test.helin", 50)
 //	tree := ctl.GetStore(nil, "store2")
 //	for i := 0; i < 10000; i++ {
-//		tree.InsertOrReplace(btree.StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("valv2_%v", i))
+//		tree.Set(btree.StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("valv2_%v", i))
 //	}
 //	require.NoError(t, pool.FlushAll())
 //}
@@ -65,7 +65,7 @@ package catalog
 //	tree := ctl.GetStore(nil, "store2")
 //	for i := 0; i < 10000; i++ {
 //		key := fmt.Sprintf("key_%v", i)
-//		v := tree.Find(btree.StringKey(key))
+//		v := tree.Get(btree.StringKey(key))
 //		t.Logf("key: %v, val: %v", key, v.(string))
 //	}
 //}
