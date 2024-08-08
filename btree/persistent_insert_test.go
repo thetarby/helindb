@@ -152,7 +152,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 
 	lm := wal.NewLogManager(dm.GetLogWriter())
 	poolSize := 64
-	pool := buffer.NewBufferPoolWithDM(true, 64, dm, lm)
+	pool := buffer.NewBufferPoolV2WithDM(true, 64, dm, lm)
 
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 80, NewDefaultBPP(pool, &PersistentKeySerializer{}, io.Discard))
 	log.SetOutput(io.Discard)
@@ -178,7 +178,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 
 	lm = wal.NewLogManager(dm.GetLogWriter())
 
-	newPool := buffer.NewBufferPoolWithDM(false, poolSize, dm, lm)
+	newPool := buffer.NewBufferPoolV2WithDM(false, poolSize, dm, lm)
 	newTreeReference := ConstructBtreeByMeta(tree.metaPID, NewDefaultBPP(newPool, &PersistentKeySerializer{}, io.Discard))
 
 	rand.Shuffle(len(v), func(i, j int) {

@@ -64,7 +64,7 @@ func TestAll_Inserts_Should_Be_Found_By_Find_Method(t *testing.T) {
 	defer common.Remove(dbName)
 
 	lm := wal.NewLogManager(dm.GetLogWriter())
-	pool := buffer.NewBufferPoolWithDM(true, 1024, dm, lm)
+	pool := buffer.NewBufferPoolV2WithDM(true, 1024, dm, lm)
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 3, NewBPP(pool, &PersistentKeySerializer{}, &StringValueSerializer{}, lm))
 	log.SetOutput(io.Discard)
 
@@ -97,7 +97,7 @@ func TestResources_Are_Released(t *testing.T) {
 	defer common.Remove(dbName)
 
 	lm := wal.NewLogManager(dm.GetLogWriter())
-	pool := buffer.NewBufferPoolWithDM(true, 1024, dm, lm)
+	pool := buffer.NewBufferPoolV2WithDM(true, 1024, dm, lm)
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, lm))
 	log.SetOutput(io.Discard)
 

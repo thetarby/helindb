@@ -65,7 +65,7 @@ func TestConcurrent_Inserts2(t *testing.T) {
 	defer common.Remove(dbName)
 
 	lm := wal.NewLogManager(dm.GetLogWriter())
-	pool := buffer.NewBufferPoolWithDM(true, 1024, dm, lm)
+	pool := buffer.NewBufferPoolV2WithDM(true, 1024, dm, lm)
 
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, lm))
 	log.SetOutput(io.Discard)
@@ -84,12 +84,13 @@ func TestConcurrent_Inserts2(t *testing.T) {
 		}(chunk)
 	}
 	wg.Wait()
-	println(tree.Height())
 }
 
 func TestConcurrent_Deletes(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		t.Run("concurrent deletes", func(t *testing.T) {
+			t.Parallel()
+
 			id, _ := uuid.NewUUID()
 			dbName := id.String()
 			dm, _, err := disk.NewDiskManager(dbName, false)
@@ -97,7 +98,7 @@ func TestConcurrent_Deletes(t *testing.T) {
 			defer common.Remove(dbName)
 
 			lm := wal.NewLogManager(dm.GetLogWriter())
-			pool := buffer.NewBufferPoolWithDM(true, 100_000, dm, lm)
+			pool := buffer.NewBufferPoolV2WithDM(true, 100_000, dm, lm)
 
 			tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewBPP(pool, &PersistentKeySerializer{}, &SlotPointerValueSerializer{}, lm))
 			log.SetOutput(io.Discard)
@@ -179,83 +180,96 @@ func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 }
 
 func TestConcurrent_Hammer(t *testing.T) {
-	id, _ := uuid.NewUUID()
-	dbName := id.String()
-	dm, _, err := disk.NewDiskManager(dbName, false)
-	require.NoError(t, err)
-	defer common.Remove(dbName)
+	for i := 0; i < 20; i++ {
+		t.Run("", func(t *testing.T) {
+			t.Parallel()
+			id, _ := uuid.NewUUID()
+			dbName := id.String()
+			dm, _, err := disk.NewDiskManager(dbName, false)
+			require.NoError(t, err)
+			defer common.Remove(dbName)
 
-	logManager := wal.NewLogManager(dm.GetLogWriter())
+			logManager := wal.NewLogManager(dm.GetLogWriter())
 
-	pool := buffer.NewBufferPoolWithDM(true, 4096, dm, logManager)
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, logManager))
+			pool := buffer.NewBufferPoolV2WithDM(true, 4096, dm, logManager)
+			tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, logManager))
 
-	// first insert some items later to be deleted
-	toDeleteN := 100_000
-	toDelete := rand.Perm(toDeleteN)
-	for _, i := range toDelete {
-		tree.Insert(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("key_%v_val_%v", i, i))
-	}
-
-	t.Log("populated tree")
-
-	rand.Seed(42)
-
-	// now generate items that will be inserted in parallel while other goroutines will delete previously inserted
-	// items again in parallel.
-	n, chunkSize := 500_000, 50_000
-	toInsert := rand.Perm(n)
-	for i := 0; i < len(toInsert); i++ {
-		toInsert[i] += toDeleteN
-	}
-
-	wg := &sync.WaitGroup{}
-
-	// initiate insert routines
-	for _, chunk := range common.ChunksInt(toInsert, chunkSize) {
-		wg.Add(1)
-		go func(arr []int) {
-			for _, i := range arr {
+			// first insert some items later to be deleted
+			toDeleteN := 100_000
+			toDelete := rand.Perm(toDeleteN)
+			for _, i := range toDelete {
 				tree.Insert(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("key_%v_val_%v", i, i))
 			}
-			wg.Done()
-		}(chunk)
-	}
 
-	// initiate delete routines
-	for _, chunk := range common.ChunksInt(toDelete, 1000) {
-		wg.Add(1)
-		go func(arr []int) {
-			for _, i := range arr {
-				if !tree.Delete(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%v", i))) {
-					t.Error("key not found")
-				}
+			t.Log("populated tree")
+
+			rand.Seed(42)
+
+			// now generate items that will be inserted in parallel while other goroutines will delete previously inserted
+			// items again in parallel.
+			n, chunkSize := 500_000, 50_000
+			toInsert := rand.Perm(n)
+			for i := 0; i < len(toInsert); i++ {
+				toInsert[i] += toDeleteN
 			}
-			wg.Done()
-		}(chunk)
-	}
-	wg.Wait()
 
-	t.Log("validating")
-	assert.Len(t, toInsert, tree.Count())
+			wg := &sync.WaitGroup{}
 
-	// assert they are sorted
-	it := NewTreeIterator(transaction.TxnNoop(), tree)
-	var prev common.Key = StringKey("")
-	for k, v := it.Next(); k != nil; k, v = it.Next() {
-		require.Less(t, prev, k)
-		key := string(k.(StringKey))
+			// initiate insert routines
+			for _, chunk := range common.ChunksInt(toInsert, chunkSize) {
+				wg.Add(1)
+				go func(arr []int) {
+					for _, i := range arr {
+						tree.Insert(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%v", i)), fmt.Sprintf("key_%v_val_%v", i, i))
+					}
+					wg.Done()
+				}(chunk)
+			}
 
-		i, err := strconv.Atoi(strings.TrimPrefix(key, "key_"))
-		require.NoError(t, err)
-		require.Equal(t, fmt.Sprintf("key_%v_val_%v", i, i), v)
+			// initiate delete routines
+			for _, chunk := range common.ChunksInt(toDelete, 1000) {
+				wg.Add(1)
+				go func(arr []int) {
+					for _, i := range arr {
+						if !tree.Delete(transaction.TxnNoop(), StringKey(fmt.Sprintf("key_%v", i))) {
+							t.Error("key not found")
+						}
+					}
+					wg.Done()
+				}(chunk)
+			}
+			wg.Wait()
 
-		prev = k
-	}
+			t.Log("validating")
 
-	// assert not found
-	for _, v := range toDelete {
-		assert.Nil(t, tree.Get(StringKey(fmt.Sprintf("key_%v", v))))
+			assert.Equal(t, len(toInsert), tree.Count())
+
+			// assert they are sorted
+			it := NewTreeIterator(transaction.TxnNoop(), tree)
+			var prev common.Key = StringKey("")
+			for k, v := it.Next(); k != nil; k, v = it.Next() {
+				require.Less(t, prev, k)
+				key := string(k.(StringKey))
+
+				i, err := strconv.Atoi(strings.TrimPrefix(key, "key_"))
+				require.NoError(t, err)
+				require.Equal(t, fmt.Sprintf("key_%v_val_%v", i, i), v)
+
+				prev = k
+			}
+
+			// assert not found
+			for _, v := range toDelete {
+				assert.Nil(t, tree.Get(StringKey(fmt.Sprintf("key_%v", v))))
+			}
+
+			// assert found
+			for _, v := range toInsert {
+				key, val := fmt.Sprintf("key_%v", v), fmt.Sprintf("key_%v_val_%v", v, v)
+				gotVal := tree.Get(StringKey(key))
+				assert.Equal(t, val, gotVal)
+			}
+		})
 	}
 }
 

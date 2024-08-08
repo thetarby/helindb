@@ -6,6 +6,8 @@ import (
 	"helin/common"
 	"helin/disk/pages"
 	"helin/transaction"
+	"log"
+	"strings"
 )
 
 // pointer size is the byte size of a page pointer
@@ -184,11 +186,14 @@ func (n *VarKeyLeafNode) KeyLen() int {
 }
 
 func (n *VarKeyLeafNode) PrintNode() {
-	fmt.Printf("LeafNode( ")
+	b := strings.Builder{}
+	b.WriteString("LeafNode( ")
 	for i := 0; i < n.KeyLen(); i++ {
-		fmt.Printf("%v | ", n.GetKeyAt(i))
+		b.WriteString(fmt.Sprintf("%v | ", n.GetKeyAt(i)))
 	}
-	fmt.Printf(")\n")
+	b.WriteString(")\n")
+
+	log.Println(b.String())
 }
 
 func (n *VarKeyLeafNode) RLatch() {
@@ -369,11 +374,14 @@ func (n *VarKeyInternalNode) KeyLen() int {
 }
 
 func (n *VarKeyInternalNode) PrintNode() {
-	fmt.Printf("Node( ")
+	b := strings.Builder{}
+	b.WriteString("Node( ")
 	for i := 0; i < n.KeyLen(); i++ {
-		fmt.Printf("%v | ", n.GetKeyAt(i))
+		b.WriteString(fmt.Sprintf("%v | ", n.GetKeyAt(i)))
 	}
-	fmt.Printf(")    ")
+	b.WriteString(")    ")
+
+	log.Println(b.String())
 }
 
 func (n *VarKeyInternalNode) RLatch() {
