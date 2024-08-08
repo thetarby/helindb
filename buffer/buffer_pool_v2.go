@@ -42,7 +42,7 @@ func (b *PoolV2) GetFreeList() freelist.FreeList {
 	return b.fl
 }
 
-func (b *PoolV2) FreePage(txn transaction.Transaction, pageId uint64, log bool) {
+func (b *PoolV2) FreePage(txn transaction.Transaction, pageId uint64, log bool) error {
 	b.lock.Lock()
 	if frame, ok := b.get(pageId); ok {
 		frame := b.frames[frame]
@@ -53,7 +53,11 @@ func (b *PoolV2) FreePage(txn transaction.Transaction, pageId uint64, log bool) 
 	}
 	b.lock.Unlock()
 
-	b.fl.Add(txn.GetID(), pageId)
+	if err := b.fl.Add(txn.GetID(), pageId); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (b *PoolV2) GetPage(pageId uint64) (*pages.RawPage, error) {
@@ -296,7 +300,12 @@ func (b *PoolV2) NewPage(txn transaction.Transaction) (page *pages.RawPage, err 
 		b.set(victimPageID, -1)
 	}
 
-	newPageId := b.fl.Pop(txn.GetID())
+	newPageId, err := b.fl.Pop(txn.GetID())
+	if err != nil {
+		b.lock.Unlock()
+		return nil, err
+	}
+
 	if newPageId == 0 {
 		newPageId = b.DiskManager.NewPage() // TODO: log here
 	}

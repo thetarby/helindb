@@ -132,3 +132,35 @@ func ToJsonLines(it LogIterator, writer io.Writer) error {
 		}
 	}
 }
+
+func LastLsn(it LogIterator, writer io.Writer) error {
+	if err := PrevToStart(it); err != nil {
+		return err
+	}
+
+	for {
+		lr, err := it.Next()
+		if err != nil {
+			if err == ErrIteratorAtLast {
+				return nil
+			}
+			if err == ErrShortRead {
+				return nil
+			}
+
+			return err
+		}
+
+		b, err := json.Marshal(lr)
+		if err != nil {
+			return err
+		}
+
+		if _, err := writer.Write(b); err != nil {
+			return err
+		}
+		if _, err := writer.Write([]byte("\n")); err != nil {
+			return err
+		}
+	}
+}

@@ -29,7 +29,7 @@ type Pool interface {
 
 	// FreePage deletes a page from the buffer pool. Returns error if the page exists but could not be deleted and
 	// panics if page does not exist
-	FreePage(txn transaction.Transaction, pageId uint64, log bool)
+	FreePage(txn transaction.Transaction, pageId uint64, log bool) error
 
 	// EmptyFrameSize returns the number empty frames which does not hold data of any physical page
 	EmptyFrameSize() int
@@ -74,7 +74,7 @@ func (b *PoolV1) GetFreeList() freelist.FreeList {
 	return b.fl
 }
 
-func (b *PoolV1) FreePage(txn transaction.Transaction, pageId uint64, log bool) {
+func (b *PoolV1) FreePage(txn transaction.Transaction, pageId uint64, log bool) error {
 	b.xLock.Lock()
 	if frame, ok := b.pageMap[pageId]; ok {
 		frame := b.frames[frame]
@@ -85,7 +85,11 @@ func (b *PoolV1) FreePage(txn transaction.Transaction, pageId uint64, log bool) 
 	}
 	b.xLock.Unlock()
 
-	b.fl.Add(txn.GetID(), pageId)
+	if err := b.fl.Add(txn.GetID(), pageId); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (b *PoolV1) GetPage(pageId uint64) (*pages.RawPage, error) {
@@ -302,7 +306,11 @@ func (b *PoolV1) NewPage(txn transaction.Transaction) (page *pages.RawPage, err 
 		availableFrameIdx = victimIdx
 	}
 
-	newPageId := b.fl.Pop(txn.GetID())
+	newPageId, err := b.fl.Pop(txn.GetID())
+	if err != nil {
+		return nil, err
+	}
+
 	if newPageId == 0 {
 		newPageId = b.DiskManager.NewPage()
 	}
