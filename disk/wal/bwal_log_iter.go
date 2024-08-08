@@ -17,6 +17,16 @@ func OpenBwalLogIter(segmentSize uint64, dir string, serDe LogRecordSerDe) (LogI
 	return NewBwalLogIter(br, serDe)
 }
 
+func OpenBwalLogIterEnd(segmentSize uint64, dir string, serDe LogRecordSerDe) (LogIterator, error) {
+	br := bwal.OpenBufferedLogReader(dir, segmentSize)
+	_, err := br.LastLSN()
+	if err != nil {
+		return nil, err
+	}
+
+	return NewBwalLogIter(br, serDe)
+}
+
 func NewBwalLogIter(r *bwal.BufferedLogReader, serDe LogRecordSerDe) (LogIterator, error) {
 	return &bwalLogIter{
 		r:     r,
@@ -65,6 +75,7 @@ func (i *bwalLogIter) Prev() (*LogRecord, error) {
 
 func (i *bwalLogIter) Curr() (*LogRecord, error) {
 	if i.curr == nil {
+		// TODO: this is problematic when underlying wal iterator is initialized but not this one
 		return nil, ErrIteratorNotInitialized
 	}
 

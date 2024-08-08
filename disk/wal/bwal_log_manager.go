@@ -3,6 +3,7 @@ package wal
 import (
 	"helin/bwal"
 	"helin/disk/pages"
+	"helin/transaction"
 )
 
 type LogRecordSerDe interface {
@@ -26,7 +27,11 @@ func OpenBWALLogManager(bufSize int, segmentSize uint64, dir string, ls LogRecor
 	return &BWALLogManager{lw: lw, ls: ls}, nil
 }
 
-func (lm *BWALLogManager) AppendLog(lr *LogRecord) pages.LSN {
+func (lm *BWALLogManager) AppendLog(txn transaction.Transaction, lr *LogRecord) pages.LSN {
+	if txn != nil {
+		lr.PrevLsn = txn.GetPrevLsn()
+	}
+
 	b := lm.ls.Serialize(lr)
 	lsn, err := lm.lw.Write(b)
 	if err != nil {
@@ -35,12 +40,15 @@ func (lm *BWALLogManager) AppendLog(lr *LogRecord) pages.LSN {
 	}
 
 	lr.Lsn = pages.LSN(lsn)
+	if txn != nil {
+		txn.SetPrevLsn(lr.Lsn)
+	}
 
 	return lr.Lsn
 }
 
-func (lm *BWALLogManager) WaitAppendLog(lr *LogRecord) (pages.LSN, error) {
-	lsn := lm.AppendLog(lr)
+func (lm *BWALLogManager) WaitAppendLog(txn transaction.Transaction, lr *LogRecord) (pages.LSN, error) {
+	lsn := lm.AppendLog(txn, lr)
 
 	if err := lm.lw.Wait(uint64(lr.Lsn)); err != nil {
 		return lsn, err

@@ -21,9 +21,9 @@ const (
 
 type FreeList interface {
 	IsIn(pageID uint64) (bool, error)
-	Pop(txn transaction.TxnID) (pageId uint64, err error)
-	Add(txn transaction.TxnID, pageId uint64) error
-	AddInRecovery(txn transaction.TxnID, pageId uint64, undoNext pages.LSN) error
+	Pop(txn transaction.Transaction) (pageId uint64, err error)
+	Add(txn transaction.Transaction, pageId uint64) error
+	AddInRecovery(txn transaction.Transaction, pageId uint64, undoNext pages.LSN) error
 	GetHeaderPageLsn() pages.LSN
 }
 
@@ -90,7 +90,7 @@ func (f *List) IsIn(pageID uint64) (bool, error) {
 }
 
 // Pop pops a page from free list. Unlike Add, this operation can be undone by simply adding page back to free list.
-func (f *List) Pop(txn transaction.TxnID) (pageId uint64, err error) {
+func (f *List) Pop(txn transaction.Transaction) (pageId uint64, err error) {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -133,7 +133,7 @@ func (f *List) Pop(txn transaction.TxnID) (pageId uint64, err error) {
 // Add adds page to free list. Note that this operation converts pages to SlottedPage and conversion operations are
 // not logged, meaning this operation cannot be undone. Transactions should only free pages after they are committed
 // so that page free operations are never rolled back.
-func (f *List) Add(txn transaction.TxnID, pageId uint64) error {
+func (f *List) Add(txn transaction.Transaction, pageId uint64) error {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -172,7 +172,7 @@ func (f *List) Add(txn transaction.TxnID, pageId uint64) error {
 	return nil
 }
 
-func (f *List) AddInRecovery(txn transaction.TxnID, pageId uint64, undoNext pages.LSN) error {
+func (f *List) AddInRecovery(txn transaction.Transaction, pageId uint64, undoNext pages.LSN) error {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
@@ -248,7 +248,7 @@ func (f *List) getHeader() Header {
 
 // setHeader takes write lock on freelist header page and updates and updates header. pageID is the id of the page
 // that is popped or added. If undoNext is not zero than logs are appended as clr.
-func (f *List) setHeader(txn transaction.TxnID, pageID uint64, h Header, isFree bool, undoNext pages.LSN) error {
+func (f *List) setHeader(txn transaction.Transaction, pageID uint64, h Header, isFree bool, undoNext pages.LSN) error {
 	f.header = &h
 
 	p, err := f.pager.GetPageToWrite(HeaderPageID)
@@ -273,7 +273,7 @@ func (f *List) setHeader(txn transaction.TxnID, pageID uint64, h Header, isFree 
 }
 
 func (f *List) initHeader() {
-	if err := f.setHeader(transaction.TxnTODO().GetID(), 0, Header{
+	if err := f.setHeader(transaction.TxnTODO(), 0, Header{
 		freeListHead: 0,
 		freeListTail: 0,
 		catalogPID:   0,

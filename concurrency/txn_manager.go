@@ -19,8 +19,16 @@ type txn struct {
 	prevLsn    pages.LSN
 }
 
+func newTxn(id transaction.TxnID, freedPages []uint64, prevLsn pages.LSN) *txn {
+	return &txn{id: id, freedPages: freedPages, prevLsn: prevLsn}
+}
+
 func (t *txn) SetPrevLsn(lsn pages.LSN) {
 	t.prevLsn = lsn
+}
+
+func (t *txn) setFreedPages(freedPages []uint64) {
+	t.freedPages = freedPages
 }
 
 func (t *txn) GetPrevLsn() pages.LSN {
@@ -112,7 +120,7 @@ func (t *TxnManagerImpl) AsyncCommit(transaction transaction.Transaction) error 
 	defer t.mut.Unlock()
 
 	txn := t.actives[transaction.GetID()]
-	t.lm.AppendLog(wal.NewCommitLogRecord(transaction.GetID(), txn.freedPages))
+	t.lm.AppendLog(transaction, wal.NewCommitLogRecord(transaction.GetID(), txn.freedPages))
 	delete(t.actives, transaction.GetID())
 	return nil
 }
@@ -126,7 +134,7 @@ func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) error {
 	txn := t.actives[id]
 	t.mut.Unlock()
 
-	_, err := t.lm.WaitAppendLog(wal.NewCommitLogRecord(id, txn.freedPages))
+	_, err := t.lm.WaitAppendLog(txn, wal.NewCommitLogRecord(id, txn.freedPages))
 	if err != nil {
 		return err
 	}
@@ -137,14 +145,16 @@ func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) error {
 	t.mut.Lock()
 	defer t.mut.Unlock()
 
-	delete(t.actives, id)
 	for _, page := range txn.freedPages {
 		if err := t.pool.FreePage(txn, page, true); err != nil {
 			// TODO: handle this
 			panic(err)
 		}
 	}
-	t.lm.AppendLog(wal.NewTxnEndLogRecord(id))
+
+	t.lm.AppendLog(txn, wal.NewTxnEndLogRecord(id))
+	delete(t.actives, id)
+
 	return nil
 }
 
@@ -158,23 +168,25 @@ func (t *TxnManagerImpl) AbortByID(id transaction.TxnID) {
 	//lsn := t.lm.WaitAppendLog(wal.NewAbortLogRecord(id))
 	//wal.NewTxnLogIterator(id)
 
-	logs := wal.NewTxnLogIterator(id, nil)
-	for {
-		lr, err := logs.Prev()
-		if err != nil {
-			// TODO: what to do?
-			panic(err)
-		}
-
-		if lr == nil {
-			// if logs are finished it is rolled back
-			break
-		}
-
-		if err := t.r.Undo(lr, 0); err != nil {
-			panic(err)
-		}
-	}
+	// TODO: implement this
+	//logs := wal.NewTxnLogIterator(id, nil)
+	//for {
+	//	lr, err := logs.Prev()
+	//	if err != nil {
+	//		// TODO: what to do?
+	//		panic(err)
+	//	}
+	//
+	//	if lr == nil {
+	//		// if logs are finished it is rolled back
+	//		break
+	//	}
+	//
+	//	if err := t.r.Undo(lr, 0); err != nil {
+	//		panic(err)
+	//	}
+	//}
+	panic("implement me")
 }
 
 func (t *TxnManagerImpl) BlockAllTransactions() {

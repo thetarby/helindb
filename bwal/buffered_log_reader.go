@@ -79,7 +79,7 @@ func (r *BufferedLogReader) Next() ([]byte, error) {
 
 func (r *BufferedLogReader) Prev() ([]byte, error) {
 	if r.currLSN == nil {
-		return nil, errors.New("no previous logs")
+		return nil, ErrAtFirst // TODO is this OK?
 	}
 	if *r.currLSN == 0 {
 		return nil, ErrAtFirst

@@ -2,17 +2,18 @@ package wal
 
 import (
 	"helin/disk/pages"
+	"helin/transaction"
 )
 
 var NoopLM = &noopLM{}
 
 type noopLM struct{}
 
-func (n *noopLM) AppendLog(lr *LogRecord) pages.LSN {
+func (n *noopLM) AppendLog(txn transaction.Transaction, lr *LogRecord) pages.LSN {
 	return pages.ZeroLSN
 }
 
-func (n *noopLM) WaitAppendLog(lr *LogRecord) (pages.LSN, error) {
+func (n *noopLM) WaitAppendLog(txn transaction.Transaction, lr *LogRecord) (pages.LSN, error) {
 	return pages.ZeroLSN, nil
 }
 

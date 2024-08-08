@@ -18,7 +18,7 @@ func (p *LSP) InsertAt(txn transaction.Transaction, idx int, data []byte) error 
 		return err
 	}
 
-	lsn := p.lm.AppendLog(NewInsertLogRecord(txn.GetID(), uint16(idx), data, p.GetPageId()))
+	lsn := p.lm.AppendLog(txn, NewInsertLogRecord(txn.GetID(), uint16(idx), data, p.GetPageId()))
 	p.SetPageLSN(lsn)
 	return nil
 }
@@ -29,7 +29,7 @@ func (p *LSP) SetAt(txn transaction.Transaction, idx int, data []byte) error {
 		return err
 	}
 
-	lsn := p.lm.AppendLog(NewSetLogRecord(txn.GetID(), uint16(idx), data, old, p.GetPageId()))
+	lsn := p.lm.AppendLog(txn, NewSetLogRecord(txn.GetID(), uint16(idx), data, old, p.GetPageId()))
 	p.SetPageLSN(lsn)
 	return nil
 }
@@ -40,7 +40,7 @@ func (p *LSP) DeleteAt(txn transaction.Transaction, idx int) error {
 		return err
 	}
 
-	lsn := p.lm.AppendLog(NewDeleteLogRecord(txn.GetID(), uint16(idx), deleted, p.GetPageId()))
+	lsn := p.lm.AppendLog(txn, NewDeleteLogRecord(txn.GetID(), uint16(idx), deleted, p.GetPageId()))
 	p.SetPageLSN(lsn)
 	return nil
 }

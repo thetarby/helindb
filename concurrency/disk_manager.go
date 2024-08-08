@@ -52,11 +52,11 @@ func (d *diskManager) GetPage(pageId uint64) (*pages.SlottedPage, error) {
 	return &sp, nil
 }
 
-func (d *diskManager) FreePage(txn transaction.TxnID, pageID uint64) {
+func (d *diskManager) FreePage(txn transaction.Transaction, pageID uint64) {
 	d.pool.GetFreeList().Add(txn, pageID)
 }
 
-func (d *diskManager) FreePageInRecovery(txn transaction.TxnID, pageID uint64, undoNext pages.LSN) {
+func (d *diskManager) FreePageInRecovery(txn transaction.Transaction, pageID uint64, undoNext pages.LSN) {
 	d.pool.GetFreeList().AddInRecovery(txn, pageID, undoNext)
 }
 

@@ -100,6 +100,11 @@ func NextToTxn(it LogIterator, txn transaction.TxnID) error {
 	}
 }
 
+// SkipClr should move iterator until clr logs are finished
+func SkipClr(it LogIterator) error {
+	panic("implement me")
+}
+
 // ToJsonLines writes each log as a json line for debugging purposes.
 func ToJsonLines(it LogIterator, writer io.Writer) error {
 	if err := PrevToStart(it); err != nil {

@@ -12,48 +12,48 @@ type LSP struct {
 	lm wal.LogManager
 }
 
-func (p *LSP) SetAt(txn transaction.TxnID, idx int, data []byte) error {
+func (p *LSP) SetAt(txn transaction.Transaction, idx int, data []byte) error {
 	old := common.Clone(p.GetAt(idx))
 	if err := p.SlottedPage.SetAt(idx, data); err != nil {
 		return err
 	}
 
-	lr := wal.NewFreePageSetLogRecord(txn, uint16(idx), data, old, p.GetPageId())
-	lsn := p.lm.AppendLog(lr)
+	lr := wal.NewFreePageSetLogRecord(txn.GetID(), uint16(idx), data, old, p.GetPageId())
+	lsn := p.lm.AppendLog(txn, lr)
 	p.SetPageLSN(lsn)
 
 	return nil
 }
 
-func (p *LSP) SetAtAndAppendFreeLog(txn transaction.TxnID, idx int, data []byte, pageID uint64, undoNext pages.LSN) error {
+func (p *LSP) SetAtAndAppendFreeLog(txn transaction.Transaction, idx int, data []byte, pageID uint64, undoNext pages.LSN) error {
 	old := common.Clone(p.GetAt(idx))
 	if err := p.SlottedPage.SetAt(idx, data); err != nil {
 		return err
 	}
 
-	lr := wal.NewFreePageLogRecord(txn, uint16(idx), data, old, pageID)
+	lr := wal.NewFreePageLogRecord(txn.GetID(), uint16(idx), data, old, pageID)
 	if lr.UndoNext != pages.ZeroLSN {
 		lr.UndoNext = undoNext
 		lr.IsClr = true
 	}
-	lsn := p.lm.AppendLog(lr)
+	lsn := p.lm.AppendLog(txn, lr)
 	p.SetPageLSN(lsn)
 
 	return nil
 }
 
-func (p *LSP) SetAtAndAppendAllocLog(txn transaction.TxnID, idx int, data []byte, pageId uint64, undoNext pages.LSN) error {
+func (p *LSP) SetAtAndAppendAllocLog(txn transaction.Transaction, idx int, data []byte, pageId uint64, undoNext pages.LSN) error {
 	old := common.Clone(p.GetAt(idx))
 	if err := p.SlottedPage.SetAt(idx, data); err != nil {
 		return err
 	}
 
-	lr := wal.NewAllocPageLogRecord(txn, uint16(idx), data, old, pageId)
+	lr := wal.NewAllocPageLogRecord(txn.GetID(), uint16(idx), data, old, pageId)
 	if lr.UndoNext != pages.ZeroLSN {
 		lr.UndoNext = undoNext
 		lr.IsClr = true
 	}
-	lsn := p.lm.AppendLog(lr)
+	lsn := p.lm.AppendLog(txn, lr)
 	p.SetPageLSN(lsn)
 
 	return nil

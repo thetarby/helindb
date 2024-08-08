@@ -84,7 +84,7 @@ func (b *PoolV1) FreePage(txn transaction.Transaction, pageId uint64, log bool) 
 	}
 	b.xLock.Unlock()
 
-	if err := b.fl.Add(txn.GetID(), pageId); err != nil {
+	if err := b.fl.Add(txn, pageId); err != nil {
 		return err
 	}
 
@@ -305,7 +305,7 @@ func (b *PoolV1) NewPage(txn transaction.Transaction) (page *pages.RawPage, err 
 		availableFrameIdx = victimIdx
 	}
 
-	newPageId, err := b.fl.Pop(txn.GetID())
+	newPageId, err := b.fl.Pop(txn)
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +323,7 @@ func (b *PoolV1) NewPage(txn transaction.Transaction) (page *pages.RawPage, err 
 	b.pageMap[newPageId] = availableFrameIdx
 
 	// TODO: new page log record?
-	lsn := b.logManager.AppendLog(wal.NewDiskAllocPageLogRecord(txn.GetID(), p.GetPageId()))
+	lsn := b.logManager.AppendLog(txn, wal.NewDiskAllocPageLogRecord(txn.GetID(), p.GetPageId()))
 	p.SetPageLSN(lsn)
 	p.SetDirty()
 	return p, nil
