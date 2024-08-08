@@ -38,9 +38,9 @@ func (t *txn) FreePage(pageID uint64) {
 // TxnManager keeps track of running transactions.
 type TxnManager interface {
 	Begin() transaction.Transaction
-	Commit(transaction.Transaction)
-	AsyncCommit(transaction transaction.Transaction)
-	CommitByID(transaction.TxnID)
+	Commit(transaction.Transaction) error
+	AsyncCommit(transaction transaction.Transaction) error
+	CommitByID(transaction.TxnID) error
 	Abort(transaction.Transaction)
 	AbortByID(id transaction.TxnID)
 
@@ -93,38 +93,50 @@ func (t *TxnManagerImpl) Begin() transaction.Transaction {
 var s = time.Now()
 
 // Commit waits until commit record is flushed. Hence, it guarantees that txn is committed to persistent storage.
-func (t *TxnManagerImpl) Commit(transaction transaction.Transaction) {
-	t.CommitByID(transaction.GetID())
+func (t *TxnManagerImpl) Commit(transaction transaction.Transaction) error {
+	if err := t.CommitByID(transaction.GetID()); err != nil {
+		return err
+	}
+
 	if int(transaction.GetID())%5000 == 0 {
 		log.Printf("txn:%v tps: %v\n", transaction.GetID(), 5000/time.Since(s).Seconds())
 		s = time.Now()
 	}
+
+	return nil
 }
 
 // AsyncCommit does not wait for commit record to be flushed.
-func (t *TxnManagerImpl) AsyncCommit(transaction transaction.Transaction) {
+func (t *TxnManagerImpl) AsyncCommit(transaction transaction.Transaction) error {
 	t.mut.Lock()
 	defer t.mut.Unlock()
 
 	txn := t.actives[transaction.GetID()]
 	t.lm.AppendLog(wal.NewCommitLogRecord(transaction.GetID(), txn.freedPages))
 	delete(t.actives, transaction.GetID())
+	return nil
 }
 
 func (t *TxnManagerImpl) Abort(transaction transaction.Transaction) {
 	t.AbortByID(transaction.GetID())
 }
 
-func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) {
+func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) error {
 	t.mut.Lock()
 	txn := t.actives[id]
 	t.mut.Unlock()
 
-	t.lm.WaitAppendLog(wal.NewCommitLogRecord(id, txn.freedPages))
+	_, err := t.lm.WaitAppendLog(wal.NewCommitLogRecord(id, txn.freedPages))
+	if err != nil {
+		return err
+	}
+
 	// IMPORTANT NOTE: if a checkpoint begins right at this line commit log record is persisted but active txn table
 	// still includes this log record. Hence, in undo phase there might seem commit log records. In that case that
 	// txn should not be rolled back.
 	t.mut.Lock()
+	defer t.mut.Unlock()
+
 	delete(t.actives, id)
 	for _, page := range txn.freedPages {
 		if err := t.pool.FreePage(txn, page, true); err != nil {
@@ -133,7 +145,7 @@ func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) {
 		}
 	}
 	t.lm.AppendLog(wal.NewTxnEndLogRecord(id))
-	t.mut.Unlock()
+	return nil
 }
 
 func (t *TxnManagerImpl) AbortByID(id transaction.TxnID) {

@@ -31,9 +31,13 @@ func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.Pool, co
 	dm, created, err := disk.NewDiskManager(file, true)
 	common.PanicIfErr(err)
 	if created {
-		lm := wal.NewLogManager(dm.GetLogWriter())
-		lm.RunFlusher()
-		pool := buffer.NewBufferPoolWithDM(true, poolSize, dm, lm)
+		// TODO: get these as parameters
+		lm, err := wal.OpenBWALLogManager(512*1024, 16*1024*1024, "log_"+file, wal.NewJsonLogSerDe())
+		if err != nil {
+			panic(err)
+		}
+
+		pool := buffer.NewBufferPoolV2WithDM(true, poolSize, dm, lm)
 		tm := concurrency.NewTxnManager(pool, lm)
 		cm := concurrency.NewCheckpointManager(pool, lm, tm)
 
@@ -49,9 +53,12 @@ func OpenCatalog(file string, poolSize int) (*PersistentCatalog, buffer.Pool, co
 		}, pool, cm, tm
 	}
 
-	lm := wal.NewLogManager(dm.GetLogWriter())
-	lm.RunFlusher()
-	pool := buffer.NewBufferPoolWithDM(true, poolSize, dm, lm)
+	lm, err := wal.OpenBWALLogManager(16*1024, 16*1024*1024, "log_"+file, wal.NewJsonLogSerDe())
+	if err != nil {
+		panic(err)
+	}
+
+	pool := buffer.NewBufferPoolV2WithDM(true, poolSize, dm, lm)
 	tm := concurrency.NewTxnManager(pool, lm)
 	cm := concurrency.NewCheckpointManager(pool, lm, tm)
 

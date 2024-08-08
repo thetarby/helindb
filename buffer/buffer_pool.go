@@ -245,7 +245,7 @@ func (b *PoolV1) TryFlush(pageId uint64) error {
 	b.xLock.Unlock()
 
 	// if log records for the victim page is not flushed, force flush log manager.
-	if frame.page.GetPageLSN() > b.logManager.GetFlushedLSN() {
+	if frame.page.GetPageLSN() > b.logManager.GetFlushedLSNOrZero() {
 		if err := b.logManager.Flush(); err != nil {
 			return err
 		}
@@ -392,7 +392,7 @@ func (b *PoolV1) evictVictim() (int, error) {
 
 	if victim.page.IsDirty() {
 		// if log records for the victim page is not flushed, force flush log manager.
-		if victim.page.GetPageLSN() > b.logManager.GetFlushedLSN() {
+		if victim.page.GetPageLSN() > b.logManager.GetFlushedLSNOrZero() {
 			if err := b.logManager.Flush(); err != nil {
 				// on error roll back state
 				b.xLock.Lock()

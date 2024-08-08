@@ -85,9 +85,7 @@ func TestBuffer_Pool_Should_Not_Corrupt_Pages(t *testing.T) {
 	for i := 0; i < numPagesToTest; i++ {
 		p, err := b.NewPage(transaction.TxnNoop())
 		pageIDs = append(pageIDs, p.GetPageId())
-		if err != nil {
-			println(err.Error())
-		}
+		require.NoError(t, err)
 
 		n := copy(p.GetWholeData(), randomPages[i])
 		require.Equal(t, n, len(randomPages[i]))

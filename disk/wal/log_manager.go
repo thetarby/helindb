@@ -17,10 +17,10 @@ type LogManager interface {
 	AppendLog(lr *LogRecord) pages.LSN
 
 	// WaitAppendLog is same as AppendLog, but it waits until appended log is flushed.
-	WaitAppendLog(lr *LogRecord) pages.LSN
+	WaitAppendLog(lr *LogRecord) (pages.LSN, error)
 
-	// GetFlushedLSN returns the latest log's lsn that is flushed to underlying io.Writer.
-	GetFlushedLSN() pages.LSN
+	// GetFlushedLSNOrZero returns the latest log's lsn that is flushed to underlying io.Writer.
+	GetFlushedLSNOrZero() pages.LSN
 
 	// Flush is an atomic operation that swaps logBuf and flushBuf followed by an fsync of flushBuf.
 	Flush() error
@@ -60,7 +60,7 @@ func (l *LogManagerImpl) AppendLog(lr *LogRecord) pages.LSN {
 	return lr.Lsn
 }
 
-func (l *LogManagerImpl) WaitAppendLog(lr *LogRecord) pages.LSN {
+func (l *LogManagerImpl) WaitAppendLog(lr *LogRecord) (pages.LSN, error) {
 	l.bufM.Lock()
 
 	lr.Lsn = pages.LSN(atomic.AddUint64(&l.currLsn, 1))
@@ -69,7 +69,7 @@ func (l *LogManagerImpl) WaitAppendLog(lr *LogRecord) pages.LSN {
 	l.bufM.Unlock()
 
 	l.gw.flushEvent.Wait()
-	return lr.Lsn
+	return lr.Lsn, nil
 }
 
 func (l *LogManagerImpl) RunFlusher() {
@@ -87,6 +87,6 @@ func (l *LogManagerImpl) Flush() error {
 	return l.gw.SwapAndWaitFlush()
 }
 
-func (l *LogManagerImpl) GetFlushedLSN() pages.LSN {
+func (l *LogManagerImpl) GetFlushedLSNOrZero() pages.LSN {
 	return l.gw.latestFlushed
 }

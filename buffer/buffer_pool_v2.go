@@ -232,7 +232,7 @@ func (b *PoolV2) TryFlush(pageId uint64) error {
 	}
 
 	// if log records for the victim page is not flushed, force flush log manager.
-	if frame.page.GetPageLSN() > b.logManager.GetFlushedLSN() {
+	if frame.page.GetPageLSN() > b.logManager.GetFlushedLSNOrZero() {
 		if err := b.logManager.Flush(); err != nil {
 			return err
 		}
@@ -307,7 +307,7 @@ func (b *PoolV2) NewPage(txn transaction.Transaction) (page *pages.RawPage, err 
 	}
 
 	if newPageId == 0 {
-		newPageId = b.DiskManager.NewPage() // TODO: log here
+		newPageId = b.DiskManager.NewPage()
 	}
 
 	frame := b.frames[availableFrameIdx]
@@ -398,7 +398,7 @@ func (b *PoolV2) del(pageId uint64) {
 	b.pageMap.Delete(pageId)
 }
 
-func NewBufferPool1(dbFile string, poolSize int) *PoolV2 {
+func NewBufferV2Pool(dbFile string, poolSize int) *PoolV2 {
 	emptyFrames := make([]int, poolSize)
 	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i
@@ -426,7 +426,7 @@ func NewBufferPool1(dbFile string, poolSize int) *PoolV2 {
 	return bp
 }
 
-func NewBufferPoolWithDM1(init bool, poolSize int, dm disk.IDiskManager, logManager wal.LogManager) *PoolV2 {
+func NewBufferPoolV2WithDM(init bool, poolSize int, dm disk.IDiskManager, logManager wal.LogManager) *PoolV2 {
 	emptyFrames := make([]int, poolSize)
 	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i
@@ -465,7 +465,7 @@ func (f *frame) resolve() error {
 	if f.evicting != 0 {
 		if f.page.IsDirty() {
 			// if log records for the victim page is not flushed, force flush log manager.
-			if f.page.GetPageLSN() > f.pool.logManager.GetFlushedLSN() {
+			if f.page.GetPageLSN() > f.pool.logManager.GetFlushedLSNOrZero() {
 				if err := f.pool.logManager.Flush(); err != nil {
 					f.pool.lock.Lock()
 					f.evicting = 0

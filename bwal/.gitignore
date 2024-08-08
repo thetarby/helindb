@@ -1,0 +1,6 @@
+.idea
+vendor
+.DS_Storegit
+testdata
+temp
+playground
