@@ -249,7 +249,10 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 			parent := stack[len(stack)-1].Node
 
 			// fetch siblings to merge or distribute with. do not forget to release them.
-			var rightSibling, merged NodeReleaser
+			var rightSibling, leftSibling, merged NodeReleaser
+			if indexAtParent > 0 {
+				leftSibling = tree.pager.GetNodeReleaser(parent.GetValueAt(indexAtParent-1).(Pointer), Delete) //leftSibling = parent.Pointers[indexAtParent-1].(*InternalNode)
+			}
 			if indexAtParent+1 < (parent.KeyLen() + 1) { // +1 is the length of pointers
 				rightSibling = tree.pager.GetNodeReleaser(parent.GetValueAt(indexAtParent+1).(Pointer), Delete) //rightSibling = parent.Pointers[indexAtParent+1].(*InternalNode)
 			}
@@ -262,6 +265,20 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 				popped.Release()
 				rightSibling.Release()
 
+				if leftSibling != nil {
+					leftSibling.Release()
+				}
+				return true
+			} else if leftSibling != nil &&
+				((popped.IsLeaf() && leftSibling.KeyLen() >= (tree.degree/2)+1) ||
+					(!popped.IsLeaf() && leftSibling.KeyLen()+1 > (tree.degree+1)/2)) {
+				tree.redistribute(txn, leftSibling, popped, parent)
+				popped.Release()
+				leftSibling.Release()
+
+				if rightSibling != nil {
+					rightSibling.Release()
+				}
 				return true
 			}
 
@@ -271,9 +288,23 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 				merged = popped
 
 				toFree = append(toFree, rightSibling)
+
 				popped.Release()
+
+				if leftSibling != nil {
+					leftSibling.Release()
+				}
+			} else if leftSibling != nil {
+				tree.mergeNodes(txn, leftSibling, popped, parent)
+				merged = leftSibling
+
+				leftSibling.Release()
+
+				toFree = append(toFree, popped)
 			} else {
+				common.Assert(popped.IsLeaf(), "Both siblings are null for an internal Node! This should not be possible except for root")
 				popped.Release()
+				// NOTE: maybe log here while debugging? if it is a leaf node its both left and right nodes can be nil
 				return true
 			}
 			if rootLocked && parent.GetPageId() == tree.getRoot() && parent.KeyLen() == 0 {
