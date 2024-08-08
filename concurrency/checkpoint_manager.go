@@ -12,7 +12,7 @@ type CheckpointManager interface {
 }
 
 type CheckpointManagerImpl struct {
-	pool       *buffer.BufferPool
+	pool       buffer.Pool
 	logManager wal.LogManager
 	txnManager TxnManager
 	lock       sync.Mutex
@@ -50,6 +50,6 @@ func (c *CheckpointManagerImpl) TakeCheckpoint() error {
 	return nil
 }
 
-func NewCheckpointManager(pool *buffer.BufferPool, logManager wal.LogManager, txnManager TxnManager) *CheckpointManagerImpl {
+func NewCheckpointManager(pool buffer.Pool, logManager wal.LogManager, txnManager TxnManager) *CheckpointManagerImpl {
 	return &CheckpointManagerImpl{pool: pool, logManager: logManager, txnManager: txnManager}
 }
