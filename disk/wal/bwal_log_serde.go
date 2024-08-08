@@ -1,6 +1,8 @@
 package wal
 
-import "encoding/json"
+import (
+	"encoding/json"
+)
 
 type JsonLogSerDe struct{}
 

@@ -7,6 +7,7 @@ import (
 	"helin/buffer"
 	"helin/common"
 	"helin/disk/pages"
+	"helin/disk/wal"
 	"helin/transaction"
 	"io"
 	"log"
@@ -20,7 +21,7 @@ func TestTableIterator(t *testing.T) {
 	dbName := id.String()
 	defer common.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 32)
+	pool := buffer.NewBufferPool(dbName, 32, wal.NoopLM)
 	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{

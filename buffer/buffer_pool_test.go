@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"helin/common"
 	"helin/disk"
+	"helin/disk/wal"
 	"helin/transaction"
 	"io/ioutil"
 	"log"
@@ -21,7 +22,7 @@ type teststruct struct {
 
 func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 	os.Remove("tmp.helin")
-	b := NewBufferPool("tmp.helin", 2)
+	b := NewBufferPool("tmp.helin", 2, wal.NoopLM)
 	defer common.Remove("tmp.helin")
 	log.SetOutput(ioutil.Discard)
 
@@ -66,7 +67,7 @@ func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 
 func TestBuffer_Pool_Should_Not_Corrupt_Pages(t *testing.T) {
 	os.Remove("tmp2.helin")
-	b := NewBufferPool("tmp2.helin", 2)
+	b := NewBufferPool("tmp2.helin", 2, wal.NoopLM)
 	defer common.Remove("tmp2.helin")
 	log.SetOutput(ioutil.Discard)
 

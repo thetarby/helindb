@@ -8,8 +8,8 @@ import (
 	"helin/catalog/db_types"
 	"helin/common"
 	"helin/disk/structures"
+	"helin/disk/wal"
 	"helin/transaction"
-	io2 "io"
 	"log"
 	"sync"
 )
@@ -163,7 +163,7 @@ func (c *InMemCatalog) CreateBtreeIndex(txn transaction.Transaction, indexName s
 	serializer := TupleKeySerializer{schema: keySchema}
 
 	// TODO: what should be degree?
-	index := btree.NewBtreeWithPager(transaction.TxnNoop(), 50, btree.NewDefaultBPP(c.pool, &serializer, io2.Discard))
+	index := btree.NewBtreeWithPager(transaction.TxnNoop(), 50, btree.NewBPP(c.pool, &serializer, &btree.SlotPointerValueSerializer{}, wal.NoopLM))
 	it := structures.NewTableIterator(txn, table.Heap)
 	for {
 		n := CastRowAsTuple(it.Next())

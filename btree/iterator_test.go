@@ -6,7 +6,6 @@ import (
 	"helin/common"
 	"helin/disk/wal"
 	"helin/transaction"
-	"io"
 	"io/ioutil"
 	"log"
 	"math/rand"
@@ -21,9 +20,9 @@ func TestTreeIterator_Should_Return_Every_Value_Bigger_Than_Or_Euqal_To_Key_When
 	dbName := id.String()
 	defer common.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 32)
+	pool := buffer.NewBufferPool(dbName, 32, wal.NoopLM)
 
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, wal.NewLogManager(io.Discard)))
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, wal.NoopLM))
 	log.SetOutput(ioutil.Discard)
 	n := 10000
 	for _, i := range rand.Perm(n) {
@@ -47,9 +46,9 @@ func TestTreeIterator_Should_Return_All_Values_When_Initialized_Without_A_Key(t 
 	dbName := id.String()
 	defer common.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 32)
+	pool := buffer.NewBufferPool(dbName, 32, wal.NoopLM)
 
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, wal.NewLogManager(io.Discard)))
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, wal.NoopLM))
 	log.SetOutput(ioutil.Discard)
 	n := 10000
 	for _, i := range rand.Perm(n) {

@@ -63,9 +63,8 @@ func TestAll_Inserts_Should_Be_Found_By_Find_Method(t *testing.T) {
 	require.NoError(t, err)
 	defer common.Remove(dbName)
 
-	lm := wal.NewLogManager(dm.GetLogWriter())
-	pool := buffer.NewBufferPoolV2WithDM(true, 1024, dm, lm)
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 3, NewBPP(pool, &PersistentKeySerializer{}, &StringValueSerializer{}, lm))
+	pool := buffer.NewBufferPoolV2WithDM(true, 1024, dm, wal.NoopLM)
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 3, NewBPP(pool, &PersistentKeySerializer{}, &StringValueSerializer{}, wal.NoopLM))
 	log.SetOutput(io.Discard)
 
 	arr := make([]int, 0)
@@ -96,9 +95,8 @@ func TestResources_Are_Released(t *testing.T) {
 	require.NoError(t, err)
 	defer common.Remove(dbName)
 
-	lm := wal.NewLogManager(dm.GetLogWriter())
-	pool := buffer.NewBufferPoolV2WithDM(true, 1024, dm, lm)
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, lm))
+	pool := buffer.NewBufferPoolV2WithDM(true, 1024, dm, wal.NoopLM)
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, wal.NoopLM))
 	log.SetOutput(io.Discard)
 
 	n := 100_000
@@ -232,8 +230,8 @@ func TestInsert_Internals_2(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
 	defer common.Remove(dbName)
-	pool := buffer.NewBufferPool(dbName, 8)
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewDefaultBPP(pool, &PersistentKeySerializer{}, io.Discard))
+	pool := buffer.NewBufferPool(dbName, 8, wal.NoopLM)
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewTestBPP(pool, &PersistentKeySerializer{}, io.Discard))
 
 	n := 10000
 	for i := range rand.Perm(n) {

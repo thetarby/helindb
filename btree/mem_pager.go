@@ -8,7 +8,6 @@ import (
 	"helin/disk/pages"
 	"helin/disk/wal"
 	"helin/transaction"
-	"io"
 	"sync"
 )
 
@@ -151,7 +150,7 @@ func NewMemPager(serializer KeySerializer, valSerializer ValueSerializer) *MemPa
 		lock:            &sync.Mutex{},
 		KeySerializer:   serializer,
 		ValueSerializer: valSerializer,
-		LogManager:      wal.NewLogManager(io.Discard), // TODO: fix this
+		LogManager:      wal.NoopLM,
 	}
 }
 

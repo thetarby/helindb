@@ -28,7 +28,7 @@ func PrevToStart(it LogIterator) error {
 	for {
 		_, err := it.Prev()
 		if err != nil {
-			if err == ErrIteratorAtBeginning {
+			if errors.Is(err, ErrIteratorAtBeginning) {
 				return nil
 			}
 
@@ -39,10 +39,10 @@ func PrevToStart(it LogIterator) error {
 
 func PrevToType(it LogIterator, t LogRecordType) error {
 	lr, err := it.Curr()
-	if err != nil && err != ErrIteratorNotInitialized {
+	if err != nil && !errors.Is(err, ErrIteratorNotInitialized) {
 		return err
 	}
-	if err != ErrIteratorNotInitialized && lr.Type() == t {
+	if !errors.Is(err, ErrIteratorNotInitialized) && lr.Type() == t {
 		return nil
 	}
 
@@ -60,10 +60,10 @@ func PrevToType(it LogIterator, t LogRecordType) error {
 
 func PrevToTxn(it LogIterator, txn transaction.TxnID) error {
 	lr, err := it.Curr()
-	if err != nil && err != ErrIteratorNotInitialized {
+	if err != nil && !errors.Is(err, ErrIteratorNotInitialized) {
 		return err
 	}
-	if err != ErrIteratorNotInitialized && lr.TxnID == txn {
+	if !errors.Is(err, ErrIteratorNotInitialized) && lr.TxnID == txn {
 		return nil
 	}
 
@@ -81,10 +81,10 @@ func PrevToTxn(it LogIterator, txn transaction.TxnID) error {
 
 func NextToTxn(it LogIterator, txn transaction.TxnID) error {
 	lr, err := it.Curr()
-	if err != nil && err != ErrIteratorNotInitialized {
+	if err != nil && !errors.Is(err, ErrIteratorNotInitialized) {
 		return err
 	}
-	if err != ErrIteratorNotInitialized && lr.TxnID == txn {
+	if !errors.Is(err, ErrIteratorNotInitialized) && lr.TxnID == txn {
 		return nil
 	}
 
@@ -109,13 +109,9 @@ func ToJsonLines(it LogIterator, writer io.Writer) error {
 	for {
 		lr, err := it.Next()
 		if err != nil {
-			if err == ErrIteratorAtLast {
+			if errors.Is(err, ErrIteratorAtLast) {
 				return nil
 			}
-			if err == ErrShortRead {
-				return nil
-			}
-
 			return err
 		}
 
@@ -133,34 +129,79 @@ func ToJsonLines(it LogIterator, writer io.Writer) error {
 	}
 }
 
-func LastLsn(it LogIterator, writer io.Writer) error {
-	if err := PrevToStart(it); err != nil {
-		return err
+// txnLogIterator is a LogIterator that iterates only on a transaction's log records.
+type txnLogIterator struct {
+	logIter LogIterator
+	curr    *LogRecord
+	txnID   transaction.TxnID
+}
+
+var _ LogIterator = &txnLogIterator{}
+
+func (t *txnLogIterator) Next() (*LogRecord, error) {
+	if _, err := t.logIter.Next(); err != nil {
+		return nil, err
 	}
 
-	for {
-		lr, err := it.Next()
+	if err := NextToTxn(t.logIter, t.txnID); err != nil {
+		return nil, err
+	}
+
+	curr, err := t.logIter.Curr()
+	if err != nil {
+		return nil, err
+	}
+
+	t.curr = curr
+	return curr, nil
+}
+
+func (t *txnLogIterator) Prev() (*LogRecord, error) {
+	if t.curr == nil {
+		if err := PrevToTxn(t.logIter, t.txnID); err != nil {
+			return nil, err
+		}
+
+		curr, err := t.logIter.Curr()
 		if err != nil {
-			if err == ErrIteratorAtLast {
-				return nil
-			}
-			if err == ErrShortRead {
-				return nil
-			}
-
-			return err
+			return nil, err
 		}
 
-		b, err := json.Marshal(lr)
-		if err != nil {
-			return err
-		}
+		t.curr = curr
+		return curr, nil
+	}
 
-		if _, err := writer.Write(b); err != nil {
-			return err
-		}
-		if _, err := writer.Write([]byte("\n")); err != nil {
-			return err
-		}
+	_, err := t.logIter.Prev()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := PrevToTxn(t.logIter, t.txnID); err != nil {
+		return nil, err
+	}
+
+	curr, err := t.logIter.Curr()
+	if err != nil {
+		return nil, err
+	}
+
+	t.curr = curr
+	return curr, nil
+}
+
+func (t *txnLogIterator) Curr() (*LogRecord, error) {
+	if t.curr == nil {
+		return nil, ErrIteratorNotInitialized
+	}
+
+	return t.curr, nil
+}
+
+// NewTxnLogIterator creates a txn log iterator starting from the latest log record with given txn id.
+func NewTxnLogIterator(id transaction.TxnID, iter LogIterator) LogIterator {
+	return &txnLogIterator{
+		logIter: iter,
+		curr:    nil,
+		txnID:   id,
 	}
 }

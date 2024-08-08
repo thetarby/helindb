@@ -12,7 +12,6 @@ import (
 	"helin/transaction"
 	"io"
 	"log"
-	"os"
 )
 
 type DiskManager interface {
@@ -31,15 +30,10 @@ type Recovery struct {
 	dm         DiskManager
 }
 
-func NewRecovery(logFile *os.File, logSer wal.LogRecordSerializer, dm DiskManager) (*Recovery, error) {
-	iter, err := wal.NewLogIter(logFile, logSer, 0)
-	if err != nil {
-		return nil, err
-	}
-
+func NewRecovery(iter wal.LogIterator, lm wal.LogManager, dm DiskManager) (*Recovery, error) {
 	return &Recovery{
 		logs:       iter,
-		logManager: wal.NewLogManager(logFile),
+		logManager: lm,
 		dm:         dm,
 	}, nil
 }

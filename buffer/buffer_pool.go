@@ -9,7 +9,6 @@ import (
 	"helin/disk/wal"
 	"helin/freelist"
 	"helin/transaction"
-	"io"
 	"log"
 	"sync"
 	"time"
@@ -425,7 +424,7 @@ func (b *PoolV1) evictVictim() (int, error) {
 	return victimFrameIdx, nil
 }
 
-func NewBufferPool(dbFile string, poolSize int) *PoolV1 {
+func NewBufferPool(dbFile string, poolSize int, lm wal.LogManager) *PoolV1 {
 	emptyFrames := make([]int, poolSize)
 	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i
@@ -439,7 +438,7 @@ func NewBufferPool(dbFile string, poolSize int) *PoolV1 {
 		emptyFrames: emptyFrames,
 		Replacer:    NewClockReplacer(poolSize),
 		DiskManager: d,
-		logManager:  wal.NewLogManager(io.Discard),
+		logManager:  lm,
 	}
 
 	flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1))
@@ -455,10 +454,6 @@ func NewBufferPoolWithDM(init bool, poolSize int, dm disk.IDiskManager, logManag
 	emptyFrames := make([]int, poolSize)
 	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i
-	}
-
-	if logManager == nil {
-		logManager = wal.NewLogManager(io.Discard)
 	}
 
 	bp := &PoolV1{

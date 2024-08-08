@@ -25,8 +25,8 @@ func TestConcurrent_Inserts(t *testing.T) {
 	dbName := id.String()
 	defer common.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 4096)
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewDefaultBPP(pool, &PersistentKeySerializer{}, io.Discard))
+	pool := buffer.NewBufferPool(dbName, 4096, wal.NoopLM)
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewTestBPP(pool, &PersistentKeySerializer{}, io.Discard))
 	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
@@ -64,10 +64,9 @@ func TestConcurrent_Inserts2(t *testing.T) {
 	require.NoError(t, err)
 	defer common.Remove(dbName)
 
-	lm := wal.NewLogManager(dm.GetLogWriter())
-	pool := buffer.NewBufferPoolV2WithDM(true, 1024, dm, lm)
+	pool := buffer.NewBufferPoolV2WithDM(true, 1024, dm, wal.NoopLM)
 
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, lm))
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, wal.NoopLM))
 	log.SetOutput(io.Discard)
 
 	rand.Seed(42)
@@ -97,10 +96,9 @@ func TestConcurrent_Deletes(t *testing.T) {
 			require.NoError(t, err)
 			defer common.Remove(dbName)
 
-			lm := wal.NewLogManager(dm.GetLogWriter())
-			pool := buffer.NewBufferPoolV2WithDM(true, 100_000, dm, lm)
+			pool := buffer.NewBufferPoolV2WithDM(true, 100_000, dm, wal.NoopLM)
 
-			tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewBPP(pool, &PersistentKeySerializer{}, &SlotPointerValueSerializer{}, lm))
+			tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewBPP(pool, &PersistentKeySerializer{}, &SlotPointerValueSerializer{}, wal.NoopLM))
 			log.SetOutput(io.Discard)
 
 			rand.Seed(42)
@@ -189,10 +187,8 @@ func TestConcurrent_Hammer(t *testing.T) {
 			require.NoError(t, err)
 			defer common.Remove(dbName)
 
-			logManager := wal.NewLogManager(dm.GetLogWriter())
-
-			pool := buffer.NewBufferPoolV2WithDM(true, 4096, dm, logManager)
-			tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, logManager))
+			pool := buffer.NewBufferPoolV2WithDM(true, 4096, dm, wal.NoopLM)
+			tree := NewBtreeWithPager(transaction.TxnNoop(), 50, NewBPP(pool, &StringKeySerializer{}, &StringValueSerializer{}, wal.NoopLM))
 
 			// first insert some items later to be deleted
 			toDeleteN := 100_000
@@ -379,4 +375,13 @@ func deleter(tree *BTree, n int, keys []string) []string {
 	}
 
 	return res
+}
+
+func NewTestBPP(pool buffer.Pool, serializer KeySerializer, logWriter io.Writer) *BufferPoolPager {
+	return &BufferPoolPager{
+		pool:            pool,
+		keySerializer:   serializer,
+		valueSerializer: &SlotPointerValueSerializer{},
+		logManager:      wal.NoopLM,
+	}
 }

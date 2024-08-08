@@ -6,6 +6,7 @@ import (
 	"helin/catalog/db_types"
 	"helin/common"
 	"helin/disk/structures"
+	"helin/disk/wal"
 	"helin/transaction"
 	"io"
 	"log"
@@ -19,7 +20,7 @@ func TestCatalog_Create_Index_On_Unpopulated_Table_2_Nonunique_Index(t *testing.
 	log.SetOutput(io.Discard)
 	dbName := "db.helin"
 	defer common.Remove(dbName)
-	pool := buffer.NewBufferPool(dbName, 32)
+	pool := buffer.NewBufferPool(dbName, 32, wal.NoopLM)
 
 	keyColumns := []Column{
 		{
@@ -35,7 +36,7 @@ func TestCatalog_Create_Index_On_Unpopulated_Table_2_Nonunique_Index(t *testing.
 	}
 	keySchema := NewSchema(keyColumns)
 	serializer := TupleKeySerializer{schema: keySchema}
-	index := btree.NewBtreeWithPager(transaction.TxnNoop(), 50, btree.NewDefaultBPP(pool, &serializer, io.Discard))
+	index := btree.NewBtreeWithPager(transaction.TxnNoop(), 50, btree.NewBPP(pool, &serializer, &btree.SlotPointerValueSerializer{}, wal.NoopLM))
 
 	ageToFind := 16
 	toFind := make([]int, 0)

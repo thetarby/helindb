@@ -2,13 +2,11 @@ package buffer
 
 import (
 	"fmt"
-	"helin/common"
 	"helin/disk"
 	"helin/disk/pages"
 	"helin/disk/wal"
 	"helin/freelist"
 	"helin/transaction"
-	"io"
 	"log"
 	"sync"
 	"time"
@@ -398,42 +396,10 @@ func (b *PoolV2) del(pageId uint64) {
 	b.pageMap.Delete(pageId)
 }
 
-func NewBufferV2Pool(dbFile string, poolSize int) *PoolV2 {
-	emptyFrames := make([]int, poolSize)
-	for i := 0; i < poolSize; i++ {
-		emptyFrames[i] = i
-	}
-	d, _, err := disk.NewDiskManager(dbFile, false)
-	common.PanicIfErr(err)
-	bp := &PoolV2{
-		poolSize:    poolSize,
-		frames:      make([]*frame, poolSize),
-		pageMap:     sync.Map{},
-		emptyFrames: emptyFrames,
-		Replacer:    NewClockReplacer(poolSize),
-		DiskManager: d,
-		lock:        sync.Mutex{},
-		logManager:  wal.NewLogManager(io.Discard),
-	}
-
-	flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1))
-	if err := bp.DiskManager.WritePage(flHeaderP.GetWholeData(), flHeaderP.GetPageId()); err != nil {
-		log.Fatal("database cannot be created", err)
-	}
-
-	bp.fl = freelist.NewFreeList(bp, bp.logManager, true)
-	bp.evictCond = sync.NewCond(&bp.lock)
-	return bp
-}
-
 func NewBufferPoolV2WithDM(init bool, poolSize int, dm disk.IDiskManager, logManager wal.LogManager) *PoolV2 {
 	emptyFrames := make([]int, poolSize)
 	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i
-	}
-
-	if logManager == nil {
-		logManager = wal.NewLogManager(io.Discard)
 	}
 
 	bp := &PoolV2{

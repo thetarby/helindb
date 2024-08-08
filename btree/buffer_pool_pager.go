@@ -6,7 +6,6 @@ import (
 	"helin/disk/pages"
 	"helin/disk/wal"
 	"helin/transaction"
-	"io"
 )
 
 // BtreePage is an implementation of the NodePage interface
@@ -176,15 +175,6 @@ type writeNodeReleaser struct {
 func (n *writeNodeReleaser) Release() {
 	n.pool.Unpin(uint64(n.GetPageId()), false)
 	n.WUnlatch()
-}
-
-func NewDefaultBPP(pool buffer.Pool, serializer KeySerializer, logWriter io.Writer) *BufferPoolPager {
-	return &BufferPoolPager{
-		pool:            pool,
-		keySerializer:   serializer,
-		valueSerializer: &SlotPointerValueSerializer{},
-		logManager:      wal.NewLogManager(logWriter),
-	}
 }
 
 func NewBPP(pool buffer.Pool, serializer KeySerializer, valSerializer ValueSerializer, logManager wal.LogManager) *BufferPoolPager {

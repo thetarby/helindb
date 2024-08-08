@@ -7,6 +7,7 @@ import (
 	"helin/catalog/db_types"
 	"helin/common"
 	"helin/disk/structures"
+	"helin/disk/wal"
 	"helin/execution"
 	"helin/execution/plans"
 	"helin/transaction"
@@ -21,7 +22,7 @@ func poolAndCatalog() (buffer.Pool, catalog.Catalog, func()) {
 	dbName := id.String()
 
 	poolSize := 1024
-	pool := buffer.NewBufferPool(dbName, poolSize)
+	pool := buffer.NewBufferPool(dbName, poolSize, wal.NoopLM)
 	ctg := catalog.NewCatalog(pool)
 
 	return pool, ctg, func() { defer common.Remove(dbName) }

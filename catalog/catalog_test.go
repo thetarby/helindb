@@ -8,6 +8,7 @@ import (
 	"helin/catalog/db_types"
 	"helin/common"
 	"helin/disk/structures"
+	"helin/disk/wal"
 	"helin/transaction"
 	"io"
 	"log"
@@ -19,7 +20,7 @@ func TestCatalog_CreateTable_Should_Create_Table_Successfully(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
 	defer common.Remove(dbName)
-	pool := buffer.NewBufferPool(dbName, 32)
+	pool := buffer.NewBufferPool(dbName, 32, wal.NoopLM)
 
 	catalog := NewCatalog(pool)
 	schema := SchemaImpl{
@@ -46,7 +47,7 @@ func TestCatalog(t *testing.T) {
 	id, _ := uuid.NewUUID()
 	dbName := id.String()
 	defer common.Remove(dbName)
-	pool := buffer.NewBufferPool(dbName, 32)
+	pool := buffer.NewBufferPool(dbName, 32, wal.NoopLM)
 
 	catalog := NewCatalog(pool)
 	schema := SchemaImpl{

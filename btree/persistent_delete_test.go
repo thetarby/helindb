@@ -3,6 +3,7 @@ package btree
 import (
 	"helin/buffer"
 	"helin/common"
+	"helin/disk/wal"
 	"helin/transaction"
 	io2 "io"
 	"io/ioutil"
@@ -41,9 +42,9 @@ func TestDelete_Should_Decrease_Height_Size_When_Root_Is_Empty_3(t *testing.T) {
 func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
 	dbFile := uuid.New().String() + ".helin"
-	pool := buffer.NewBufferPool(dbFile, 64)
+	pool := buffer.NewBufferPool(dbFile, 64, wal.NoopLM)
 	defer common.Remove(dbFile)
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 100, NewDefaultBPP(pool, &PersistentKeySerializer{}, io2.Discard))
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 100, NewTestBPP(pool, &PersistentKeySerializer{}, io2.Discard))
 
 	n := 10000
 	for _, i := range rand.Perm(n) {
@@ -75,9 +76,9 @@ func TestPersistentDeleted_Items_Should_Not_Be_Found(t *testing.T) {
 func TestPersistentPin_Count_Should_Be_Zero_After_Deletes_Succeeds(t *testing.T) {
 	log.SetOutput(ioutil.Discard)
 	dbFile := uuid.New().String() + ".helin"
-	pool := buffer.NewBufferPool(dbFile, 16)
+	pool := buffer.NewBufferPool(dbFile, 16, wal.NoopLM)
 	defer common.Remove(dbFile)
-	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewDefaultBPP(pool, &PersistentKeySerializer{}, io2.Discard))
+	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, NewTestBPP(pool, &PersistentKeySerializer{}, io2.Discard))
 
 	n := 1000
 	rand.Seed(42)

@@ -7,6 +7,7 @@ import (
 	"helin/buffer"
 	"helin/common"
 	"helin/disk/pages"
+	"helin/disk/wal"
 	"helin/transaction"
 	"io"
 	"log"
@@ -18,7 +19,7 @@ func TestTableHeap(t *testing.T) {
 	dbName := uuid.New().String()
 	defer common.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 2)
+	pool := buffer.NewBufferPool(dbName, 2, wal.NoopLM)
 	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{
@@ -42,7 +43,7 @@ func TestTableHeap_All_Inserted_Should_Be_Found_And_Not_Inserted_Should_Not_Be_F
 	dbName := id.String()
 	defer common.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 32)
+	pool := buffer.NewBufferPool(dbName, 32, wal.NoopLM)
 	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{
@@ -77,7 +78,7 @@ func TestTableHeap_Delete(t *testing.T) {
 	defer common.Remove(dbName)
 	log.SetOutput(io.Discard)
 
-	pool := buffer.NewBufferPool(dbName, 32)
+	pool := buffer.NewBufferPool(dbName, 32, wal.NoopLM)
 	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{
@@ -122,7 +123,7 @@ func TestTableHeap_Delete_Last_Inserted_Item(t *testing.T) {
 	dbName := id.String()
 	defer common.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 32)
+	pool := buffer.NewBufferPool(dbName, 32, wal.NoopLM)
 	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{
@@ -166,7 +167,7 @@ func TestTableHeap_Delete_First_Inserted_Item(t *testing.T) {
 	dbName := id.String()
 	defer common.Remove(dbName)
 
-	pool := buffer.NewBufferPool(dbName, 32)
+	pool := buffer.NewBufferPool(dbName, 32, wal.NoopLM)
 	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{
@@ -211,7 +212,7 @@ func TestTableHeap_Update(t *testing.T) {
 	defer common.Remove(dbName)
 	log.SetOutput(io.Discard)
 
-	pool := buffer.NewBufferPool(dbName, 32)
+	pool := buffer.NewBufferPool(dbName, 32, wal.NoopLM)
 	firstPage, _ := pool.NewPage(transaction.TxnTODO())
 	pages.InitHeapPage(firstPage)
 	table := TableHeap{
