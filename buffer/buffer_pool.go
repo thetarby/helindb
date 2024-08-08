@@ -441,7 +441,7 @@ func NewBufferPool(dbFile string, poolSize int, lm wal.LogManager) *PoolV1 {
 		logManager:  lm,
 	}
 
-	flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1))
+	flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1, disk.PageSize))
 	if err := bp.DiskManager.WritePage(flHeaderP.GetWholeData(), flHeaderP.GetPageId()); err != nil {
 		log.Fatal("database cannot be created", err)
 	}
@@ -467,7 +467,7 @@ func NewBufferPoolWithDM(init bool, poolSize int, dm disk.IDiskManager, logManag
 		fl:          nil,
 	}
 	if init {
-		flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1))
+		flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1, disk.PageSize))
 		if err := bp.DiskManager.WritePage(flHeaderP.GetWholeData(), flHeaderP.GetPageId()); err != nil {
 			log.Fatal("database cannot be created", err)
 		}

@@ -16,7 +16,7 @@ type SlotIdxOffsetPair struct {
 }
 
 func newSlottedPageTestInstance() HeapPage {
-	p := HeapPage{RawPage: *NewRawPage(1)}
+	p := HeapPage{RawPage: *NewRawPage(1, 4096)}
 	p.SetHeader(HeapPageHeader{
 		FreeSpacePointer: uint32(len(p.GetData())),
 		SLotArrLen:       0,

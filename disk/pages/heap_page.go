@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"helin/common"
-	"helin/disk"
 	"unsafe"
 )
 
@@ -257,7 +256,7 @@ func (hp *HeapPage) setInSlotArr(idx int, val HeapPageArrEntry) {
 	err := binary.Write(&buf, binary.BigEndian, &val)
 	common.PanicIfErr(err)
 
-	if offset >= disk.PageSize {
+	if offset >= len(hp.RawPage.GetData()) {
 		panic("page overflow error")
 	}
 

@@ -5,6 +5,7 @@ package btree
 */
 
 import (
+	"helin/disk"
 	"helin/disk/pages"
 	"helin/disk/wal"
 	"helin/transaction"
@@ -49,7 +50,7 @@ func (memPager *MemPager) CreatePage(transaction.Transaction) NodePage {
 	defer memPager.lock.Unlock()
 	memPagerLastPageID++
 	newID := memPagerLastPageID
-	sp := InitLoggedSlottedPage(pages.NewRawPage(uint64(newID)), memPager.LogManager)
+	sp := InitLoggedSlottedPage(pages.NewRawPage(uint64(newID), disk.PageSize), memPager.LogManager)
 	memPagerNodeMapping2[newID] = &sp
 	return &sp
 }
@@ -78,7 +79,7 @@ func (memPager *MemPager) NewInternalNode(txn transaction.Transaction, firstPoin
 	newID := memPagerLastPageID
 	memPager.lock.Unlock()
 	node := VarKeyInternalNode{
-		p:             InitLoggedSlottedPage(pages.NewRawPage(uint64(newID)), memPager.LogManager),
+		p:             InitLoggedSlottedPage(pages.NewRawPage(uint64(newID), disk.PageSize), memPager.LogManager),
 		keySerializer: memPager.KeySerializer,
 		pager:         memPager,
 	}
@@ -107,7 +108,7 @@ func (memPager *MemPager) NewLeafNode(txn transaction.Transaction) NodeReleaser 
 	newID := memPagerLastPageID
 	memPager.lock.Unlock()
 	node := VarKeyLeafNode{
-		p:             InitLoggedSlottedPage(pages.NewRawPage(uint64(newID)), memPager.LogManager),
+		p:             InitLoggedSlottedPage(pages.NewRawPage(uint64(newID), disk.PageSize), memPager.LogManager),
 		keySerializer: memPager.KeySerializer,
 		valSerializer: memPager.ValueSerializer,
 		pager:         memPager,

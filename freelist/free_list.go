@@ -40,7 +40,6 @@ type List struct {
 	header        *Header
 	pager         flPager
 	enableLogging bool
-	log           wal.LogManager
 }
 
 func NewFreeList(dm Pager, lm wal.LogManager, init bool) *List {

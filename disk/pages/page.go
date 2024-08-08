@@ -2,7 +2,6 @@ package pages
 
 import (
 	"encoding/binary"
-	"helin/disk"
 	"sync"
 )
 
@@ -47,13 +46,13 @@ type RawPage struct {
 	trace    bool
 }
 
-func NewRawPage(pageId uint64) *RawPage {
+func NewRawPage(pageId uint64, pageSize int) *RawPage {
 	return &RawPage{
 		PageId:   pageId,
 		isDirty:  false,
 		rwLatch:  &sync.RWMutex{},
 		PinCount: 0,
-		Data:     make([]byte, disk.PageSize, disk.PageSize),
+		Data:     make([]byte, pageSize, pageSize),
 	}
 }
 

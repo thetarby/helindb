@@ -27,7 +27,7 @@ func (d *diskManager) NewPage(pageId uint64) (*pages.SlottedPage, error) {
 	}
 
 	// TODO: it may not be a slotted page.
-	sp := pages.InitSlottedPage(pages.NewRawPage(pageId))
+	sp := pages.InitSlottedPage(pages.NewRawPage(pageId, disk.PageSize))
 	if err := d.dm.WritePage(sp.GetWholeData(), pageId); err != nil {
 		return nil, err
 	}

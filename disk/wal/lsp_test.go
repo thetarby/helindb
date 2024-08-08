@@ -52,7 +52,7 @@ func RandBytes(n int) []byte {
 }
 
 func newP() loggedSlottedPage {
-	p := pages.InitSlottedPage(pages.NewRawPage(1))
+	p := pages.InitSlottedPage(pages.NewRawPage(1, 4096))
 	return loggedSlottedPage{
 		SlottedPage: p,
 	}

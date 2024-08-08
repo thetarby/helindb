@@ -415,7 +415,7 @@ func NewBufferPoolV2WithDM(init bool, poolSize int, dm disk.IDiskManager, logMan
 		fl:              nil,
 	}
 	if init {
-		flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1))
+		flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1, disk.PageSize))
 		if err := bp.DiskManager.WritePage(flHeaderP.GetWholeData(), flHeaderP.GetPageId()); err != nil {
 			log.Fatal("database cannot be created", err)
 		}
@@ -488,7 +488,7 @@ func (f *frame) Resolve() error {
 
 func newFrame(p *PoolV2, idx int) *frame {
 	return &frame{
-		page:     pages.NewRawPage(0),
+		page:     pages.NewRawPage(0, disk.PageSize),
 		evicting: 0,
 		reading:  0,
 		pool:     p,
