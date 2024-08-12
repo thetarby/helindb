@@ -513,7 +513,7 @@ func getAt(pager *Pager2, n node, p BPage, idx int) []byte {
 func getKeyAt(pager *Pager2, n node, p BPage, idx int) []byte {
 	b := p.GetAt(idx)
 	keySize, nn := binary.Uvarint(b)
-	if len(b) >= (int(keySize) + nn) {
+	if keySize <= uint64(maxPayloadSize-nn) {
 		return b
 	} else {
 		h := n.GetHeader()

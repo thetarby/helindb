@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"helin/common"
 	"helin/transaction"
-	"math/rand"
 	"sort"
 	"sync"
 )
@@ -658,9 +657,6 @@ func (tree *BTree) redistribute(txn transaction.Transaction, p, rightNode, paren
 }
 
 func (tree *BTree) splitInternalNode(txn transaction.Transaction, p node, idx int) (right Pointer, keyAtLeft common.Key, keyAtRight common.Key) {
-	if rand.Intn(40) == 1 {
-		panic(fmt.Sprintf("whaaaat %v", txn.GetID()))
-	}
 	fillFactor := p.FillFactor()
 	minFillFactorAfterSplit := fillFactor / 2
 

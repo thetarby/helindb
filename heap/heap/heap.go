@@ -197,7 +197,7 @@ func (h *Heap) SetAt(txn transaction.Transaction, idx int, data []byte) error {
 	pageOffset := header.FreeSpaceOffset
 	page := fp
 	for {
-		numberOfBytesToWrite := min(len(page.GetData())-int(pageOffset), len(data)-dataOffset)
+		numberOfBytesToWrite := min(int(h.PageSize)-int(pageOffset), len(data)-dataOffset)
 		if err := page.CopyAt(txn, pageOffset, data[dataOffset:dataOffset+numberOfBytesToWrite]); err != nil {
 			return err
 		}
@@ -211,7 +211,7 @@ func (h *Heap) SetAt(txn transaction.Transaction, idx int, data []byte) error {
 		}
 
 		// if page is full create new page
-		if int(pageOffset) == len(page.GetData()) {
+		if int(pageOffset) == int(h.PageSize) {
 			page, err = h.Pager.CreatePage(txn)
 			if err != nil {
 				return err
@@ -254,8 +254,8 @@ func (h *Heap) GetAt(idx int) ([]byte, error) {
 	page := fp
 	pageOffset := entry.Offset
 	for {
+		numberOfBytesToRead := min(entry.Len-totalRead, h.PageSize-(pageOffset))
 		d := page.GetData()
-		numberOfBytesToRead := min(entry.Len-totalRead, uint16(len(d))-(pageOffset))
 		res = append(res, d[pageOffset:pageOffset+numberOfBytesToRead]...)
 
 		totalRead += numberOfBytesToRead
