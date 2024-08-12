@@ -33,14 +33,14 @@ func TestBuffer_Pool_Should_Write_Pages_To_Disk(t *testing.T) {
 		json, _ := json.Marshal(x)
 		json = append(json, byte('\000'))
 
-		var data [4096]byte
+		var data [disk.PageSize]byte
 		copy(data[:], json)
 		p, err := b.NewPage(transaction.TxnNoop())
 
 		assert.NoError(t, err)
 		pageIDs = append(pageIDs, p.GetPageId())
 
-		data[4095] = byte('\n')
+		data[disk.PageSize-1] = byte('\n')
 		p.Data = data[:]
 
 		b.Unpin(p.GetPageId(), true)
