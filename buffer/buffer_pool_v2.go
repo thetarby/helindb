@@ -8,8 +8,9 @@ import (
 	"helin/disk/pages"
 	"helin/disk/wal"
 	"helin/freelist/pfreelistv1"
+	"helin/locker"
 	"helin/transaction"
-	"log"
+	log2 "log"
 	"sync"
 	"time"
 )
@@ -36,20 +37,21 @@ type PoolV2 struct {
 	// wait on this condition and check pageMap to see if the specific page it is waiting for is evicted or not.
 	// Note that evictCond uses PoolV2.lock as its locker so that when Wait returns lock is acquired.
 	evictCond *sync.Cond
+
+	lockManager *locker.LockManager
 }
 
 func (b *PoolV2) GetFreeList() FreeList {
 	return b.fl
 }
 
-func (b *PoolV2) FreePage(txn transaction.Transaction, pageId uint64, log bool) error {
+func (b *PoolV2) FreePage(txn transaction.Transaction, pageId uint64) error {
 	b.lock.Lock()
-	if frame, ok := b.get(pageId); ok {
-		frame := b.frames[frame]
-		if frame.page.PinCount > 1 {
+	if frameIdx, ok := b.get(pageId); ok {
+		f := b.frames[frameIdx]
+		common.AssertCallback(f.page.PinCount <= 1, fmt.Sprintf("freeing a pinned page, pin count: %v", f.page.PinCount), func() {
 			b.lock.Unlock()
-			panic(fmt.Sprintf("freeing a pinned page, pin count: %v", frame.page.PinCount))
-		}
+		})
 	}
 	b.lock.Unlock()
 
@@ -134,11 +136,7 @@ func (b *PoolV2) GetPage(pageId uint64) (*pages.RawPage, error) {
 // pin increments page's pin count and pins the frame that keeps the page to avoid it being chosen as victim
 func (b *PoolV2) pin(pageId uint64) {
 	frameIdx, ok := b.get(pageId)
-	if !ok {
-		// NOTE: is panic ok here? this method is private and should not be called with a non-existent
-		// pageID hence panic might be ok?
-		panic(fmt.Sprintf("pinned a page which does not exist: %v", pageId))
-	}
+	common.Assert(ok, fmt.Sprintf("pinned a page which does not exist: %v", pageId))
 
 	frame := b.frames[frameIdx]
 	frame.page.IncrPinCount()
@@ -150,9 +148,7 @@ func (b *PoolV2) Unpin(pageId uint64, isDirty bool) bool {
 	defer b.lock.Unlock()
 
 	frameIdx, ok := b.get(pageId)
-	if !ok {
-		panic(fmt.Sprintf("unpinned a page which does not exist: %v", pageId))
-	}
+	common.Assert(ok, fmt.Sprintf("unpinned a page which does not exist: %v", pageId))
 
 	return b.unpinFrame(frameIdx, isDirty)
 }
@@ -164,10 +160,8 @@ func (b *PoolV2) unpinFrame(frameIdx int, isDirty bool) bool {
 		frame.page.SetDirty()
 	}
 
-	// if pin count is already 0 it is already unpinned. Although that should not happen I guess
-	if frame.page.GetPinCount() <= 0 {
-		panic(fmt.Sprintf("buffer.Unpin is called while pin count is lte zero. PageId: %v, pin count %v\n", frame.page.GetPageId(), frame.page.GetPinCount()))
-	}
+	// if pin count is already 0 it is already unpinned.
+	common.Assert(frame.page.GetPinCount() > 0, fmt.Sprintf("buffer.Unpin is called while pin count is lte zero. PageId: %v, pin count %v\n", frame.page.GetPageId(), frame.page.GetPinCount()))
 
 	// decrease pin count and if it is 0 unpin frame in the replacer so that new pages can be read
 	frame.page.DecrPinCount()
@@ -219,13 +213,17 @@ func (b *PoolV2) TryFlush(pageId uint64) error {
 	}
 
 	// unpinFrame is deferred after Resolve because if resolve fails it unpins
-	defer b.unpinFrame(frameIdx, false)
+	defer func() {
+		b.lock.Lock()
+		defer b.lock.Unlock()
+		b.unpinFrame(frameIdx, false)
+	}()
 
 	// try shared locking page
-	if !frame.page.TryRLatch() {
+	if !b.lockManager.TryAcquireLatch(frame.page.GetPageId(), 0, locker.SharedLock) {
 		return ErrRLockFailed
 	}
-	defer frame.page.RUnLatch()
+	defer b.lockManager.ReleaseLatch(frame.page.GetPageId(), 0)
 
 	if !frame.page.IsDirty() {
 		return nil
@@ -245,7 +243,7 @@ func (b *PoolV2) TryFlush(pageId uint64) error {
 	return nil
 }
 
-// FlushAll determines all dirty pages at the time of call and syncs all of them to disk. It blocks until all
+// FlushAll2 determines all dirty pages at the time of call and syncs all of them to disk. It blocks until all
 // determined dirty pages are synced.
 func (b *PoolV2) FlushAll2() error {
 	if err := b.logManager.Flush(); err != nil {
@@ -261,35 +259,6 @@ func (b *PoolV2) FlushAll2() error {
 	})
 
 	b.lock.Unlock()
-
-	/*
-		// flush in parallel maybe like this?
-		wg := sync.WaitGroup{}
-		for _, chunk := range common.Chunks(pooledPages, 10) {
-			wg.Add(1)
-			go func(arr []uint64) {
-				defer wg.Done()
-				for _, pid := range arr {
-					for {
-						if err := b.TryFlush(pid); err != nil {
-							if errors.Is(err, ErrPageNotFoundInPageMap) {
-								// if it is not in page map, it is already evicted and synced hence we can continue.
-								break
-							} else if errors.Is(err, ErrRLockFailed) {
-								time.Sleep(time.Microsecond)
-								continue
-							} else {
-								panic(err)
-							}
-						}
-						break
-					}
-					// time.Sleep(time.Millisecond * 4)
-				}
-			}(chunk)
-		}
-		wg.Wait()
-	*/
 
 	// flush all pages. if TryFlush fails wait some time and try again.
 	for _, pid := range pooledPages {
@@ -370,6 +339,16 @@ func (b *PoolV2) FlushAll() error {
 }
 
 func (b *PoolV2) NewPage(txn transaction.Transaction) (page *pages.RawPage, err error) {
+	// try to pop from free list, if popped fetch and use it
+	newPageId, err := b.fl.Pop(txn)
+	if err != nil {
+		return nil, err
+	}
+	if newPageId != 0 {
+		return b.GetPage(newPageId)
+	}
+
+	// else reserve a frame and alloc new page using disk manager
 	b.lock.Lock()
 	availableFrameIdx := b.reserveFrame()
 	if availableFrameIdx <= 0 {
@@ -386,20 +365,8 @@ func (b *PoolV2) NewPage(txn transaction.Transaction) (page *pages.RawPage, err 
 		b.set(victimPageID, -1)
 	}
 
-	// TODO: fix this
-	b.lock.Unlock()
-
-	newPageId, err := b.fl.Pop(txn)
-	if err != nil {
-		return nil, err
-	}
-
-	b.lock.Lock()
-
-	if newPageId == 0 {
-		newPageId = b.DiskManager.NewPage()
-		b.logManager.AppendLog(txn, wal.NewDiskAllocPageLogRecord(txn.GetID(), newPageId))
-	}
+	newPageId = b.DiskManager.NewPage()
+	b.logManager.AppendLog(txn, wal.NewDiskAllocPageLogRecord(txn.GetID(), newPageId))
 
 	frame := b.frames[availableFrameIdx]
 
@@ -423,7 +390,7 @@ func (b *PoolV2) WithFL(fl FreeList) *PoolV2 {
 	return b
 }
 
-// reserveFrame should be called after lock is acquired
+// reserveFrame tries to find an empty frame and pins it if found, should be called after lock is acquired
 func (b *PoolV2) reserveFrame() int {
 	if len(b.emptyFrames) > 0 {
 		emptyFrameIdx := b.emptyFrames[0]
@@ -457,22 +424,18 @@ func (b *PoolV2) chooseVictimFrame() (int, error) {
 		return 0, err
 	}
 
-	// validate pin count
+	// do some logic assertions
 	victim := b.frames[victimFrameIdx]
-	if victim.page.GetPinCount() != 0 {
+	common.AssertCallback(victim.page.GetPinCount() == 0, fmt.Sprintf("a page is chosen as victim while it's pin count is not zero. pin count: %v, page_id: %v", victim.page.GetPinCount(), victim.page.GetPageId()), func() {
 		b.lock.Unlock()
-		panic(fmt.Sprintf("a page is chosen as victim while it's pin count is not zero. pin count: %v, page_id: %v", victim.page.GetPinCount(), victim.page.GetPageId()))
-	}
-
-	if victim.evicting != 0 || victim.reading != 0 {
+	})
+	common.AssertCallback(victim.evicting == 0 && victim.reading == 0, fmt.Sprintf("a frame is chosen as victim while it is not resolved"), func() {
 		b.lock.Unlock()
-		panic(fmt.Sprintf("a frame is chosen as victim while it is not resolved"))
-	}
+	})
 
 	// pin selected victim frame
 	victim.page.IncrPinCount()
 	b.Replacer.Pin(victimFrameIdx)
-
 	return victimFrameIdx, nil
 }
 
@@ -493,7 +456,7 @@ func (b *PoolV2) del(pageId uint64) {
 	b.pageMap.Delete(pageId)
 }
 
-func NewBufferPoolV2WithDM(init bool, poolSize int, dm disk.IDiskManager, logManager wal.LogManager) *PoolV2 {
+func NewBufferPoolV2WithDM(init bool, poolSize int, dm disk.IDiskManager, logManager wal.LogManager, locker *locker.LockManager) *PoolV2 {
 	emptyFrames := make([]int, poolSize)
 	for i := 0; i < poolSize; i++ {
 		emptyFrames[i] = i
@@ -509,41 +472,18 @@ func NewBufferPoolV2WithDM(init bool, poolSize int, dm disk.IDiskManager, logMan
 		lock:            sync.Mutex{},
 		emptyFramesLock: sync.Mutex{},
 		logManager:      logManager,
+		lockManager:     locker,
 		fl:              nil,
 	}
 	if init {
 		// TODO: convert not logged
 		flHeaderP := pages.InitSlottedPage(pages.NewRawPage(1, disk.PageSize))
 		if err := bp.DiskManager.WritePage(flHeaderP.GetWholeData(), flHeaderP.GetPageId()); err != nil {
-			log.Fatal("database cannot be created", err)
+			log2.Fatal("database cannot be created", err)
 		}
 	}
 
 	bp.fl = pfreelistv1.NewBPFreeList(bp, bp.logManager, init)
-	bp.evictCond = sync.NewCond(&bp.lock)
-
-	return bp
-}
-
-func NewBufferPoolV2(poolSize int, dm disk.IDiskManager, logManager wal.LogManager) *PoolV2 {
-	emptyFrames := make([]int, poolSize)
-	for i := 0; i < poolSize; i++ {
-		emptyFrames[i] = i
-	}
-
-	bp := &PoolV2{
-		poolSize:        poolSize,
-		frames:          make([]*frame, poolSize),
-		pageMap:         sync.Map{},
-		emptyFrames:     emptyFrames,
-		Replacer:        NewClockReplacer(poolSize),
-		DiskManager:     dm,
-		lock:            sync.Mutex{},
-		emptyFramesLock: sync.Mutex{},
-		logManager:      logManager,
-		fl:              nil,
-	}
-
 	bp.evictCond = sync.NewCond(&bp.lock)
 
 	return bp
@@ -558,8 +498,8 @@ func (f *frame) resolve() error {
 					f.pool.lock.Lock()
 					f.evicting = 0
 					f.pool.set(f.evicting, f.idx)
-					f.pool.lock.Unlock()
 					f.pool.unpinFrame(f.idx, false)
+					f.pool.lock.Unlock()
 					f.pool.evictCond.Broadcast()
 					return err
 				}
@@ -570,8 +510,8 @@ func (f *frame) resolve() error {
 				f.pool.lock.Lock()
 				f.evicting = 0
 				f.pool.set(f.evicting, f.idx)
-				f.pool.lock.Unlock()
 				f.pool.unpinFrame(f.idx, false)
+				f.pool.lock.Unlock()
 				f.pool.evictCond.Broadcast()
 				return err
 			}

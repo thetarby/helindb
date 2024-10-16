@@ -13,6 +13,9 @@ type LogManager interface {
 	// WaitAppendLog is same as AppendLog, but it waits until appended log is flushed.
 	WaitAppendLog(txn transaction.Transaction, lr *LogRecord) (pages.LSN, error)
 
+	// Wait waits until given lsn is flushed.
+	Wait(lsn pages.LSN) error
+
 	// GetFlushedLSNOrZero returns the latest log's lsn that is flushed to underlying io.Writer.
 	GetFlushedLSNOrZero() pages.LSN
 

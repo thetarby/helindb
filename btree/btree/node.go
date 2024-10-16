@@ -23,7 +23,7 @@ func DeserializePointer(dest []byte) Pointer {
 }
 
 type NodeIndexPair struct {
-	Node  NodeReleaser
+	Node  nodeReleaser
 	Index int // pointer index for internal nodes and value index for leaf nodes
 }
 
@@ -36,14 +36,14 @@ const (
 	Debug
 )
 
-// node is an internal interface which is not exported. it is for only readability purposes.
+// node is an internal interface which is not exported. it is only for readability purposes.
 type node interface {
 	SetKeyAt(txn transaction.Transaction, idx int, key common.Key)
 	SetValueAt(txn transaction.Transaction, idx int, val interface{})
-	GetKeyAt(idx int) common.Key
-	GetValueAt(idx int) interface{}
-	GetValues() []interface{}
-	PrintNode()
+	GetKeyAt(txn transaction.Transaction, idx int) common.Key
+	GetValueAt(txn transaction.Transaction, idx int) interface{}
+	GetValues(txn transaction.Transaction) []interface{}
+	PrintNode(txn transaction.Transaction)
 	InsertAt(txn transaction.Transaction, index int, key common.Key, val interface{})
 	DeleteAt(txn transaction.Transaction, index int)
 	GetPageId() Pointer
@@ -54,11 +54,11 @@ type node interface {
 	KeyLen() int
 	FillFactor() int
 	GetRight() Pointer
+}
 
-	WLatch()
-	WUnlatch()
-	RLatch()
-	RUnLatch()
+type nodeReleaser interface {
+	node
+	Release()
 }
 
 const (

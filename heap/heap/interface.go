@@ -16,6 +16,6 @@ type PageReleaser interface {
 type Pager interface {
 	CreatePage(txn transaction.Transaction) (PageReleaser, error)
 	FreePage(txn transaction.Transaction, pageID uint64) error
-	GetPageToRead(pageID uint64) (PageReleaser, error)
-	GetPageToWrite(pageID uint64) (PageReleaser, error)
+	GetPageToRead(txn transaction.Transaction, pageID uint64) (PageReleaser, error)
+	GetPageToWrite(txn transaction.Transaction, pageID uint64) (PageReleaser, error)
 }

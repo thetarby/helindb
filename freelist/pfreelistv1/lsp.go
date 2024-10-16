@@ -15,6 +15,7 @@ type loggedFreelistPage struct {
 	sp   pages.SlottedPage
 	pool Pool
 	lm   wal.LogManager
+	txn  transaction.Transaction
 }
 
 func (s *loggedFreelistPage) Get() []byte {
@@ -53,11 +54,12 @@ func (s *loggedFreelistPage) GetLSN() uint64 {
 
 func (s *loggedFreelistPage) Release() {
 	s.pool.Unpin(s.sp.GetPageId(), true)
-	s.sp.WUnlatch()
+	// s.sp.WUnlatch()
+	s.txn.ReleaseLatch(s.sp.GetPageId())
 }
 
-func newLoggedFreelistPage(p *pages.RawPage, pool Pool, lm wal.LogManager) *loggedFreelistPage {
-	return &loggedFreelistPage{sp: pages.CastSlottedPage(p), pool: pool, lm: lm}
+func newLoggedFreelistPage(p *pages.RawPage, pool Pool, lm wal.LogManager, txn transaction.Transaction) *loggedFreelistPage {
+	return &loggedFreelistPage{sp: pages.CastSlottedPage(p), pool: pool, lm: lm, txn: txn}
 }
 
 func initLoggedFreelistPage(txn transaction.Transaction, p *pages.RawPage, pool Pool, lm wal.LogManager) *loggedFreelistPage {
@@ -67,5 +69,5 @@ func initLoggedFreelistPage(txn transaction.Transaction, p *pages.RawPage, pool 
 	sp.SetPageLSN(lsn)
 	sp.SetDirty()
 
-	return &loggedFreelistPage{sp: sp, pool: pool, lm: lm}
+	return &loggedFreelistPage{sp: sp, pool: pool, lm: lm, txn: txn}
 }

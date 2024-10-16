@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"github.com/golang/snappy"
 	"helin/common"
+	"helin/disk/pages"
+	"helin/transaction"
 )
 
 type JsonLogSerDe struct{}
@@ -76,13 +78,67 @@ func (b *BinarySerDe) Serialize(lr *LogRecord) []byte {
 		res = binary.AppendUvarint(res, uint64(t))
 	}
 
-	//if len(res) > 500 {
-	//	return snappy.Encode(nil, res)
-	//}
-
 	return snappy.Encode(nil, res)
 }
 
 func (b *BinarySerDe) Deserialize(d []byte, lr *LogRecord) {
+	data, err := snappy.Decode(nil, d)
+	if err != nil {
+		panic("corrupt log")
+	}
 
+	offset := 0
+	uvarint := func() uint64 {
+		res, n := binary.Uvarint(data[offset:])
+		if n <= 0 {
+			panic("corrupt log")
+		}
+		offset += n
+
+		return res
+	}
+
+	lr.TxnID = transaction.TxnID(uvarint())
+
+	// first read list length, then the items
+	freedLen := uvarint()
+	lr.FreedPages = make([]uint64, freedLen)
+	for i := uint64(0); i < freedLen; i++ {
+		lr.FreedPages[i] = uvarint()
+	}
+
+	lr.Lsn = pages.LSN(uvarint())
+	lr.PrevLsn = pages.LSN(uvarint())
+	lr.Idx = uint16(uvarint()) // TODO: panic when overflow
+
+	// Read Payload length
+	payloadLen := uvarint()
+	lr.Payload = data[offset : offset+int(payloadLen)]
+	offset += int(payloadLen)
+
+	// Read OldPayload length
+	oldPayloadLen := uvarint()
+	lr.OldPayload = data[offset : offset+int(oldPayloadLen)]
+	offset += int(oldPayloadLen)
+
+	lr.PageID = uvarint()
+	lr.TailPageID = uvarint()
+	lr.HeadPageID = uvarint()
+	lr.PageType = uvarint()
+
+	lr.IsClr = data[offset] == 1
+	offset++
+
+	lr.UndoNext = pages.LSN(uvarint())
+
+	// Read Actives length
+	activesLen := uvarint()
+	lr.Actives = make([]transaction.TxnID, activesLen)
+	for i := uint64(0); i < activesLen; i++ {
+		lr.Actives[i] = transaction.TxnID(uvarint())
+	}
+}
+
+func NewDefaultSerDe() *BinarySerDe {
+	return &BinarySerDe{}
 }

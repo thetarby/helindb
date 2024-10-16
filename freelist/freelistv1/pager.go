@@ -5,7 +5,7 @@ import (
 )
 
 type Pager interface {
-	GetPageToRead(pageId uint64) (FreeListPage, error)
+	GetPageToRead(txn transaction.Transaction, pageId uint64) (FreeListPage, error)
 	GetPageToWrite(txn transaction.Transaction, pageId uint64, format bool) (FreeListPage, error)
 }
 

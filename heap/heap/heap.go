@@ -2,17 +2,15 @@ package heap
 
 import (
 	"encoding/binary"
+	"fmt"
 	"helin/common"
 	"helin/transaction"
 )
 
 /*
-(maxPageSizeForOneRecord+1)*slotSize + (maxPageSizeForOneRecord+1)
-__,__,__,__
-
+	NOTES: heap is not thread-safe. It shouldn't be called in parallel.
 */
 
-// TODO: heap is not thread-safe
 // TODO: don't serialize whole header when a field is changed
 // TODO: put constraints on header max size, max value size and then optimize header serialization for no alloc
 
@@ -22,6 +20,8 @@ type SlotEntry struct {
 	PageID uint64
 	Len    uint16
 }
+
+var slotEntrySize = binary.Size(SlotEntry{})
 
 type Header struct {
 	SlotArr         []SlotEntry
@@ -94,7 +94,7 @@ func readHeader(src []byte) *Header {
 		entry.PageID = binary.BigEndian.Uint64(src[n+4:])
 		entry.Empty = src[n+12] == 1
 
-		n += 13
+		n += slotEntrySize
 
 		slotArr = append(slotArr, entry)
 	}
@@ -168,18 +168,25 @@ func OpenHeap(headPageID uint64, maxPageSizeForRecord int, pageSize uint16, page
 }
 
 func (h *Heap) Insert(txn transaction.Transaction, data []byte) (int, error) {
-	header := h.getHeader()
+	header, err := h.getHeader(txn)
+	if err != nil {
+		return 0, err
+	}
+
 	for i, entry := range header.SlotArr {
 		if entry.Len == 0 {
 			return i, h.SetAt(txn, i, data)
 		}
 	}
 
-	panic("overflow")
+	return 0, fmt.Errorf("exceeded slot capacity: %v", len(header.SlotArr))
 }
 
 func (h *Heap) SetAt(txn transaction.Transaction, idx int, data []byte) error {
-	header := h.getHeader()
+	header, err := h.getHeader(txn)
+	if err != nil {
+		return err
+	}
 
 	var firstPageID uint64
 	if len(header.PageIDArr) > 0 {
@@ -188,7 +195,7 @@ func (h *Heap) SetAt(txn transaction.Transaction, idx int, data []byte) error {
 		firstPageID = h.HeadPageID
 	}
 
-	fp, err := h.Pager.GetPageToWrite(firstPageID)
+	fp, err := h.Pager.GetPageToWrite(txn, firstPageID)
 	if err != nil {
 		return err
 	}
@@ -239,12 +246,16 @@ func (h *Heap) SetAt(txn transaction.Transaction, idx int, data []byte) error {
 	return nil
 }
 
-func (h *Heap) GetAt(idx int) ([]byte, error) {
-	header := h.getHeader()
+func (h *Heap) GetAt(txn transaction.Transaction, idx int) ([]byte, error) {
+	header, err := h.getHeader(txn)
+	if err != nil {
+		return nil, err
+	}
+
 	entry := header.SlotArr[idx]
 
 	firstPageID := entry.PageID
-	fp, err := h.Pager.GetPageToRead(firstPageID)
+	fp, err := h.Pager.GetPageToRead(txn, firstPageID)
 	if err != nil {
 		return nil, err
 	}
@@ -255,6 +266,7 @@ func (h *Heap) GetAt(idx int) ([]byte, error) {
 	pageOffset := entry.Offset
 	for {
 		numberOfBytesToRead := min(entry.Len-totalRead, h.PageSize-(pageOffset))
+
 		d := page.GetData()
 		res = append(res, d[pageOffset:pageOffset+numberOfBytesToRead]...)
 
@@ -267,7 +279,7 @@ func (h *Heap) GetAt(idx int) ([]byte, error) {
 			nextPageID := h.nextPage(header, page.GetPageID())
 			common.Assert(nextPageID != 0, "corrupt heap")
 
-			page, err = h.Pager.GetPageToRead(nextPageID)
+			page, err = h.Pager.GetPageToRead(txn, nextPageID)
 			if err != nil {
 				return nil, err
 			}
@@ -278,13 +290,21 @@ func (h *Heap) GetAt(idx int) ([]byte, error) {
 }
 
 func (h *Heap) DeleteAt(txn transaction.Transaction, idx int) error {
-	header := h.getHeader()
+	header, err := h.getHeader(txn)
+	if err != nil {
+		return err
+	}
+
 	header.SlotArr[idx].Len = 0
 	return h.setHeader(txn, header)
 }
 
-func (h *Heap) Count() (int, error) {
-	header := h.getHeader()
+func (h *Heap) Count(txn transaction.Transaction) (int, error) {
+	header, err := h.getHeader(txn)
+	if err != nil {
+		return 0, err
+	}
+
 	count := 0
 	for _, entry := range header.SlotArr {
 		if entry.Len > 0 {
@@ -300,7 +320,11 @@ func (h *Heap) GetPageId() uint64 {
 }
 
 func (h *Heap) Free(txn transaction.Transaction) error {
-	header := h.getHeader()
+	header, err := h.getHeader(txn)
+	if err != nil {
+		return err
+	}
+
 	for _, pid := range header.PageIDArr {
 		if err := h.Pager.FreePage(txn, pid); err != nil {
 			return err
@@ -311,7 +335,11 @@ func (h *Heap) Free(txn transaction.Transaction) error {
 }
 
 func (h *Heap) FreeEmptyPages(txn transaction.Transaction) error {
-	header := h.getHeader()
+	header, err := h.getHeader(txn)
+	if err != nil {
+		return err
+	}
+
 	if err := h.freeEmptyPages(txn, header); err != nil {
 		return err
 	}
@@ -375,7 +403,8 @@ func (h *Heap) logicalOffset(header *Header, slotIdx int) int {
 		}
 	}
 
-	panic("page is not in pageID array")
+	common.AssertFail("page is not in pageID array")
+	return 0
 }
 
 func (h *Heap) pageIDIdx(header *Header, pageID uint64) int {
@@ -389,7 +418,8 @@ func (h *Heap) pageIDIdx(header *Header, pageID uint64) int {
 		}
 	}
 
-	panic("page is not in pageID array")
+	common.AssertFail("page is not in pageID array")
+	return 0
 }
 
 func (h *Heap) freePagesAtIdx(header *Header, at ...int) {
@@ -424,19 +454,30 @@ func (h *Heap) nextPage(header *Header, pageID uint64) uint64 {
 	return 0
 }
 
-func (h *Heap) getHeader() *Header {
-	hp, err := h.Pager.GetPageToRead(h.HeadPageID)
+func (h *Heap) getHeader(txn transaction.Transaction) (*Header, error) {
+	hp, err := h.Pager.GetPageToRead(txn, h.HeadPageID)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	defer hp.Release(false)
 
-	return readHeader(hp.GetData())
+	return readHeader(hp.GetData()), nil
+}
+
+func (h *Heap) getSlotEntryAt(txn transaction.Transaction) (*Header, error) {
+	hp, err := h.Pager.GetPageToRead(txn, h.HeadPageID)
+	if err != nil {
+		return nil, err
+	}
+
+	defer hp.Release(false)
+
+	return readHeader(hp.GetData()), nil
 }
 
 func (h *Heap) setHeader(txn transaction.Transaction, header *Header) error {
-	hp, err := h.Pager.GetPageToWrite(h.HeadPageID)
+	hp, err := h.Pager.GetPageToWrite(txn, h.HeadPageID)
 	if err != nil {
 		return err
 	}

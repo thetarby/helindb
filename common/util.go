@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/rand"
 	"os"
+	"sort"
 )
 
 func PanicIfErr(err error) {
@@ -110,6 +111,33 @@ func Chunks[T any](arr []T, chunkSize int) [][]T {
 	return divided
 }
 
+func RemoveIdx[T any](arr []T, idx int) []T {
+	arr = append(arr[:idx], arr[idx+1:]...)
+	return arr
+}
+
+func RemoveAtIndices[T any](slice []T, indices []int) []T {
+	if len(indices) == 0 {
+		return slice
+	}
+
+	sort.Sort(sort.IntSlice(indices))
+
+	result := make([]T, 0, len(slice)-len(indices))
+	copyIndex := 0
+
+	for i, elem := range slice {
+		if len(indices) > 0 && i == indices[0] {
+			indices = indices[1:]
+		} else {
+			result = append(result, elem)
+			copyIndex++
+		}
+	}
+
+	return result
+}
+
 func Remove(dbName string) {
 	PanicIfErr(os.Remove(dbName))
 }
@@ -138,9 +166,20 @@ func Uint64AsBytes(x uint64) []byte {
 	return res
 }
 
+func AssertFail(msg string, v ...any) {
+	panic(fmt.Sprintf("assertion failed: "+msg, v...))
+}
+
 func Assert(condition bool, msg string, v ...any) {
 	if !condition {
 		panic(fmt.Sprintf("assertion failed: "+msg, v...))
+	}
+}
+
+func AssertCallback(condition bool, msg string, callback func()) {
+	if !condition {
+		callback()
+		panic(msg)
 	}
 }
 

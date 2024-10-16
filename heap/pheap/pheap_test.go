@@ -25,7 +25,7 @@ func mkPoolTemp(t *testing.T) buffer.Pool {
 	dm, _, err := disk.NewDiskManager(dbName, false)
 	require.NoError(t, err)
 
-	pool := buffer.NewBufferPoolV2WithDM(true, 128, dm, wal.NoopLM)
+	pool := buffer.NewBufferPoolV2WithDM(true, 128, dm, wal.NoopLM, nil)
 
 	t.Cleanup(func() {
 		if err := os.RemoveAll(dir); err != nil {
@@ -55,17 +55,12 @@ func TestPHeap(t *testing.T) {
 		panic(err)
 	}
 
-	b, err := h.GetAt(0)
-	if err != nil {
-		panic(err)
-	}
+	b, err := h.GetAt(transaction.TxnNoop(), 0)
+	assert.NoError(t, err)
 
-	c, err := h.Count()
-	if err != nil {
-		panic(err)
-	}
+	c, err := h.Count(transaction.TxnNoop())
+	assert.NoError(t, err)
 
 	assert.Equal(t, 1, c)
-
-	t.Logf("%v", string(b))
+	assert.Equal(t, x, b)
 }

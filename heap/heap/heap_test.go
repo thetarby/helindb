@@ -70,7 +70,7 @@ func (t *testPager) FreePage(txn transaction.Transaction, pageID uint64) error {
 	return nil
 }
 
-func (t *testPager) GetPageToRead(pageID uint64) (PageReleaser, error) {
+func (t *testPager) GetPageToRead(txn transaction.Transaction, pageID uint64) (PageReleaser, error) {
 	page, ok := t.pages[pageID]
 	if !ok {
 		return nil, errors.New("page not found")
@@ -80,7 +80,7 @@ func (t *testPager) GetPageToRead(pageID uint64) (PageReleaser, error) {
 	return page, nil
 }
 
-func (t *testPager) GetPageToWrite(pageID uint64) (PageReleaser, error) {
+func (t *testPager) GetPageToWrite(txn transaction.Transaction, pageID uint64) (PageReleaser, error) {
 	page, ok := t.pages[pageID]
 	if !ok {
 		return nil, errors.New("page not found")
@@ -105,7 +105,7 @@ func TestHeap(t *testing.T) {
 		panic(err)
 	}
 
-	b, err := h.GetAt(0)
+	b, err := h.GetAt(transaction.TxnNoop(), 0)
 	if err != nil {
 		panic(err)
 	}
@@ -133,13 +133,32 @@ func TestHeapCount(t *testing.T) {
 		panic(err)
 	}
 
-	b, err := h.GetAt(0)
+	b, err := h.GetAt(transaction.TxnNoop(), 0)
 	assert.NoError(t, err)
 
-	c, err := h.Count()
+	c, err := h.Count(transaction.TxnNoop())
 	assert.NoError(t, err)
 
 	assert.Equal(t, 1, c)
 
 	t.Logf("%v", string(b))
+}
+
+func TestHeapSlotCapacityError(t *testing.T) {
+	h, err := InitHeap(transaction.TxnNoop(), 10, 4096*2, 4096*2, newTestPager())
+	if err != nil {
+		panic(err)
+	}
+
+	x := make([]byte, 6000)
+	x = append(x, []byte("sa")...)
+
+	for i := 0; i < 10; i++ {
+		_, err := h.Insert(transaction.TxnNoop(), x)
+		assert.NoError(t, err)
+	}
+
+	_, err = h.Insert(transaction.TxnNoop(), x)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "exceeded slot capacity")
 }

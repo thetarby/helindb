@@ -28,7 +28,7 @@ type Pool interface {
 
 	// FreePage deletes a page from the buffer pool. Returns error if the page exists but could not be deleted and
 	// panics if page does not exist
-	FreePage(txn transaction.Transaction, pageId uint64, log bool) error
+	FreePage(txn transaction.Transaction, pageId uint64) error
 
 	// EmptyFrameSize returns the number empty frames which does not hold data of any physical page
 	EmptyFrameSize() int
@@ -39,6 +39,7 @@ type Pool interface {
 type FreeList interface {
 	Pop(txn transaction.Transaction) (pageId uint64, err error)
 	Add(txn transaction.Transaction, pageId uint64) error
+	GetHeaderPageLsn(txn transaction.Transaction) pages.LSN
 }
 
 type frame struct {
@@ -78,14 +79,11 @@ func (b *PoolV1) GetFreeList() FreeList {
 	return b.fl
 }
 
-func (b *PoolV1) FreePage(txn transaction.Transaction, pageId uint64, log bool) error {
+func (b *PoolV1) FreePage(txn transaction.Transaction, pageId uint64) error {
 	b.xLock.Lock()
 	if frame, ok := b.pageMap[pageId]; ok {
 		frame := b.frames[frame]
-		if frame.page.PinCount > 1 {
-			b.xLock.Unlock()
-			panic(fmt.Sprintf("freeing a pinned page, pin count: %v", frame.page.PinCount))
-		}
+		common.Assert(frame.page.PinCount <= 1, fmt.Sprintf("freeing a pinned page, pin count: %v", frame.page.PinCount))
 	}
 	b.xLock.Unlock()
 
@@ -163,11 +161,7 @@ func (b *PoolV1) GetPage(pageId uint64) (*pages.RawPage, error) {
 // pin increments page's pin count and pins the frame that keeps the page to avoid it being chosen as victim
 func (b *PoolV1) pin(pageId uint64) {
 	frameIdx, ok := b.pageMap[pageId]
-	if !ok {
-		// NOTE: is panic ok here? this method is private and should not be called with a non-existent
-		// pageID hence panic might be ok?
-		panic(fmt.Sprintf("pinned a page which does not exist: %v", pageId))
-	}
+	common.Assert(ok, fmt.Sprintf("pinned a page which does not exist: %v", pageId))
 
 	frame := b.frames[frameIdx]
 	frame.page.IncrPinCount()
@@ -179,9 +173,7 @@ func (b *PoolV1) Unpin(pageId uint64, isDirty bool) bool {
 	defer b.xLock.Unlock()
 
 	frameIdx, ok := b.pageMap[pageId]
-	if !ok {
-		panic(fmt.Sprintf("unpinned a page which does not exist: %v", pageId))
-	}
+	common.Assert(ok, fmt.Sprintf("unpinned a page which does not exist: %v", pageId))
 
 	return b.unpinFrame(frameIdx, isDirty)
 }
@@ -194,9 +186,7 @@ func (b *PoolV1) unpinFrame(frameIdx int, isDirty bool) bool {
 	}
 
 	// if pin count is already 0 it is already unpinned. Although that should not happen I guess
-	if frame.page.GetPinCount() <= 0 {
-		panic(fmt.Sprintf("buffer.Unpin is called while pin count is lte zero. PageId: %v, pin count %v\n", frame.page.GetPageId(), frame.page.GetPinCount()))
-	}
+	common.Assert(frame.page.GetPinCount() > 0, fmt.Sprintf("buffer.Unpin is called while pin count is lte zero. PageId: %v, pin count %v\n", frame.page.GetPageId(), frame.page.GetPinCount()))
 
 	// decrease pin count and if it is 0 unpin frame in the replacer so that new pages can be read
 	frame.page.DecrPinCount()
@@ -376,10 +366,7 @@ func (b *PoolV1) evictVictim() (int, error) {
 	}
 
 	victim := b.frames[victimFrameIdx]
-	if victim.page.GetPinCount() != 0 {
-		b.xLock.Unlock()
-		panic(fmt.Sprintf("a page is chosen as victim while it's pin count is not zero. pin count: %v, page_id: %v", victim.page.GetPinCount(), victim.page.GetPageId()))
-	}
+	common.Assert(victim.page.GetPinCount() == 0, fmt.Sprintf("a page is chosen as victim while it's pin count is not zero. pin count: %v, page_id: %v", victim.page.GetPinCount(), victim.page.GetPageId()))
 
 	// pin evicting frame to avoid replacer to pick it up again before io completes.
 	victim.page.IncrPinCount()

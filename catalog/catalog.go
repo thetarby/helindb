@@ -36,6 +36,7 @@ const NullIndexOID IndexOID = 0
 type Catalog interface {
 	CreateStore(txn transaction.Transaction, name string) (*StoreInfo, error)
 	GetStore(txn transaction.Transaction, name string) *btree.BTree
+	ListStores() []string
 }
 
 var _ Catalog = &InMemCatalog{}
@@ -59,6 +60,11 @@ func (c *InMemCatalog) CreateStore(txn transaction.Transaction, name string) (*S
 }
 
 func (c *InMemCatalog) GetStore(txn transaction.Transaction, name string) *btree.BTree {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (c *InMemCatalog) ListStores() []string {
 	//TODO implement me
 	panic("implement me")
 }

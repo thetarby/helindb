@@ -9,7 +9,7 @@ type TreeIterator struct {
 	txn      transaction.Transaction
 	tree     *BTree
 	curr     Pointer
-	currNode NodeReleaser
+	currNode nodeReleaser
 	closed   bool
 	currIdx  int
 	pager    *Pager2
@@ -25,11 +25,11 @@ func (it *TreeIterator) Next() (common.Key, any) {
 		}
 
 		it.curr = it.currNode.GetRight()
-		it.currNode = it.pager.GetNodeReleaser(it.curr, Read)
+		it.currNode = it.pager.GetNodeReleaser(it.txn, it.curr, Read)
 		it.currIdx = 0
 	}
 
-	val, key := it.currNode.GetValueAt(it.currIdx), it.currNode.GetKeyAt(it.currIdx)
+	val, key := it.currNode.GetValueAt(it.txn, it.currIdx), it.currNode.GetKeyAt(it.txn, it.currIdx)
 	it.currIdx++
 	return key, val
 }
@@ -42,10 +42,10 @@ func (it *TreeIterator) Close() error {
 }
 
 func NewTreeIterator(txn transaction.Transaction, tree *BTree) *TreeIterator {
-	curr := tree.GetRoot(Read)
+	curr := tree.GetRoot(txn, Read)
 	for !curr.IsLeaf() {
 		old := curr
-		curr = tree.pager.GetNodeReleaser(curr.GetValueAt(0).(Pointer), Read)
+		curr = tree.pager.GetNodeReleaser(txn, curr.GetValueAt(txn, 0).(Pointer), Read)
 		old.Release()
 	}
 
@@ -60,7 +60,7 @@ func NewTreeIterator(txn transaction.Transaction, tree *BTree) *TreeIterator {
 }
 
 func NewTreeIteratorWithKey(txn transaction.Transaction, key common.Key, tree *BTree) *TreeIterator {
-	_, stack := tree.FindAndGetStack(key, Read)
+	_, stack := tree.FindAndGetStack(txn, key, Read)
 	leaf, idx := stack[len(stack)-1].Node, stack[len(stack)-1].Index
 
 	return &TreeIterator{
