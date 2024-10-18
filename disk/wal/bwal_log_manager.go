@@ -76,6 +76,14 @@ func (lm *BWALLogManager) WaitAppendLog(txn transaction.Transaction, lr *LogReco
 	return lsn, nil
 }
 
+func (lm *BWALLogManager) Wait(lsn pages.LSN) error {
+	if err := lm.lw.Wait(uint64(lsn)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (lm *BWALLogManager) GetFlushedLSNOrZero() pages.LSN {
 	lsn, err := lm.lw.GetFlushedLSN()
 	if err != nil {

@@ -24,6 +24,7 @@ type LogIterator interface {
 	Prev() (*LogRecord, error)
 	Curr() (*LogRecord, error)
 	Skip(lsn pages.LSN) (*LogRecord, error)
+	Close() error
 }
 
 type BackwardIterator interface {

@@ -160,3 +160,7 @@ func (r *BufferedLogReader) RepairWAL() error {
 func (r *BufferedLogReader) TruncateUntil(lsn uint64) error {
 	return r.segmentReader.TruncateFront(lsn)
 }
+
+func (r *BufferedLogReader) Close() error {
+	return r.segmentReader.Close()
+}

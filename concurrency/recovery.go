@@ -11,7 +11,7 @@ import (
 	"helin/disk/pages"
 	"helin/disk/wal"
 	"helin/freelist/freelistv1"
-	"helin/freelist/pfreelistv1"
+	"helin/locker"
 	"helin/transaction"
 	"io"
 	"log"
@@ -22,18 +22,19 @@ type Recovery struct {
 	logs       wal.LogIterator
 	logManager wal.LogManager
 	dm         RecoveryDiskManager
+	locker     *locker.LockManager
 }
 
-func NewRecovery(iter wal.LogIterator, lm wal.LogManager, dm *disk.Manager, pool buffer.Pool, fl *pfreelistv1.BPFreeList) (*Recovery, error) {
+func NewRecovery(iter wal.LogIterator, lm wal.LogManager, dm *disk.Manager, pool buffer.Pool) *Recovery {
 	return &Recovery{
 		logs:       iter,
 		logManager: lm,
 		dm: &recoveryDiskManager{
 			dm:   dm,
 			pool: pool,
-			fl:   fl,
 		},
-	}, nil
+		locker: locker.NewLockManager(),
+	}
 }
 
 // Recover is called to come back from failures. Brings database file to its latest correct state.
@@ -64,7 +65,7 @@ func (r *Recovery) Recover() error {
 
 	for _, active := range chBeginLr.Actives {
 		activeTxn[active] = "undo"
-		txns[active] = newTxn(active, nil, pages.ZeroLSN)
+		txns[active] = newTxn(active, nil, pages.ZeroLSN, r.locker)
 	}
 
 	if len(chBeginLr.Actives) > 0 {
@@ -103,7 +104,7 @@ func (r *Recovery) Recover() error {
 
 		// populate transactions map if newly encountered
 		if _, ok := txns[txnID]; !ok {
-			txns[txnID] = newTxn(txnID, nil, lr.Lsn)
+			txns[txnID] = newTxn(txnID, nil, lr.Lsn, r.locker)
 		}
 
 		txns[txnID].SetPrevLsn(lr.Lsn)
@@ -219,7 +220,7 @@ func (r *Recovery) CompleteTxn(txn transaction.Transaction) error {
 		if lr.Type() == wal.TypeFreePage {
 			// assertions
 			common.Assert(toFree[lr.PageID], "txn freed a page that is not in FreedPages")
-			common.Assert(r.dm.GetFreeListLsn() < lr.Lsn, "complete txn encountered a log record that is not redone")
+			common.Assert(r.dm.GetFreeListLsn(txn) < lr.Lsn, "complete txn encountered a log record that is not redone")
 
 			freed = append(freed, lr.PageID)
 		}

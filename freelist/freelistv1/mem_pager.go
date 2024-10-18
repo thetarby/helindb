@@ -12,7 +12,7 @@ func newMemPager() *memPager {
 	}
 }
 
-func (m *memPager) GetPageToRead(pageId uint64) (FreeListPage, error) {
+func (m *memPager) GetPageToRead(txn transaction.Transaction, pageId uint64) (FreeListPage, error) {
 	p, ok := m.pages[pageId]
 	if !ok {
 		p = newMemPage(pageId)

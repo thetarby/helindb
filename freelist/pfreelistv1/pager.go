@@ -21,15 +21,18 @@ func NewBufferPoolPager(pool Pool, lm wal.LogManager) *BufferPoolPager {
 	return &BufferPoolPager{pool: pool, lm: lm}
 }
 
-func (b *BufferPoolPager) GetPageToRead(pageId uint64) (freelistv1.FreeListPage, error) {
+func (b *BufferPoolPager) GetPageToRead(txn transaction.Transaction, pageId uint64) (freelistv1.FreeListPage, error) {
 	rp, err := b.pool.GetPage(pageId)
 	if err != nil {
 		return nil, err
 	}
 
-	rp.WLatch()
+	// rp.WLatch()
+	if err := txn.AcquireLatch(pageId, transaction.Exclusive); err != nil {
+		return nil, err
+	}
 
-	return newLoggedFreelistPage(rp, b.pool, b.lm), nil
+	return newLoggedFreelistPage(rp, b.pool, b.lm, txn), nil
 }
 
 func (b *BufferPoolPager) GetPageToWrite(txn transaction.Transaction, pageId uint64, format bool) (freelistv1.FreeListPage, error) {
@@ -38,13 +41,16 @@ func (b *BufferPoolPager) GetPageToWrite(txn transaction.Transaction, pageId uin
 		return nil, err
 	}
 
-	rp.WLatch()
+	// rp.WLatch()
+	if err := txn.AcquireLatch(pageId, transaction.Exclusive); err != nil {
+		return nil, err
+	}
 
 	// TODO IMPORTANT: might net be a slotted page if it is tail page
 	if format {
 		return initLoggedFreelistPage(txn, rp, b.pool, b.lm), nil
 	} else {
-		return newLoggedFreelistPage(rp, b.pool, b.lm), nil
+		return newLoggedFreelistPage(rp, b.pool, b.lm, txn), nil
 	}
 }
 

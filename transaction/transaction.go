@@ -2,7 +2,16 @@ package transaction
 
 import (
 	"helin/disk/pages"
+	"sync"
 	"sync/atomic"
+)
+
+// LockType represents the type of lock
+type LockType int
+
+const (
+	Shared LockType = iota
+	Exclusive
 )
 
 type Transaction interface {
@@ -12,6 +21,12 @@ type Transaction interface {
 	GetPrevLsn() pages.LSN
 	GetUndoingLog() []byte
 	SetUndoingLog([]byte)
+
+	AcquireLock(pageID uint64, lockType LockType) error
+	AcquireLatch(pageID uint64, lockType LockType) error
+	ReleaseLatch(pageID uint64)
+
+	ReleaseLocks()
 }
 
 func TxnTODO() Transaction {
@@ -29,10 +44,69 @@ func TxnNoop() Transaction {
 	}
 }
 
+var mut sync.RWMutex
+var locks map[uint64]*struct {
+	m      *sync.RWMutex
+	shared bool
+}
+
+// TODO Important: since this is package level parallel tests do not work. change it.
+func init() {
+	locks = make(map[uint64]*struct {
+		m      *sync.RWMutex
+		shared bool
+	})
+}
+
 var _ Transaction = &txnNoop{}
 
 type txnNoop struct {
 	id TxnID
+}
+
+func (t txnNoop) ReleaseLocks() {
+	return
+}
+
+func (t txnNoop) AcquireLatch(pageID uint64, lockType LockType) error {
+	mut.Lock()
+
+	l, ok := locks[pageID]
+	if !ok {
+		locks[pageID] = &struct {
+			m      *sync.RWMutex
+			shared bool
+		}{m: &sync.RWMutex{}, shared: false}
+		l = locks[pageID]
+	}
+
+	mut.Unlock()
+
+	if lockType == Shared {
+		l.m.RLock()
+		l.shared = true
+	} else {
+		l.m.Lock()
+		l.shared = false
+	}
+
+	return nil
+}
+
+func (t txnNoop) ReleaseLatch(pageID uint64) {
+	mut.Lock()
+	defer mut.Unlock()
+
+	l := locks[pageID]
+	if l.shared {
+		l.m.RUnlock()
+	} else {
+		l.m.Unlock()
+	}
+}
+
+func (t txnNoop) AcquireLock(pageID uint64, lockType LockType) error {
+	return nil
 }
 
 func (t txnNoop) GetUndoingLog() []byte {

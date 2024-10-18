@@ -25,10 +25,6 @@ type Header struct {
 	catalogPID   uint64
 }
 
-func (h Header) Bytes() []byte {
-	panic("implement me")
-}
-
 type List struct {
 	lock   sync.Mutex
 	header *Header
@@ -54,7 +50,7 @@ func (f *List) Pop(txn transaction.Transaction) (pageId uint64, err error) {
 	defer f.lock.Unlock()
 
 	// if list is empty return 0
-	h := f.getHeader()
+	h := f.getHeader(txn)
 	if h.freeListHead == 0 {
 		return 0, nil
 	}
@@ -79,7 +75,7 @@ func (f *List) Pop(txn transaction.Transaction) (pageId uint64, err error) {
 	// else pop head, read new head and update header
 	pageId = h.freeListHead
 
-	popped, err := f.pager.GetPageToRead(h.freeListHead)
+	popped, err := f.pager.GetPageToRead(txn, h.freeListHead)
 	if err != nil {
 		return 0, err
 	}
@@ -105,7 +101,7 @@ func (f *List) Add(txn transaction.Transaction, pageId uint64) error {
 	f.lock.Lock()
 	defer f.lock.Unlock()
 
-	h := f.getHeader()
+	h := f.getHeader(txn)
 
 	// if free list is empty
 	if h.freeListHead == 0 {
@@ -153,9 +149,9 @@ func (f *List) Add(txn transaction.Transaction, pageId uint64) error {
 // the header page lsn. Since free and alloc operations are committed atomically only after header page is modified,
 // if a free page log record has smaller lsn than header page lsn, it is safe to say that operation has been persisted to
 // disk and there is no need for a redo.
-func (f *List) GetHeaderPageLsn() uint64 {
+func (f *List) GetHeaderPageLsn(txn transaction.Transaction) uint64 {
 	// no need to lock because header page is constant
-	p, err := f.pager.GetPageToRead(HeaderPageID)
+	p, err := f.pager.GetPageToRead(txn, HeaderPageID)
 	if err != nil {
 		panic(err)
 	}
@@ -165,12 +161,12 @@ func (f *List) GetHeaderPageLsn() uint64 {
 	return p.GetLSN()
 }
 
-func (f *List) getHeader() Header {
+func (f *List) getHeader(txn transaction.Transaction) Header {
 	if f.header != nil {
 		return *f.header
 	}
 
-	p, err := f.pager.GetPageToRead(HeaderPageID)
+	p, err := f.pager.GetPageToRead(txn, HeaderPageID)
 	if err != nil {
 		panic(err)
 	}

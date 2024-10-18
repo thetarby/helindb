@@ -14,17 +14,25 @@ type LSP struct {
 }
 
 func (p *LSP) InsertAt(txn transaction.Transaction, idx int, data []byte) error {
+	if err := txn.AcquireLock(p.GetPageId(), transaction.Exclusive); err != nil {
+		return err
+	}
+
 	if err := p.SlottedPage.InsertAt(idx, data); err != nil {
 		return err
 	}
 
-	lsn := p.lm.AppendLog(txn, NewInsertLogRecord(txn.GetID(), uint16(idx), data, p.GetPageId()))
+	lsn := p.lm.AppendLog(txn, NewInsertLogRecord(txn.GetID(), uint16(idx), common.Clone(data), p.GetPageId()))
 	p.SetPageLSN(lsn)
 	return nil
 }
 
 func (p *LSP) SetAt(txn transaction.Transaction, idx int, data []byte) error {
-	old := common.Clone(p.GetAt(idx))
+	if err := txn.AcquireLock(p.GetPageId(), transaction.Exclusive); err != nil {
+		return err
+	}
+
+	old := common.Clone(p.SlottedPage.GetAt(idx))
 	if err := p.SlottedPage.SetAt(idx, data); err != nil {
 		return err
 	}
@@ -35,7 +43,11 @@ func (p *LSP) SetAt(txn transaction.Transaction, idx int, data []byte) error {
 }
 
 func (p *LSP) DeleteAt(txn transaction.Transaction, idx int) error {
-	deleted := common.Clone(p.GetAt(idx))
+	if err := txn.AcquireLock(p.GetPageId(), transaction.Exclusive); err != nil {
+		return err
+	}
+
+	deleted := common.Clone(p.SlottedPage.GetAt(idx))
 	if err := p.SlottedPage.DeleteAt(idx); err != nil {
 		return err
 	}

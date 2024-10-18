@@ -4,38 +4,91 @@ import (
 	"helin/buffer"
 	"helin/disk/pages"
 	"helin/disk/wal"
+	"helin/locker"
 	"helin/transaction"
 	"sync"
-	"sync/atomic"
-	"time"
 )
 
 var _ transaction.Transaction = &txn{}
 
 type txn struct {
+	mut        *sync.RWMutex
 	id         transaction.TxnID
 	freedPages []uint64
 	prevLsn    pages.LSN
 	undoing    []byte
+	locker     *locker.LockManager
+	locks      map[uint64]transaction.LockType
 }
 
-func newTxn(id transaction.TxnID, freedPages []uint64, prevLsn pages.LSN) *txn {
-	return &txn{id: id, freedPages: freedPages, prevLsn: prevLsn}
+func newTxn(id transaction.TxnID, freedPages []uint64, prevLsn pages.LSN, locker *locker.LockManager) *txn {
+	return &txn{
+		mut:        &sync.RWMutex{},
+		id:         id,
+		freedPages: freedPages,
+		prevLsn:    prevLsn,
+		undoing:    nil,
+		locker:     locker,
+		locks:      map[uint64]transaction.LockType{},
+	}
+}
+
+func (t *txn) AcquireLatch(pageID uint64, lockType transaction.LockType) error {
+	if err := t.locker.AcquireLatch(pageID, uint64(t.id), locker.LockMode(lockType)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *txn) ReleaseLatch(pageID uint64) {
+	t.locker.ReleaseLatch(pageID, uint64(t.id))
+}
+
+func (t *txn) AcquireLock(pageID uint64, lockType transaction.LockType) error {
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
+	// if it already has a more exclusive lock type then return directly
+	if existingLockType, ok := t.locks[pageID]; ok {
+		if existingLockType >= lockType {
+			return nil
+		}
+	}
+
+	if err := t.locker.AcquireLock(pageID, uint64(t.id), locker.LockMode(lockType)); err != nil {
+		return err
+	}
+
+	t.locks[pageID] = lockType
+	return nil
 }
 
 func (t *txn) SetUndoingLog(bytes []byte) {
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
 	t.undoing = bytes
 }
 
 func (t *txn) SetPrevLsn(lsn pages.LSN) {
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
 	t.prevLsn = lsn
 }
 
 func (t *txn) setFreedPages(freedPages []uint64) {
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
 	t.freedPages = freedPages
 }
 
 func (t *txn) GetPrevLsn() pages.LSN {
+	t.mut.RLock()
+	defer t.mut.RUnlock()
+
 	return t.prevLsn
 }
 
@@ -44,6 +97,9 @@ func (t *txn) GetID() transaction.TxnID {
 }
 
 func (t *txn) FreePage(pageID uint64) {
+	t.mut.Lock()
+	defer t.mut.Unlock()
+
 	t.freedPages = append(t.freedPages, pageID)
 }
 
@@ -51,11 +107,18 @@ func (t *txn) GetUndoingLog() []byte {
 	return t.undoing
 }
 
+func (t *txn) ReleaseLocks() {
+	for l := range t.locks {
+		t.locker.ReleaseLock(l, uint64(t.id))
+	}
+}
+
 // TxnManager keeps track of running transactions.
 type TxnManager interface {
 	Begin() transaction.Transaction
 	Commit(transaction.Transaction) error
 	AsyncCommit(transaction transaction.Transaction) error
+	GetByID(transaction.TxnID) transaction.Transaction
 	CommitByID(transaction.TxnID) error
 	Abort(transaction.Transaction)
 	AbortByID(id transaction.TxnID)
@@ -67,30 +130,42 @@ type TxnManager interface {
 	ResumeNewTransactions()
 
 	ActiveTransactions() []transaction.TxnID
+
+	// Close is a blocking operation that stops new transactions and waits until all active transactions are finished.
+	Close()
 }
 
 var _ TxnManager = &TxnManagerImpl{}
 
 type TxnManagerImpl struct {
-	actives    map[transaction.TxnID]*txn
-	lm         wal.LogManager
-	r          *Recovery
-	txnCounter atomic.Int64
-	mut        *sync.Mutex
-	newTxn     *sync.RWMutex
-	pool       buffer.Pool
+	actives     map[transaction.TxnID]*txn
+	noActives   *sync.Cond
+	lm          wal.LogManager
+	mut         *sync.Mutex
+	newTxn      *sync.RWMutex
+	pool        buffer.Pool
+	locker      *locker.LockManager
+	segmentSize uint64
+	dir         string
 }
 
-func NewTxnManager(pool buffer.Pool, lm wal.LogManager) *TxnManagerImpl {
+func NewTxnManager(pool buffer.Pool, lm wal.LogManager, locker *locker.LockManager, segmentSize uint64, dir string) *TxnManagerImpl {
+	mut := &sync.Mutex{}
 	return &TxnManagerImpl{
-		actives:    map[transaction.TxnID]*txn{},
-		lm:         lm,
-		r:          nil,
-		txnCounter: atomic.Int64{},
-		mut:        &sync.Mutex{},
-		newTxn:     &sync.RWMutex{},
-		pool:       pool,
+		actives:     map[transaction.TxnID]*txn{},
+		noActives:   sync.NewCond(mut),
+		lm:          lm,
+		mut:         mut,
+		newTxn:      &sync.RWMutex{},
+		pool:        pool,
+		locker:      locker,
+		segmentSize: segmentSize,
+		dir:         dir,
 	}
+}
+
+func (t *TxnManagerImpl) GetByID(id transaction.TxnID) transaction.Transaction {
+	return t.actives[id]
 }
 
 func (t *TxnManagerImpl) Begin() transaction.Transaction {
@@ -102,13 +177,11 @@ func (t *TxnManagerImpl) Begin() transaction.Transaction {
 
 	// lsn is used as txnID
 	lsn := t.lm.AppendLog(nil, wal.NewTxnStarterLogRecord())
-	txn := newTxn(transaction.TxnID(lsn), nil, 0)
+	txn := newTxn(transaction.TxnID(lsn), nil, 0, t.locker)
 	t.actives[txn.GetID()] = txn
 
 	return txn
 }
-
-var s = time.Now()
 
 // Commit waits until commit record is flushed. Hence, it guarantees that txn is committed to persistent storage.
 func (t *TxnManagerImpl) Commit(transaction transaction.Transaction) error {
@@ -131,7 +204,23 @@ func (t *TxnManagerImpl) AsyncCommit(transaction transaction.Transaction) error 
 }
 
 func (t *TxnManagerImpl) Abort(transaction transaction.Transaction) {
-	t.AbortByID(transaction.GetID())
+	// TODO important: use a pool for read iterators and close them when no longer needed
+	if t.lm.GetFlushedLSNOrZero() < transaction.GetPrevLsn() {
+		if err := t.lm.Flush(); err != nil {
+			panic(err)
+		}
+	}
+
+	iter, err := wal.OpenBwalLogIter(t.segmentSize, t.dir, wal.NewDefaultSerDe())
+	if err != nil {
+		panic(err)
+	}
+
+	r := NewRecovery(iter, t.lm, nil, t.pool)
+
+	r.RollbackTxn(transaction)
+
+	transaction.ReleaseLocks()
 }
 
 func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) error {
@@ -139,8 +228,13 @@ func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) error {
 	txn := t.actives[id]
 	t.mut.Unlock()
 
-	_, err := t.lm.WaitAppendLog(txn, wal.NewCommitLogRecord(id, txn.freedPages))
-	if err != nil {
+	lsn := t.lm.AppendLog(txn, wal.NewCommitLogRecord(id, txn.freedPages))
+
+	for lock := range txn.locks {
+		txn.locker.ReleaseLock(lock, uint64(id))
+	}
+
+	if err := t.lm.Wait(lsn); err != nil {
 		return err
 	}
 
@@ -151,7 +245,7 @@ func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) error {
 	defer t.mut.Unlock()
 
 	for _, page := range txn.freedPages {
-		if err := t.pool.FreePage(txn, page, true); err != nil {
+		if err := t.pool.FreePage(txn, page); err != nil {
 			// TODO: handle this
 			panic(err)
 		}
@@ -160,38 +254,15 @@ func (t *TxnManagerImpl) CommitByID(id transaction.TxnID) error {
 	t.lm.AppendLog(txn, wal.NewTxnEndLogRecord(id))
 	delete(t.actives, id)
 
+	if len(t.actives) == 0 {
+		t.noActives.Broadcast()
+	}
+
 	return nil
 }
 
 func (t *TxnManagerImpl) AbortByID(id transaction.TxnID) {
-	// 1. create an iterator on logs that will iterate a transaction's logs in reverse order
-	// 2. create clr logs that are basically logical negations of corresponding logs
-	// 3. apply clr records and append them to wal
-	// 4. append abort log
-
-	// create a log iterator starting from given lsn
-	//lsn := t.lm.WaitAppendLog(wal.NewAbortLogRecord(id))
-	//wal.NewTxnBackwardLogIterator(id)
-
-	// TODO: implement this
-	//logs := wal.NewTxnBackwardLogIterator(id, nil)
-	//for {
-	//	lr, err := logs.Prev()
-	//	if err != nil {
-	//		// TODO: what to do?
-	//		panic(err)
-	//	}
-	//
-	//	if lr == nil {
-	//		// if logs are finished it is rolled back
-	//		break
-	//	}
-	//
-	//	if err := t.r.Undo(lr, 0); err != nil {
-	//		panic(err)
-	//	}
-	//}
-	panic("implement me")
+	t.Abort(t.actives[id])
 }
 
 func (t *TxnManagerImpl) BlockAllTransactions() {
@@ -216,4 +287,15 @@ func (t *TxnManagerImpl) ActiveTransactions() []transaction.TxnID {
 		res = append(res, id)
 	}
 	return res
+}
+
+func (t *TxnManagerImpl) Close() {
+	t.BlockNewTransactions()
+
+	t.mut.Lock()
+	for len(t.actives) > 0 {
+		t.noActives.Wait()
+	}
+
+	t.mut.Unlock()
 }

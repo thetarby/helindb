@@ -12,8 +12,8 @@ var _ BPager = &MemBPager{}
 type MemBPager struct {
 	mut           *sync.Mutex
 	pageIDCounter uint64
-	mapping       map[Pointer]BPage
-	mapping2      map[Pointer]OverflowReleaser
+	mapping       map[Pointer]*memBPage
+	mapping2      map[Pointer]*memOverFlow
 	pageSize      int
 }
 
@@ -21,13 +21,13 @@ func NewMemBPager(pageSize int) *MemBPager {
 	return &MemBPager{
 		mut:           &sync.Mutex{},
 		pageIDCounter: 0,
-		mapping:       make(map[Pointer]BPage),
-		mapping2:      make(map[Pointer]OverflowReleaser),
+		mapping:       make(map[Pointer]*memBPage),
+		mapping2:      make(map[Pointer]*memOverFlow),
 		pageSize:      pageSize,
 	}
 }
 
-func (b *MemBPager) NewBPage(txn transaction.Transaction) BPage {
+func (b *MemBPager) NewBPage(txn transaction.Transaction) (BPageReleaser, error) {
 	b.mut.Lock()
 	defer b.mut.Unlock()
 
@@ -38,10 +38,38 @@ func (b *MemBPager) NewBPage(txn transaction.Transaction) BPage {
 
 	b.mapping[Pointer(b.pageIDCounter)] = page
 
-	return page
+	return &writeBpageReleaser{page, b}, nil
 }
 
-func (b *MemBPager) GetBPage(pointer Pointer) (BPage, error) {
+func (b *MemBPager) GetBPageToRead(txn transaction.Transaction, pointer Pointer) (BPageReleaser, error) {
+	b.mut.Lock()
+
+	p, ok := b.mapping[pointer]
+	if !ok {
+		b.mut.Unlock()
+		return nil, errors.New("page not found")
+	}
+
+	b.mut.Unlock()
+	p.RLatch()
+	return &readBpageReleaser{p, b}, nil
+}
+
+func (b *MemBPager) GetBPageToWrite(txn transaction.Transaction, pointer Pointer) (BPageReleaser, error) {
+	b.mut.Lock()
+
+	p, ok := b.mapping[pointer]
+	if !ok {
+		b.mut.Unlock()
+		return nil, errors.New("page not found")
+	}
+
+	b.mut.Unlock()
+	p.WLatch()
+	return &writeBpageReleaser{p, b}, nil
+}
+
+func (b *MemBPager) GetBPage(txn transaction.Transaction, pointer Pointer) (BPage, error) {
 	b.mut.Lock()
 	defer b.mut.Unlock()
 
@@ -64,7 +92,7 @@ func (b *MemBPager) FreeBPage(txn transaction.Transaction, p Pointer) {
 	delete(b.mapping, p)
 }
 
-func (b *MemBPager) CreateOverflow(txn transaction.Transaction) OverflowReleaser {
+func (b *MemBPager) CreateOverflow(txn transaction.Transaction) (OverflowReleaser, error) {
 	b.mut.Lock()
 	defer b.mut.Unlock()
 
@@ -73,21 +101,22 @@ func (b *MemBPager) CreateOverflow(txn transaction.Transaction) OverflowReleaser
 	of := newMemOverFlow(b.pageIDCounter)
 	b.mapping2[Pointer(b.pageIDCounter)] = of
 
-	return of
+	return of, nil
 }
 
-func (b *MemBPager) FreeOverflow(txn transaction.Transaction, p Pointer) {
+func (b *MemBPager) FreeOverflow(txn transaction.Transaction, p Pointer) error {
 	b.mut.Lock()
 	defer b.mut.Unlock()
 
 	delete(b.mapping2, p)
+	return nil
 }
 
-func (b *MemBPager) GetOverflowReleaser(p Pointer) OverflowReleaser {
+func (b *MemBPager) GetOverflowReleaser(p Pointer) (OverflowReleaser, error) {
 	b.mut.Lock()
 	defer b.mut.Unlock()
 
-	return b.mapping2[p]
+	return b.mapping2[p], nil
 }
 
 var _ BPage = &memBPage{}
@@ -118,6 +147,26 @@ func (m *memBPage) GetPageId() Pointer {
 	return Pointer(m.SlottedPage.GetPageId())
 }
 
+type readBpageReleaser struct {
+	*memBPage
+	bpager BPager
+}
+
+func (n *readBpageReleaser) Release() {
+	n.bpager.Unpin(n.GetPageId())
+	n.RUnLatch()
+}
+
+type writeBpageReleaser struct {
+	*memBPage
+	bpager BPager
+}
+
+func (n *writeBpageReleaser) Release() {
+	n.bpager.Unpin(n.GetPageId())
+	n.WUnlatch()
+}
+
 var _ OverflowReleaser = &memOverFlow{}
 
 type memOverFlow struct {
@@ -143,7 +192,7 @@ func (m *memOverFlow) GetPageId() uint64 {
 	return m.pageID
 }
 
-func (m *memOverFlow) GetAt(idx int) ([]byte, error) {
+func (m *memOverFlow) GetAt(txn transaction.Transaction, idx int) ([]byte, error) {
 	m.mut.Lock()
 	defer m.mut.Unlock()
 
@@ -186,7 +235,7 @@ func (m *memOverFlow) DeleteAt(txn transaction.Transaction, idx int) error {
 	return nil
 }
 
-func (m *memOverFlow) Count() (int, error) {
+func (m *memOverFlow) Count(txn transaction.Transaction) (int, error) {
 	m.mut.Lock()
 	defer m.mut.Unlock()
 

@@ -104,3 +104,7 @@ func (i *bwalLogIter) Skip(lsn pages.LSN) (*LogRecord, error) {
 
 	return i.curr, nil
 }
+
+func (i *bwalLogIter) Close() error {
+	return i.r.Close()
+}

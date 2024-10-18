@@ -6,7 +6,6 @@ import (
 	"helin/common"
 	"helin/disk"
 	"helin/disk/pages"
-	"helin/freelist/pfreelistv1"
 	"helin/transaction"
 	"io"
 )
@@ -18,13 +17,12 @@ type RecoveryDiskManager interface {
 	Unpin(pageId uint64)
 	FormatPage(pageId uint64, lsn pages.LSN) error
 	FreePage(txn transaction.Transaction, pageID uint64) error
-	GetFreeListLsn() pages.LSN
+	GetFreeListLsn(txn transaction.Transaction) pages.LSN
 }
 
 type recoveryDiskManager struct {
 	dm   *disk.Manager
 	pool buffer.Pool
-	fl   *pfreelistv1.BPFreeList
 }
 
 var _ RecoveryDiskManager = &recoveryDiskManager{}
@@ -60,9 +58,9 @@ func (d *recoveryDiskManager) GetPage(pageId uint64) (*pages.RawPage, error) {
 }
 
 func (d *recoveryDiskManager) FreePage(txn transaction.Transaction, pageID uint64) error {
-	return d.pool.GetFreeList().Add(txn, pageID)
+	return d.pool.FreePage(txn, pageID)
 }
 
-func (d *recoveryDiskManager) GetFreeListLsn() pages.LSN {
-	return d.fl.GetHeaderPageLsn()
+func (d *recoveryDiskManager) GetFreeListLsn(txn transaction.Transaction) pages.LSN {
+	return d.pool.GetFreeList().GetHeaderPageLsn(txn)
 }

@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"errors"
+	"helin/common"
 	"sync"
 )
 
@@ -34,10 +35,7 @@ func (c *ClockReplacer) Unpin(frameId int) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	if (c.frames[frameId].bits & PinnedBit) == 0 {
-		panic("unpinning a page which is already unpinned or not pinned at all")
-	}
-
+	common.Assert((c.frames[frameId].bits&PinnedBit) != 0, "unpinning a page which is already unpinned or not pinned at all")
 	c.frames[frameId].bits &= ^PinnedBit
 }
 

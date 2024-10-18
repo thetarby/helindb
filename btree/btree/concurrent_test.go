@@ -56,6 +56,7 @@ func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 	pager2 := NewPager2(NewMemBPager(4096*2), &StringKeySerializer{}, &StringValueSerializer{})
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, pager2)
 
+	// TODO: deadlock in this test
 	r := rand.New(rand.NewSource(42))
 	// NOTE: on my m1 macbook air this test takes 1.1 second with 25000 chunk size and 1.6
 	// seconds with 100_000 chunk size(4 thread vs 1 thread)
@@ -73,7 +74,7 @@ func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 	}
 	wg.Wait()
 
-	assert.Equal(t, len(inserted), tree.Count())
+	assert.Equal(t, len(inserted), tree.Count(transaction.TxnTODO()))
 	// assert they are sorted
 	it := NewTreeIterator(transaction.TxnNoop(), tree)
 	var prev common.Key = StringKey("")

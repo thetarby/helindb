@@ -3,7 +3,6 @@ package pbtree
 import (
 	"helin/btree/btree"
 	"helin/buffer"
-	"helin/common"
 	"helin/disk"
 	"helin/disk/wal"
 	"helin/heap/heap"
@@ -28,26 +27,64 @@ func NewBufferPoolBPager(pool buffer.Pool, lm wal.LogManager) *BufferPoolBPager 
 	return &BufferPoolBPager{pool: pool, lm: lm, heapPager: pheap.NewBufferPoolPager(pool, lm)}
 }
 
-func (b *BufferPoolBPager) NewBPage(txn transaction.Transaction) btree.BPage {
+func (b *BufferPoolBPager) NewBPage(txn transaction.Transaction) (btree.BPageReleaser, error) {
 	p, err := b.pool.NewPage(txn)
-	common.PanicIfErr(err)
-	p.WLatch()
+	if err != nil {
+		return nil, err
+	}
 
-	return btree.InitLoggedSlottedPage(txn, p, b.lm)
+	//p.WLatch()
+	if err := txn.AcquireLatch(p.GetPageId(), transaction.Exclusive); err != nil {
+		return nil, err
+	}
+
+	lsp := btree.InitLoggedSlottedPage(txn, p, b.lm)
+
+	return &writeBpageReleaser{
+		LoggedSlottedPage: lsp,
+		bpager:            b,
+		txn:               txn,
+	}, nil
 }
 
-func (b *BufferPoolBPager) GetBPage(pointer btree.Pointer) (btree.BPage, error) {
+func (b *BufferPoolBPager) GetBPageToRead(txn transaction.Transaction, pointer btree.Pointer) (btree.BPageReleaser, error) {
 	p, err := b.pool.GetPage(uint64(pointer))
 	if err != nil {
 		return nil, err
 	}
 
-	// NOTE: casting asserts  by reading pages header hence the read latch.
-	p.RLatch()
-	lsp := btree.CastLoggedSlottedPage(p, b.lm)
-	p.RUnLatch()
+	//p.RLatch()
+	if err := txn.AcquireLatch(p.GetPageId(), transaction.Shared); err != nil {
+		return nil, err
+	}
 
-	return &lsp, nil
+	lsp := btree.CastLoggedSlottedPage(p, b.lm)
+
+	return &readBpageReleaser{
+		LoggedSlottedPage: &lsp,
+		bpager:            b,
+		txn:               txn,
+	}, nil
+}
+
+func (b *BufferPoolBPager) GetBPageToWrite(txn transaction.Transaction, pointer btree.Pointer) (btree.BPageReleaser, error) {
+	p, err := b.pool.GetPage(uint64(pointer))
+	if err != nil {
+		return nil, err
+	}
+
+	//p.WLatch()
+	if err := txn.AcquireLatch(p.GetPageId(), transaction.Exclusive); err != nil {
+		return nil, err
+	}
+
+	lsp := btree.CastLoggedSlottedPage(p, b.lm)
+
+	return &writeBpageReleaser{
+		LoggedSlottedPage: &lsp,
+		bpager:            b,
+		txn:               txn,
+	}, nil
 }
 
 func (b *BufferPoolBPager) Unpin(p btree.Pointer) {
@@ -58,26 +95,59 @@ func (b *BufferPoolBPager) FreeBPage(txn transaction.Transaction, p btree.Pointe
 	txn.FreePage(uint64(p))
 }
 
-func (b *BufferPoolBPager) CreateOverflow(txn transaction.Transaction) btree.OverflowReleaser {
+func (b *BufferPoolBPager) CreateOverflow(txn transaction.Transaction) (btree.OverflowReleaser, error) {
 	slotSize := disk.PageUsableSize / btree.MaxRequiredSize
 
 	h, err := heap.InitHeap(txn, slotSize, MaxPageSizeForOverflow, uint16(disk.PageUsableSize), b.heapPager)
-	common.PanicIfErr(err)
+	if err != nil {
+		return nil, err
+	}
 
-	return h
+	return h, nil
 }
 
-func (b *BufferPoolBPager) FreeOverflow(txn transaction.Transaction, p btree.Pointer) {
+func (b *BufferPoolBPager) FreeOverflow(txn transaction.Transaction, p btree.Pointer) error {
 	h, err := heap.OpenHeap(uint64(p), MaxPageSizeForOverflow, uint16(disk.PageUsableSize), b.heapPager)
-	common.PanicIfErr(err)
+	if err != nil {
+		return err
+	}
 
-	err = h.Free(txn)
-	common.PanicIfErr(err)
+	if err := h.Free(txn); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (b *BufferPoolBPager) GetOverflowReleaser(p btree.Pointer) btree.OverflowReleaser {
+func (b *BufferPoolBPager) GetOverflowReleaser(p btree.Pointer) (btree.OverflowReleaser, error) {
 	h, err := heap.OpenHeap(uint64(p), MaxPageSizeForOverflow, uint16(disk.PageUsableSize), b.heapPager)
-	common.PanicIfErr(err)
+	if err != nil {
+		return nil, err
+	}
 
-	return h
+	return h, nil
+}
+
+type readBpageReleaser struct {
+	*btree.LoggedSlottedPage
+	bpager btree.BPager
+	txn    transaction.Transaction
+}
+
+func (n *readBpageReleaser) Release() {
+	n.bpager.Unpin(n.GetPageId())
+	// n.RUnLatch()
+	n.txn.ReleaseLatch(uint64(n.GetPageId()))
+}
+
+type writeBpageReleaser struct {
+	*btree.LoggedSlottedPage
+	bpager btree.BPager
+	txn    transaction.Transaction
+}
+
+func (n *writeBpageReleaser) Release() {
+	n.bpager.Unpin(n.GetPageId())
+	//n.WUnlatch()
+	n.txn.ReleaseLatch(uint64(n.GetPageId()))
 }

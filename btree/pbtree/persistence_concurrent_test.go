@@ -34,7 +34,7 @@ func mkPoolTemp(t *testing.T, poolSize int, dmFsync bool) *buffer.PoolV2 {
 	dm, _, err := disk.NewDiskManager(dbName, dmFsync)
 	require.NoError(t, err)
 
-	pool := buffer.NewBufferPoolV2WithDM(true, poolSize, dm, wal.NoopLM)
+	pool := buffer.NewBufferPoolV2WithDM(true, poolSize, dm, wal.NoopLM, nil)
 
 	t.Cleanup(func() {
 		if err := os.RemoveAll(dir); err != nil {
@@ -93,9 +93,9 @@ func TestConcurrent_Inserts_Keys_Are_Sorted(t *testing.T) {
 	}
 	wg.Wait()
 
-	assert.Equal(t, len(inserted), tree.Count())
+	assert.Equal(t, len(inserted), tree.Count(transaction.TxnTODO()))
 	// assert they are sorted
-	vals := tree.FindSince(btree.PersistentKey(10))
+	vals := tree.FindBetween(btree.PersistentKey(10), btree.PersistentKey(99999999), 9999999)
 	prev := 9
 	for _, v := range vals {
 		require.Less(t, uint64(prev), v.(btree.SlotPointer).PageId)
@@ -143,7 +143,7 @@ func TestConcurrent_Inserts_Keys_Can_Be_Found(t *testing.T) {
 	// assert inserted keys
 	t.Logf("inserted %v keys", len(inserted))
 	for _, k := range inserted {
-		val := tree.Get(btree.StringKey(k))
+		val := tree.Get(transaction.TxnNoop(), btree.StringKey(k))
 		require.Equal(t, fmt.Sprintf("val_%v", k), val)
 	}
 }
@@ -187,7 +187,7 @@ func TestConcurrent_Inserts_Keys_Can_Be_Found_In_Mem(t *testing.T) {
 	// assert inserted keys
 	t.Logf("inserted %v keys", len(inserted))
 	for _, k := range inserted {
-		val := tree.Get(btree.StringKey(k))
+		val := tree.Get(transaction.TxnNoop(), btree.StringKey(k))
 		require.Equal(t, fmt.Sprintf("val_%v", k), val)
 	}
 }
@@ -195,8 +195,6 @@ func TestConcurrent_Inserts_Keys_Can_Be_Found_In_Mem(t *testing.T) {
 func TestConcurrent_Deletes(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		t.Run("concurrent deletes", func(t *testing.T) {
-			t.Parallel()
-
 			pool := mkPoolTemp(t, 100_000, false)
 			pager2 := btree.NewPager2(NewBufferPoolBPager(pool, wal.NoopLM), &btree.PersistentKeySerializer{}, &btree.SlotPointerValueSerializer{})
 			tree := btree.NewBtreeWithPager(transaction.TxnNoop(), 10, pager2)
@@ -211,7 +209,9 @@ func TestConcurrent_Deletes(t *testing.T) {
 				})
 			}
 
-			assert.Equal(t, len(inserted), tree.Count())
+			t.Log("inserted")
+
+			assert.Equal(t, len(inserted), tree.Count(transaction.TxnTODO()))
 
 			wg := &sync.WaitGroup{}
 			for _, chunk := range common.ChunksInt(inserted[:50_000], chunkSize) {
@@ -227,16 +227,17 @@ func TestConcurrent_Deletes(t *testing.T) {
 			}
 			wg.Wait()
 
+			t.Log("validating")
 			for _, v := range inserted[:50_000] {
-				assert.Nil(t, tree.Get(btree.PersistentKey(v)))
+				assert.Nil(t, tree.Get(transaction.TxnNoop(), btree.PersistentKey(v)))
 
 			}
 			for _, v := range inserted[50_000:] {
-				p := tree.Get(btree.PersistentKey(v)).(btree.SlotPointer)
+				p := tree.Get(transaction.TxnNoop(), btree.PersistentKey(v)).(btree.SlotPointer)
 				require.Equal(t, uint64(v), p.PageId)
 			}
 
-			assert.Equal(t, 50_000, tree.Count())
+			assert.Equal(t, 50_000, tree.Count(transaction.TxnTODO()))
 		})
 	}
 }
@@ -299,7 +300,7 @@ func TestConcurrent_Hammer(t *testing.T) {
 
 			t.Log("validating")
 
-			assert.Equal(t, len(toInsert), tree.Count())
+			assert.Equal(t, len(toInsert), tree.Count(transaction.TxnTODO()))
 
 			// assert they are sorted
 			it := btree.NewTreeIterator(transaction.TxnNoop(), tree)
@@ -317,13 +318,13 @@ func TestConcurrent_Hammer(t *testing.T) {
 
 			// assert not found
 			for _, v := range toDelete {
-				assert.Nil(t, tree.Get(btree.StringKey(fmt.Sprintf("key_%v", v))))
+				assert.Nil(t, tree.Get(transaction.TxnNoop(), btree.StringKey(fmt.Sprintf("key_%v", v))))
 			}
 
 			// assert found
 			for _, v := range toInsert {
 				key, val := fmt.Sprintf("key_%v", v), fmt.Sprintf("key_%v_val_%v", v, v)
-				gotVal := tree.Get(btree.StringKey(key))
+				gotVal := tree.Get(transaction.TxnNoop(), btree.StringKey(key))
 				assert.Equal(t, val, gotVal)
 			}
 		})

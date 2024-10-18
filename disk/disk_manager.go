@@ -18,8 +18,8 @@ type IDiskManager interface {
 	Close() error
 }
 
-const PageUsableSize int = PageSize - 16 // TODO IMPORTANT: move this
-const PageSize int = 4096 * 2
+const PageUsableSize int = PageSize - 24 // TODO IMPORTANT: move this
+const PageSize int = 4096 * 8
 
 type Manager struct {
 	file       *os.File
@@ -27,7 +27,6 @@ type Manager struct {
 	lastPageId uint64
 	globalMu   sync.Mutex
 	seekMu     sync.Mutex
-	serializer IHeaderSerializer
 	header     *header
 
 	// fsync should normally be set to true. If it is false then data might be lost even after a successful write
@@ -41,7 +40,6 @@ type Manager struct {
 
 func NewDiskManager(file string, fsync bool) (*Manager, bool, error) {
 	d := Manager{fsync: fsync}
-	d.serializer = jsonSerializer{}
 	d.filename = file
 
 	f, err := os.OpenFile(file, os.O_CREATE|os.O_RDWR, os.ModePerm)

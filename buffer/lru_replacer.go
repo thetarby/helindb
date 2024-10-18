@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"errors"
+	"helin/common"
 	"sync"
 )
 
@@ -43,17 +44,15 @@ func (l *LruReplacer) Unpin(frameId int) {
 	l.lock.Lock()
 	defer l.lock.Unlock()
 
-	if _, ok := l.pinned[frameId]; !ok {
-		panic("unpinning a page which is not pinned")
-	}
+	_, ok := l.pinned[frameId]
+	common.Assert(ok, "unpinning a page which is not pinned")
 
-	_, ok := l.findFrameId(frameId)
-	if !ok {
-		l.unpinned = append(l.unpinned, frameId)
-		delete(l.pinned, frameId)
-		return
-	}
-	panic("unpinning a frame which is already unpinned")
+	_, ok = l.findFrameId(frameId)
+	common.Assert(!ok, "unpinning a frame which is already unpinned")
+
+	l.unpinned = append(l.unpinned, frameId)
+	delete(l.pinned, frameId)
+	return
 }
 
 func (l *LruReplacer) ChooseVictim() (frameId int, err error) {

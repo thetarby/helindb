@@ -22,7 +22,7 @@ func TestInsert(t *testing.T) {
 			tree.Insert(transaction.TxnNoop(), StringKey(k), v)
 		}
 
-		assert.Equal(t, numKeys, tree.Count())
+		assert.Equal(t, numKeys, tree.Count(transaction.TxnTODO()))
 	})
 
 	t.Run("items should be found after all is inserted", func(t *testing.T) {
@@ -40,7 +40,7 @@ func TestInsert(t *testing.T) {
 		}
 
 		for _, kv := range keys {
-			v := tree.Get(StringKey(kv.k))
+			v := tree.Get(transaction.TxnNoop(), StringKey(kv.k))
 			assert.EqualValues(t, kv.v, v)
 		}
 	})
@@ -60,7 +60,7 @@ func TestInsert(t *testing.T) {
 		}
 
 		for _, kv := range keys {
-			v := tree.Get(StringKey(kv.k))
+			v := tree.Get(transaction.TxnNoop(), StringKey(kv.k))
 			assert.EqualValues(t, kv.v, v)
 		}
 	})
@@ -88,7 +88,7 @@ func TestInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
 	}
 
 	tree.Set(transaction.TxnNoop(), PersistentKey(500), "new_500")
-	val := tree.Get(PersistentKey(500))
+	val := tree.Get(transaction.TxnNoop(), PersistentKey(500))
 
 	assert.Contains(t, val.(string), "new_500")
 }

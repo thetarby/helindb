@@ -2,6 +2,7 @@ package pages
 
 import (
 	"encoding/binary"
+	"math/rand"
 	"sync"
 )
 
@@ -47,12 +48,14 @@ type RawPage struct {
 }
 
 func NewRawPage(pageId uint64, pageSize int) *RawPage {
+	d := make([]byte, pageSize, pageSize)
+	binary.BigEndian.PutUint64(d[16:], rand.Uint64())
 	return &RawPage{
 		PageId:   pageId,
 		isDirty:  false,
 		rwLatch:  &sync.RWMutex{},
 		PinCount: 0,
-		Data:     make([]byte, pageSize, pageSize),
+		Data:     d,
 	}
 }
 
@@ -71,7 +74,7 @@ func (p *RawPage) GetData() []byte {
 	// NOTE: it would be really good for debugging if this method can recognize whether buffer pool has replaced
 	// underlying page with another physical page. pages may contain their id for example and this method checks
 	// id in raw bytes with the id struct holds?
-	return p.Data[16:]
+	return p.Data[24:]
 }
 
 func (p *RawPage) GetWholeData() []byte {
@@ -145,4 +148,8 @@ func (p *RawPage) SetPageLSN(l LSN) {
 
 func (p *RawPage) GetPageLSN() LSN {
 	return LSN(binary.BigEndian.Uint64(p.Data[8:]))
+}
+
+func (p *RawPage) GetPID() uint64 {
+	return binary.BigEndian.Uint64(p.Data[16:])
 }

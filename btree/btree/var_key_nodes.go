@@ -29,7 +29,7 @@ var maxPayloadSize = 390
 
 // MaxRequiredSize is maximum size that could be required to insert a payload at the maxPayloadSize. this is bigger than maxPayloadSize
 // because it also has overflow page's pointer, the length of the payload as varint and the SlotArrEntrySize
-var MaxRequiredSize = maxPayloadSize + pointerSize + binary.MaxVarintLen16 + pages.SlotArrEntrySize
+var MaxRequiredSize = maxPayloadSize + pointerSize + binary.MaxVarintLen16 + pages.SlotArrEntrySize // maxPayloadSize+13
 
 var _ node = &VarKeyLeafNode{}
 
@@ -71,9 +71,9 @@ func (n *VarKeyLeafNode) GetRight() Pointer {
 	return n.GetHeader().Right
 }
 
-func (n *VarKeyLeafNode) GetKeyAt(idx int) common.Key {
+func (n *VarKeyLeafNode) GetKeyAt(txn transaction.Transaction, idx int) common.Key {
 	// b := getAt(&n.p, idx+1)
-	b := getKeyAt(n.pager, n, n.p, idx+1)
+	b := getKeyAt(txn, n.pager, n, n.p, idx+1)
 	keySize, nn := binary.Uvarint(b)
 
 	key, err := n.keySerializer.Deserialize(b[nn : nn+int(keySize)])
@@ -113,9 +113,9 @@ func (n *VarKeyLeafNode) DeleteAt(txn transaction.Transaction, index int) {
 	n.SetHeader(txn, h)
 }
 
-func (n *VarKeyLeafNode) GetValueAt(idx int) interface{} {
+func (n *VarKeyLeafNode) GetValueAt(txn transaction.Transaction, idx int) interface{} {
 	//b := getAt(&n.p, idx+1)
-	b := getAt(n.pager, n, n.p, idx+1)
+	b := getAt(txn, n.pager, n, n.p, idx+1)
 	keySize, nn := binary.Uvarint(b)
 
 	val, err := n.valSerializer.Deserialize(b[nn+int(keySize):])
@@ -126,7 +126,7 @@ func (n *VarKeyLeafNode) GetValueAt(idx int) interface{} {
 
 func (n *VarKeyLeafNode) SetKeyAt(txn transaction.Transaction, idx int, key common.Key) {
 	// b := getAt(&n.p, idx+1)
-	b := getAt(n.pager, n, n.p, idx+1)
+	b := getAt(txn, n.pager, n, n.p, idx+1)
 	keySize, nn := binary.Uvarint(b)
 
 	valb := b[nn+int(keySize):]
@@ -145,7 +145,7 @@ func (n *VarKeyLeafNode) SetKeyAt(txn transaction.Transaction, idx int, key comm
 
 func (n *VarKeyLeafNode) SetValueAt(txn transaction.Transaction, idx int, val interface{}) {
 	// b := getAt(&n.p, idx+1)
-	b := getAt(n.pager, n, n.p, idx+1)
+	b := getAt(txn, n.pager, n, n.p, idx+1)
 	keySize, nn := binary.Uvarint(b)
 
 	keyb := b[nn : nn+int(keySize)]
@@ -162,11 +162,11 @@ func (n *VarKeyLeafNode) SetValueAt(txn transaction.Transaction, idx int, val in
 	setAt(txn, n, n.pager, n.p, idx+1, b, buf[:len(keyb)+len(newValb)+nn])
 }
 
-func (n *VarKeyLeafNode) GetValues() []interface{} {
+func (n *VarKeyLeafNode) GetValues(txn transaction.Transaction) []interface{} {
 	keylen := n.KeyLen()
 	vals := make([]interface{}, keylen)
 	for i := 0; i < keylen; i++ {
-		v := n.GetValueAt(i)
+		v := n.GetValueAt(txn, i)
 		vals[i] = v
 	}
 	return vals
@@ -176,31 +176,15 @@ func (n *VarKeyLeafNode) KeyLen() int {
 	return int(n.GetHeader().KeyLen)
 }
 
-func (n *VarKeyLeafNode) PrintNode() {
+func (n *VarKeyLeafNode) PrintNode(txn transaction.Transaction) {
 	b := strings.Builder{}
 	b.WriteString("LeafNode( ")
 	for i := 0; i < n.KeyLen(); i++ {
-		b.WriteString(fmt.Sprintf("%v | ", n.GetKeyAt(i)))
+		b.WriteString(fmt.Sprintf("%v | ", n.GetKeyAt(txn, i)))
 	}
 	b.WriteString(")\n")
 
 	log.Println(b.String())
-}
-
-func (n *VarKeyLeafNode) RLatch() {
-	n.p.RLatch()
-}
-
-func (n *VarKeyLeafNode) RUnLatch() {
-	n.p.RUnLatch()
-}
-
-func (n *VarKeyLeafNode) WLatch() {
-	n.p.WLatch()
-}
-
-func (n *VarKeyLeafNode) WUnlatch() {
-	n.p.WUnlatch()
 }
 
 var _ node = &VarKeyInternalNode{}
@@ -254,7 +238,6 @@ func (n *VarKeyInternalNode) InsertAt(txn transaction.Transaction, index int, ke
 	copy(buf[nn:], keyb)
 	val.(Pointer).Serialize(buf[nn+len(keyb):])
 
-	// insertAt(txn, &n.p, index+2, buf[:pointerSize+len(keyb)+nn])
 	insertAt(txn, n, n.pager, n.p, index+2, buf[:pointerSize+len(keyb)+nn])
 
 	h := n.GetHeader()
@@ -271,25 +254,25 @@ func (n *VarKeyInternalNode) DeleteAt(txn transaction.Transaction, index int) {
 	n.SetHeader(txn, h)
 }
 
-func (n *VarKeyInternalNode) GetValueAt(idx int) interface{} {
+func (n *VarKeyInternalNode) GetValueAt(txn transaction.Transaction, idx int) interface{} {
 	if idx == 0 {
 		// b := getAt(&n.p, 1)
-		b := getAt(n.pager, n, n.p, 1)
+		b := getAt(txn, n.pager, n, n.p, 1)
 		p := binary.BigEndian.Uint64(b)
 		return Pointer(p)
 	}
 
 	// b := getAt(&n.p, idx+1)
-	b := getAt(n.pager, n, n.p, idx+1)
+	b := getAt(txn, n.pager, n, n.p, idx+1)
 	keySize, nn := binary.Uvarint(b)
 
 	return DeserializePointer(b[nn+int(keySize):])
 }
 
-func (n *VarKeyInternalNode) GetKeyAt(idx int) common.Key {
+func (n *VarKeyInternalNode) GetKeyAt(txn transaction.Transaction, idx int) common.Key {
 	// TODO: this can be optimized, there might not no need to read from heap if key is fit in node, same holds for SetKeyAt
 	// b := getAt(&n.p, idx+2)
-	b := getKeyAt(n.pager, n, n.p, idx+2)
+	b := getKeyAt(txn, n.pager, n, n.p, idx+2)
 	keySize, nn := binary.Uvarint(b)
 
 	key, err := n.keySerializer.Deserialize(b[nn : nn+int(keySize)])
@@ -300,7 +283,7 @@ func (n *VarKeyInternalNode) GetKeyAt(idx int) common.Key {
 
 func (n *VarKeyInternalNode) SetKeyAt(txn transaction.Transaction, idx int, key common.Key) {
 	// b := getAt(&n.p, idx+2)
-	b := getAt(n.pager, n, n.p, idx+2)
+	b := getAt(txn, n.pager, n, n.p, idx+2)
 	keySize, nn := binary.Uvarint(b)
 
 	valb := b[nn+int(keySize):]
@@ -321,12 +304,12 @@ func (n *VarKeyInternalNode) SetValueAt(txn transaction.Transaction, idx int, va
 	valb := val.(Pointer).Bytes()
 	if idx == 0 {
 		//setAt(txn, &n.p, 1, valb)
-		setAt(txn, n, n.pager, n.p, 1, getAt(n.pager, n, n.p, 0), valb)
+		setAt(txn, n, n.pager, n.p, 1, getAt(txn, n.pager, n, n.p, 0), valb)
 		return
 	}
 
 	// b := getAt(&n.p, idx+1)
-	b := getAt(n.pager, n, n.p, idx+1)
+	b := getAt(txn, n.pager, n, n.p, idx+1)
 	keySize, nn := binary.Uvarint(b)
 	keyb := b[nn : nn+int(keySize)]
 
@@ -339,11 +322,11 @@ func (n *VarKeyInternalNode) SetValueAt(txn transaction.Transaction, idx int, va
 	setAt(txn, n, n.pager, n.p, idx+1, b, buf[:len(keyb)+len(valb)+nn])
 }
 
-func (n *VarKeyInternalNode) GetValues() []interface{} {
+func (n *VarKeyInternalNode) GetValues(txn transaction.Transaction) []interface{} {
 	keylen := n.KeyLen()
 	vals := make([]interface{}, keylen+1)
 	for i := 0; i < keylen+1; i++ {
-		v := n.GetValueAt(i)
+		v := n.GetValueAt(txn, i)
 		vals[i] = v
 	}
 	return vals
@@ -353,48 +336,34 @@ func (n *VarKeyInternalNode) KeyLen() int {
 	return int(n.GetHeader().KeyLen)
 }
 
-func (n *VarKeyInternalNode) PrintNode() {
+func (n *VarKeyInternalNode) PrintNode(txn transaction.Transaction) {
 	b := strings.Builder{}
 	b.WriteString("node( ")
 	for i := 0; i < n.KeyLen(); i++ {
-		b.WriteString(fmt.Sprintf("%v | ", n.GetKeyAt(i)))
+		b.WriteString(fmt.Sprintf("%v | ", n.GetKeyAt(txn, i)))
 	}
 	b.WriteString(")    ")
 
 	log.Println(b.String())
 }
 
-func (n *VarKeyInternalNode) RLatch() {
-	n.p.RLatch()
-}
-
-func (n *VarKeyInternalNode) RUnLatch() {
-	n.p.RUnLatch()
-}
-
-func (n *VarKeyInternalNode) WLatch() {
-	n.p.WLatch()
-}
-
-func (n *VarKeyInternalNode) WUnlatch() {
-	n.p.WUnlatch()
-}
-
 func setAt(txn transaction.Transaction, n node, pager *Pager2, p BPage, idx int, old, data []byte) {
 	// if old value is larger than maxPayloadSize first delete its rest part from overflow
 	if len(old) > maxPayloadSize {
 		h := n.GetHeader()
-		overflow := pager.GetOverflowReleaser(h.Overflow)
+		overflow, err := pager.GetOverflowReleaser(h.Overflow)
+		CheckErr(err)
 
 		init := p.GetAt(idx)
 		slotIdx := int(DeserializePointer(init[maxPayloadSize : maxPayloadSize+pointerSize])) //todo
-		err := overflow.DeleteAt(txn, slotIdx)
+		err = overflow.DeleteAt(txn, slotIdx)
 		CheckErr(err)
 
-		c, err := overflow.Count()
+		c, err := overflow.Count(txn)
 		CheckErr(err)
 		if c == 0 {
-			pager.FreeOverflow(txn, Pointer(overflow.GetPageId()))
+			err := pager.FreeOverflow(txn, Pointer(overflow.GetPageId()))
+			CheckErr(err)
 			h.Overflow = 0
 			n.SetHeader(txn, h)
 		}
@@ -404,13 +373,16 @@ func setAt(txn transaction.Transaction, n node, pager *Pager2, p BPage, idx int,
 	if len(data) > maxPayloadSize {
 		// create overflow if not exists, else get it
 		var overflow OverflowReleaser
+		var err error
 		h := n.GetHeader()
 		if h.Overflow == 0 {
-			overflow = pager.CreateOverflow(txn)
+			overflow, err = pager.CreateOverflow(txn)
+			CheckErr(err)
 			h.Overflow = Pointer(overflow.GetPageId())
 			n.SetHeader(txn, h)
 		} else {
-			overflow = pager.GetOverflowReleaser(h.Overflow)
+			overflow, err = pager.GetOverflowReleaser(h.Overflow)
+			CheckErr(err)
 		}
 
 		// split data into two parts so that first maxPayloadSize bytes will be in the node and the rest will be spilled
@@ -438,13 +410,17 @@ func insertAt(txn transaction.Transaction, n node, pager *Pager2, p BPage, idx i
 	if len(data) > maxPayloadSize {
 		// TODO: handle overflow pages on transaction rollbacks.
 		var overflow OverflowReleaser
+		var err error
 		h := n.GetHeader()
 		if h.Overflow == 0 {
-			overflow = pager.CreateOverflow(txn)
+			overflow, err = pager.CreateOverflow(txn)
+			CheckErr(err)
+
 			h.Overflow = Pointer(overflow.GetPageId())
 			n.SetHeader(txn, h)
 		} else {
-			overflow = pager.GetOverflowReleaser(h.Overflow)
+			overflow, err = pager.GetOverflowReleaser(h.Overflow)
+			CheckErr(err)
 		}
 
 		rest := data[maxPayloadSize:]
@@ -469,14 +445,15 @@ func deleteAt(txn transaction.Transaction, n node, pager *Pager2, p BPage, idx i
 	old := p.GetAt(idx)
 	if len(old) > maxPayloadSize {
 		h := n.GetHeader()
-		overflow := pager.GetOverflowReleaser(h.Overflow)
+		overflow, err := pager.GetOverflowReleaser(h.Overflow)
+		CheckErr(err)
 
 		slotIdx := int(DeserializePointer(old[len(old)-pointerSize:])) //todo
-		err := overflow.DeleteAt(txn, slotIdx)
+		err = overflow.DeleteAt(txn, slotIdx)
 		CheckErr(err)
 
 		// TODO: is this correct, first free overflow then release it?
-		c, err := overflow.Count()
+		c, err := overflow.Count(txn)
 		CheckErr(err)
 		if c == 0 {
 			pager.FreeOverflow(txn, Pointer(overflow.GetPageId()))
@@ -489,15 +466,23 @@ func deleteAt(txn transaction.Transaction, n node, pager *Pager2, p BPage, idx i
 	CheckErr(err)
 }
 
-func getAt(pager *Pager2, n node, p BPage, idx int) []byte {
+func getAt(txn transaction.Transaction, pager *Pager2, n node, p BPage, idx int) []byte {
+	if n.IsLeaf() {
+		// read lock if it is a leaf node, to ensure other txn won't change it.
+		if err := txn.AcquireLock(uint64(p.GetPageId()), transaction.Shared); err != nil {
+			panic(err)
+		}
+	}
+
 	b := p.GetAt(idx)
 
 	if len(b) > maxPayloadSize {
 		h := n.GetHeader()
-		overflow := pager.GetOverflowReleaser(h.Overflow)
+		overflow, err := pager.GetOverflowReleaser(h.Overflow)
+		CheckErr(err)
 
 		slotIdx := int(DeserializePointer(b[len(b)-pointerSize:])) //todo
-		restB, err := overflow.GetAt(slotIdx)
+		restB, err := overflow.GetAt(txn, slotIdx)
 		CheckErr(err)
 
 		res := make([]byte, len(b)+len(restB)-pointerSize)
@@ -510,17 +495,25 @@ func getAt(pager *Pager2, n node, p BPage, idx int) []byte {
 	return b
 }
 
-func getKeyAt(pager *Pager2, n node, p BPage, idx int) []byte {
+func getKeyAt(txn transaction.Transaction, pager *Pager2, n node, p BPage, idx int) []byte {
+	if n.IsLeaf() {
+		// read lock if it is a leaf node, to ensure other txn won't change it.
+		if err := txn.AcquireLock(uint64(p.GetPageId()), transaction.Shared); err != nil {
+			panic(err)
+		}
+	}
+
 	b := p.GetAt(idx)
 	keySize, nn := binary.Uvarint(b)
 	if keySize <= uint64(maxPayloadSize-nn) {
 		return b
 	} else {
 		h := n.GetHeader()
-		overflow := pager.GetOverflowReleaser(h.Overflow)
+		overflow, err := pager.GetOverflowReleaser(h.Overflow)
+		CheckErr(err)
 
 		slotIdx := int(DeserializePointer(b[len(b)-pointerSize:])) //todo
-		restB, err := overflow.GetAt(slotIdx)
+		restB, err := overflow.GetAt(txn, slotIdx)
 		CheckErr(err)
 
 		res := make([]byte, len(b)+len(restB)-pointerSize)
