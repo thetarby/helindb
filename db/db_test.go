@@ -29,6 +29,12 @@ func mkDBTemp(t *testing.T, poolSize int, dmFsync bool) *DB {
 	db := OpenDB(dbName, poolSize, dmFsync)
 	db.StartCheckpointRoutine()
 
+	t.Cleanup(func() {
+		if err := os.RemoveAll(dir); err != nil {
+			t.Fatal(err)
+		}
+	})
+
 	return db
 }
 
@@ -41,7 +47,9 @@ func TestConcurrent_Hammer_Heap(t *testing.T) {
 		panic(err)
 	}
 
-	tree := db.GetStore(txn, "test")
+	tree, err := db.GetStore(txn, "test")
+	assert.NoError(t, err)
+
 	if err := tm.Commit(txn); err != nil {
 		panic(err)
 	}
@@ -90,7 +98,10 @@ func TestConcurrent_Hammer_Heap(t *testing.T) {
 		go func(arr []kv) {
 			for _, i := range arr {
 				txn := tm.Begin()
-				if !tree.Delete(txn, btree.StringKey(i.k)) {
+				deleted, err := tree.Delete(txn, btree.StringKey(i.k))
+				assert.NoError(t, err)
+
+				if !deleted {
 					t.Errorf("key not found: %v", i.k)
 				}
 				if err := tm.Commit(txn); err != nil {
@@ -104,16 +115,21 @@ func TestConcurrent_Hammer_Heap(t *testing.T) {
 
 	t.Log("validating")
 
-	assert.Equal(t, toInsertN, tree.Count(transaction.TxnTODO()))
+	c, err := tree.Count(transaction.TxnTODO())
+	assert.NoError(t, err)
+	assert.Equal(t, toInsertN, c)
 
 	// assert not found
 	for _, i := range items[:toDeleteN] {
-		assert.Nil(t, tree.Get(transaction.TxnNoop(), btree.StringKey(i.k)))
+		d, err := tree.Get(transaction.TxnNoop(), btree.StringKey(i.k))
+		assert.NoError(t, err)
+		assert.Nil(t, d)
 	}
 
 	// assert found
 	for _, i := range items[toDeleteN:] {
-		gotVal := tree.Get(transaction.TxnNoop(), btree.StringKey(i.k))
+		gotVal, err := tree.Get(transaction.TxnNoop(), btree.StringKey(i.k))
+		assert.NoError(t, err)
 		assert.Equal(t, i.v, gotVal)
 	}
 }

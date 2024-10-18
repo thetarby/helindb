@@ -38,18 +38,19 @@ const (
 
 // node is an internal interface which is not exported. it is only for readability purposes.
 type node interface {
-	SetKeyAt(txn transaction.Transaction, idx int, key common.Key)
-	SetValueAt(txn transaction.Transaction, idx int, val interface{})
-	GetKeyAt(txn transaction.Transaction, idx int) common.Key
-	GetValueAt(txn transaction.Transaction, idx int) interface{}
-	GetValues(txn transaction.Transaction) []interface{}
-	PrintNode(txn transaction.Transaction)
-	InsertAt(txn transaction.Transaction, index int, key common.Key, val interface{})
-	DeleteAt(txn transaction.Transaction, index int)
+	SetKeyAt(txn transaction.Transaction, idx int, key common.Key) error
+	SetValueAt(txn transaction.Transaction, idx int, val any) error
+	GetKeyAt(txn transaction.Transaction, idx int) (common.Key, error)
+	GetValueAt(txn transaction.Transaction, idx int) (any, error)
+	GetValues(txn transaction.Transaction) ([]any, error)
+	InsertAt(txn transaction.Transaction, index int, key common.Key, val any) error
+	DeleteAt(txn transaction.Transaction, index int) error
+
 	GetPageId() Pointer
 	IsLeaf() bool
 	GetHeader() *PersistentNodeHeader
 	SetHeader(txn transaction.Transaction, h *PersistentNodeHeader)
+	PrintNode(txn transaction.Transaction)
 
 	KeyLen() int
 	FillFactor() int

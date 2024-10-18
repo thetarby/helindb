@@ -29,7 +29,16 @@ func (it *TreeIterator) Next() (common.Key, any) {
 		it.currIdx = 0
 	}
 
-	val, key := it.currNode.GetValueAt(it.txn, it.currIdx), it.currNode.GetKeyAt(it.txn, it.currIdx)
+	val, err := it.currNode.GetValueAt(it.txn, it.currIdx)
+	if err != nil {
+		panic(err)
+	}
+
+	key, err := it.currNode.GetKeyAt(it.txn, it.currIdx)
+	if err != nil {
+		panic(err)
+	}
+
 	it.currIdx++
 	return key, val
 }
@@ -45,7 +54,11 @@ func NewTreeIterator(txn transaction.Transaction, tree *BTree) *TreeIterator {
 	curr := tree.GetRoot(txn, Read)
 	for !curr.IsLeaf() {
 		old := curr
-		curr = tree.pager.GetNodeReleaser(txn, curr.GetValueAt(txn, 0).(Pointer), Read)
+
+		v, err := curr.GetValueAt(txn, 0)
+		CheckErr(err)
+
+		curr = tree.pager.GetNodeReleaser(txn, v.(Pointer), Read)
 		old.Release()
 	}
 
@@ -60,7 +73,9 @@ func NewTreeIterator(txn transaction.Transaction, tree *BTree) *TreeIterator {
 }
 
 func NewTreeIteratorWithKey(txn transaction.Transaction, key common.Key, tree *BTree) *TreeIterator {
-	_, stack := tree.FindAndGetStack(txn, key, Read)
+	_, stack, err := tree.FindAndGetStack(txn, key, Read)
+	CheckErr(err)
+
 	leaf, idx := stack[len(stack)-1].Node, stack[len(stack)-1].Index
 
 	return &TreeIterator{

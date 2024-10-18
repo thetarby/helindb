@@ -19,10 +19,10 @@ func TestInsert(t *testing.T) {
 			k := common.RandStr(1, 1000) + "__" + strconv.Itoa(i)
 			v := fmt.Sprintf("val_%v", k)
 
-			tree.Insert(transaction.TxnNoop(), StringKey(k), v)
+			assert.NoError(t, tree.Insert(transaction.TxnNoop(), StringKey(k), v))
 		}
 
-		assert.Equal(t, numKeys, tree.Count(transaction.TxnTODO()))
+		assertCount(t, numKeys, tree)
 	})
 
 	t.Run("items should be found after all is inserted", func(t *testing.T) {
@@ -40,7 +40,8 @@ func TestInsert(t *testing.T) {
 		}
 
 		for _, kv := range keys {
-			v := tree.Get(transaction.TxnNoop(), StringKey(kv.k))
+			v, err := tree.Get(transaction.TxnNoop(), StringKey(kv.k))
+			assert.NoError(t, err)
 			assert.EqualValues(t, kv.v, v)
 		}
 	})
@@ -60,7 +61,8 @@ func TestInsert(t *testing.T) {
 		}
 
 		for _, kv := range keys {
-			v := tree.Get(transaction.TxnNoop(), StringKey(kv.k))
+			v, err := tree.Get(transaction.TxnNoop(), StringKey(kv.k))
+			assert.NoError(t, err)
 			assert.EqualValues(t, kv.v, v)
 		}
 	})
@@ -71,11 +73,11 @@ func TestInsert_Or_Replace_Should_Return_False_When_Key_Exists(t *testing.T) {
 	tree := NewBtreeWithPager(transaction.TxnNoop(), 10, pager2)
 
 	for i := 0; i < 1000; i++ {
-		tree.Insert(transaction.TxnNoop(), PersistentKey(i), strconv.Itoa(i))
+		assert.NoError(t, tree.Insert(transaction.TxnNoop(), PersistentKey(i), strconv.Itoa(i)))
 	}
 
-	isInserted := tree.Set(transaction.TxnNoop(), PersistentKey(500), "new_500")
-
+	isInserted, err := tree.Set(transaction.TxnNoop(), PersistentKey(500), "new_500")
+	assert.NoError(t, err)
 	assert.False(t, isInserted)
 }
 
@@ -87,8 +89,17 @@ func TestInsert_Or_Replace_Should_Replace_Value_When_Key_Exists(t *testing.T) {
 		tree.Insert(transaction.TxnNoop(), PersistentKey(i), strconv.Itoa(i))
 	}
 
-	tree.Set(transaction.TxnNoop(), PersistentKey(500), "new_500")
-	val := tree.Get(transaction.TxnNoop(), PersistentKey(500))
+	_, err := tree.Set(transaction.TxnNoop(), PersistentKey(500), "new_500")
+	assert.NoError(t, err)
 
+	val, err := tree.Get(transaction.TxnNoop(), PersistentKey(500))
+	assert.NoError(t, err)
 	assert.Contains(t, val.(string), "new_500")
+}
+
+func assertCount(t *testing.T, expected int, tree *BTree) {
+	c, err := tree.Count(transaction.TxnTODO())
+	assert.NoError(t, err)
+
+	assert.Equal(t, expected, c)
 }

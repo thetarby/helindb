@@ -10,6 +10,7 @@ import (
 	"helin/common"
 	"helin/disk"
 	"helin/disk/wal"
+	"helin/locker"
 	"helin/transaction"
 	"math/rand"
 	"os"
@@ -35,7 +36,9 @@ func TestPersistent_Resources_Are_Released(t *testing.T) {
 	}
 
 	// test count
-	require.Equal(t, n, tree.Count(transaction.TxnTODO()))
+	c, err := tree.Count(transaction.TxnTODO())
+	assert.NoError(t, err)
+	require.Equal(t, n, c)
 	assert.Zero(t, pool.Replacer.NumPinnedPages())
 
 	// test iterator
@@ -47,14 +50,16 @@ func TestPersistent_Resources_Are_Released(t *testing.T) {
 	// test find
 	rand.Shuffle(len(items), func(i, j int) { items[i], items[j] = items[j], items[i] })
 	for _, i := range items {
-		val := tree.Get(transaction.TxnNoop(), btree.StringKey(fmt.Sprintf("key_%06d", i))).(string)
-		require.Equal(t, fmt.Sprintf("val_%06d", i), val)
+		val, err := tree.Get(transaction.TxnNoop(), btree.StringKey(fmt.Sprintf("key_%06d", i)))
+		assert.NoError(t, err)
+		require.Equal(t, fmt.Sprintf("val_%06d", i), val.(string))
 		require.Zero(t, pool.Replacer.NumPinnedPages())
 	}
 
 	// test insert or replace
 	for _, i := range items[:10000] {
-		val := tree.Set(transaction.TxnNoop(), btree.StringKey(fmt.Sprintf("key_%06d", i)), fmt.Sprintf("val_replaced_%06d", i))
+		val, err := tree.Set(transaction.TxnNoop(), btree.StringKey(fmt.Sprintf("key_%06d", i)), fmt.Sprintf("val_replaced_%06d", i))
+		assert.NoError(t, err)
 		require.False(t, val)
 		require.Zero(t, pool.Replacer.NumPinnedPages())
 	}
@@ -65,14 +70,17 @@ func TestPersistent_Resources_Are_Released(t *testing.T) {
 			val = fmt.Sprintf("val_replaced_%06d", item)
 		}
 
-		found := tree.Get(transaction.TxnNoop(), btree.StringKey(key)).(string)
-		require.Equal(t, found, val)
+		found, err := tree.Get(transaction.TxnNoop(), btree.StringKey(key))
+		assert.NoError(t, err)
+
+		require.Equal(t, found.(string), val)
 		require.Zero(t, pool.Replacer.NumPinnedPages())
 	}
 
 	// test delete
 	for _, i := range items {
-		val := tree.Delete(transaction.TxnNoop(), btree.StringKey(fmt.Sprintf("key_%06d", i)))
+		val, err := tree.Delete(transaction.TxnNoop(), btree.StringKey(fmt.Sprintf("key_%06d", i)))
+		assert.NoError(t, err)
 		require.True(t, val)
 		require.Zero(t, pool.Replacer.NumPinnedPages())
 	}
@@ -80,7 +88,6 @@ func TestPersistent_Resources_Are_Released(t *testing.T) {
 
 func TestPersistent_Delete(t *testing.T) {
 	t.Run("count should be zero after all is deleted", func(t *testing.T) {
-		t.Parallel()
 		pool := mkPoolTemp(t, 4096, false)
 		pager2 := btree.NewPager2(NewBufferPoolBPager(pool, wal.NoopLM), &btree.StringKeySerializer{}, &btree.StringValueSerializer{})
 		tree := btree.NewBtreeWithPager(transaction.TxnNoop(), 10, pager2)
@@ -91,25 +98,32 @@ func TestPersistent_Delete(t *testing.T) {
 			k := common.RandStr(1, 1000) + "__" + strconv.Itoa(i)
 			v := fmt.Sprintf("val_%v", k)
 
-			tree.Insert(transaction.TxnNoop(), btree.StringKey(k), v)
+			assert.NoError(t, tree.Insert(transaction.TxnNoop(), btree.StringKey(k), v))
 			keys = append(keys, kv{k: k, v: v})
 		}
 
 		t.Logf("inserted %v keys", numKeys)
 
-		assert.Equal(t, numKeys, tree.Count(transaction.TxnTODO()))
+		c, err := tree.Count(transaction.TxnTODO())
+		assert.NoError(t, err)
+		assert.Equal(t, numKeys, c)
 
 		for _, kv := range keys {
-			ok := tree.Delete(transaction.TxnNoop(), btree.StringKey(kv.k))
+			ok, err := tree.Delete(transaction.TxnNoop(), btree.StringKey(kv.k))
+			assert.NoError(t, err)
 			assert.True(t, ok)
 		}
 
-		assert.Zero(t, tree.Count(transaction.TxnTODO()))
-		assert.Equal(t, 1, tree.Height(transaction.TxnTODO()))
+		c, err = tree.Count(transaction.TxnTODO())
+		assert.NoError(t, err)
+		assert.Zero(t, c)
+
+		h, err := tree.Height(transaction.TxnTODO())
+		assert.NoError(t, err)
+		assert.Equal(t, 1, h)
 	})
 
 	t.Run("count should be zero after all is deleted no overflow", func(t *testing.T) {
-		t.Parallel()
 		pool := mkPoolTemp(t, 4096, false)
 		pager2 := btree.NewPager2(NewBufferPoolBPager(pool, wal.NoopLM), &btree.StringKeySerializer{}, &btree.StringValueSerializer{})
 		tree := btree.NewBtreeWithPager(transaction.TxnNoop(), 10, pager2)
@@ -120,24 +134,28 @@ func TestPersistent_Delete(t *testing.T) {
 			k := common.RandStr(1, 32) + "__" + strconv.Itoa(i)
 			v := fmt.Sprintf("val_%v", k)
 
-			tree.Insert(transaction.TxnNoop(), btree.StringKey(k), v)
+			assert.NoError(t, tree.Insert(transaction.TxnNoop(), btree.StringKey(k), v))
 			keys = append(keys, kv{k: k, v: v})
 		}
 
 		t.Logf("inserted %v keys", numKeys)
 
-		assert.Equal(t, numKeys, tree.Count(transaction.TxnTODO()))
+		c, err := tree.Count(transaction.TxnTODO())
+		assert.NoError(t, err)
+		assert.Equal(t, numKeys, c)
 
 		for _, kv := range keys {
-			ok := tree.Delete(transaction.TxnNoop(), btree.StringKey(kv.k))
+			ok, err := tree.Delete(transaction.TxnNoop(), btree.StringKey(kv.k))
+			assert.NoError(t, err)
 			assert.True(t, ok)
 		}
 
-		assert.Zero(t, tree.Count(transaction.TxnTODO()))
+		c, err = tree.Count(transaction.TxnTODO())
+		assert.NoError(t, err)
+		assert.Zero(t, c)
 	})
 
 	t.Run("other items should not be affected", func(t *testing.T) {
-		t.Parallel()
 		pool := mkPoolTemp(t, 4096, false)
 		pager2 := btree.NewPager2(NewBufferPoolBPager(pool, wal.NoopLM), &btree.StringKeySerializer{}, &btree.StringValueSerializer{})
 		tree := btree.NewBtreeWithPager(transaction.TxnNoop(), 10, pager2)
@@ -148,18 +166,20 @@ func TestPersistent_Delete(t *testing.T) {
 			k := common.RandStr(1, 1000) + "__" + strconv.Itoa(i)
 			v := fmt.Sprintf("val_%v", k)
 
-			tree.Insert(transaction.TxnNoop(), btree.StringKey(k), v)
+			assert.NoError(t, tree.Insert(transaction.TxnNoop(), btree.StringKey(k), v))
 			keys = append(keys, kv{k: k, v: v})
 		}
 
 		tree.Print(transaction.TxnTODO())
 
 		for i, kv := range keys {
-			ok := tree.Delete(transaction.TxnNoop(), btree.StringKey(kv.k))
+			ok, err := tree.Delete(transaction.TxnNoop(), btree.StringKey(kv.k))
+			assert.NoError(t, err)
 			assert.True(t, ok)
 
 			for _, kv2 := range keys[i+1:] {
-				v := tree.Get(transaction.TxnNoop(), btree.StringKey(kv2.k))
+				v, err := tree.Get(transaction.TxnNoop(), btree.StringKey(kv2.k))
+				assert.NoError(t, err)
 				assert.EqualValues(t, v, kv2.v)
 			}
 		}
@@ -177,7 +197,7 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 	dm, _, err := disk.NewDiskManager(dbName, false)
 	require.NoError(t, err)
 
-	pool := buffer.NewBufferPoolV2WithDM(true, 64, dm, wal.NoopLM, nil)
+	pool := buffer.NewBufferPoolV2WithDM(true, 64, dm, wal.NoopLM, locker.NewLockManager())
 
 	t.Cleanup(func() {
 		if err := os.RemoveAll(dir); err != nil {
@@ -215,7 +235,8 @@ func TestPersistent_All_Inserted_Should_Be_Found_After_File_Is_Closed_And_Reopen
 		keys[j] = t
 	})
 	for _, kv := range keys {
-		val := newTreeReference.Get(transaction.TxnNoop(), btree.StringKey(kv.k))
+		val, err := newTreeReference.Get(transaction.TxnNoop(), btree.StringKey(kv.k))
+		assert.NoError(t, err)
 		assert.EqualValues(t, kv.v, val)
 	}
 

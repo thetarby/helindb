@@ -90,12 +90,20 @@ func OpenCatalog(file string, poolSize int, fsync bool) (*PersistentCatalog, buf
 }
 
 func (p *PersistentCatalog) CreateStore(txn transaction.Transaction, name string) (*StoreInfo, error) {
-	if s := p.getStoreByName(txn, name); s != NullIndexOID {
+	if s, err := p.getStoreByName(txn, name); err != nil {
+		return nil, err
+	} else if s != NullIndexOID {
 		return nil, errors.New("already exists")
 	}
 
-	oid := p.getNextIndexOID(txn)
-	p.setStoreByName(txn, name, IndexOID(oid))
+	oid, err := p.getNextIndexOID(txn)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := p.setStoreByName(txn, name, IndexOID(oid)); err != nil {
+		return nil, err
+	}
 
 	pager := btree.NewPager2(pbtree.NewBufferPoolBPager(p.pool, p.lm), &btree.StringKeySerializer{}, &btree.StringValueSerializer{})
 	tree := btree.NewBtreeWithPager(txn, BtreeDegree, pager)
@@ -107,19 +115,30 @@ func (p *PersistentCatalog) CreateStore(txn transaction.Transaction, name string
 		Degree:              uint8(BtreeDegree),
 		MetaPID:             int64(tree.GetMetaPID()),
 	}
-	p.setStoreByOID(txn, IndexOID(oid), &s)
+
+	if err := p.setStoreByOID(txn, IndexOID(oid), &s); err != nil {
+		return nil, err
+	}
 
 	return &s, nil
 }
 
-func (p *PersistentCatalog) GetStore(txn transaction.Transaction, name string) *btree.BTree {
-	inf := p.getStoreByOID(txn, p.getStoreByName(txn, name))
+func (p *PersistentCatalog) GetStore(txn transaction.Transaction, name string) (*btree.BTree, error) {
+	s, err := p.getStoreByName(txn, name)
+	if err != nil {
+		return nil, err
+	}
+
+	inf, err := p.getStoreByOID(txn, s)
+	if err != nil {
+		return nil, err
+	}
 	if inf == nil {
-		return nil
+		return nil, nil
 	}
 
 	pager := btree.NewPager2(pbtree.NewBufferPoolBPager(p.pool, p.lm), &btree.StringKeySerializer{}, &btree.StringValueSerializer{})
-	return btree.ConstructBtreeByMeta(txn, btree.Pointer(inf.MetaPID), pager)
+	return btree.ConstructBtreeByMeta(txn, btree.Pointer(inf.MetaPID), pager), nil
 }
 
 func (p *PersistentCatalog) ListStores() []string {
@@ -127,45 +146,57 @@ func (p *PersistentCatalog) ListStores() []string {
 	return keys
 }
 
-func (p *PersistentCatalog) getStoreByName(txn transaction.Transaction, name string) IndexOID {
+func (p *PersistentCatalog) getStoreByName(txn transaction.Transaction, name string) (IndexOID, error) {
 	key := fmt.Sprintf("index_%v", name)
-	s := p.tree.Get(txn, key)
+
+	s, err := p.tree.Get(txn, key)
+	if err != nil {
+		return 0, err
+	}
 	if s == "" {
-		return NullIndexOID
+		return NullIndexOID, nil
 	}
 
 	oid, err := strconv.ParseInt(s, 10, 32)
 	if err != nil {
-		panic("corrupted catalog: " + err.Error())
+		return NullIndexOID, fmt.Errorf("corrupted catalog: :%w", err)
 	}
 
-	return IndexOID(oid)
+	return IndexOID(oid), nil
 }
 
-func (p *PersistentCatalog) setStoreByName(txn transaction.Transaction, name string, oid IndexOID) {
-	p.tree.Set(txn, fmt.Sprintf("index_%v", name), fmt.Sprintf("%v", oid))
+func (p *PersistentCatalog) setStoreByName(txn transaction.Transaction, name string, oid IndexOID) error {
+	return p.tree.Set(txn, fmt.Sprintf("index_%v", name), fmt.Sprintf("%v", oid))
 }
 
-func (p *PersistentCatalog) getStoreByOID(txn transaction.Transaction, id IndexOID) *StoreInfo {
+func (p *PersistentCatalog) getStoreByOID(txn transaction.Transaction, id IndexOID) (*StoreInfo, error) {
 	if id == NullIndexOID {
-		return nil
+		return nil, nil
 	}
 
 	key := fmt.Sprintf("index_oid_%v", id)
+	d, err := p.tree.Get(txn, key)
+	if err != nil {
+		return nil, err
+	}
+
 	s := StoreInfo{}
-	s.Deserialize([]byte(p.tree.Get(txn, key)))
-	return &s
+	s.Deserialize([]byte(d))
+	return &s, nil
 }
 
-func (p *PersistentCatalog) setStoreByOID(txn transaction.Transaction, id IndexOID, info *StoreInfo) {
+func (p *PersistentCatalog) setStoreByOID(txn transaction.Transaction, id IndexOID, info *StoreInfo) error {
 	key := fmt.Sprintf("index_oid_%v", id)
-	p.tree.Set(txn, key, string(info.Serialize()))
+	return p.tree.Set(txn, key, string(info.Serialize()))
 }
 
-func (p *PersistentCatalog) getNextIndexOID(txn transaction.Transaction) int64 {
+func (p *PersistentCatalog) getNextIndexOID(txn transaction.Transaction) (int64, error) {
 	// TODO: really implement this
 	p.l.Lock()
-	lastStr := p.tree.Get(txn, "last_id")
+	lastStr, err := p.tree.Get(txn, "last_id")
+	if err != nil {
+		return 0, err
+	}
 
 	last := 0
 	if lastStr != "" {
@@ -174,27 +205,34 @@ func (p *PersistentCatalog) getNextIndexOID(txn transaction.Transaction) int64 {
 		common.PanicIfErr(err)
 	}
 	last++
-	p.tree.Set(txn, "last_id", strconv.Itoa(last))
+	if err := p.tree.Set(txn, "last_id", strconv.Itoa(last)); err != nil {
+		return 0, err
+	}
+
 	p.l.Unlock()
 
-	return int64(last)
+	return int64(last), nil
 }
 
 type strBtree struct {
 	btree.BTree
 }
 
-func (tree *strBtree) Set(txn transaction.Transaction, key, val string) {
-	tree.BTree.Set(txn, btree.StringKey(key), val)
+func (tree *strBtree) Set(txn transaction.Transaction, key, val string) error {
+	_, err := tree.BTree.Set(txn, btree.StringKey(key), val)
+	return err
 }
 
-func (tree *strBtree) Get(txn transaction.Transaction, key string) string {
-	val := tree.BTree.Get(txn, btree.StringKey(key))
+func (tree *strBtree) Get(txn transaction.Transaction, key string) (string, error) {
+	val, err := tree.BTree.Get(txn, btree.StringKey(key))
+	if err != nil {
+		return "", err
+	}
 	if val == nil {
-		return ""
+		return "", nil
 	}
 
-	return tree.BTree.Get(txn, btree.StringKey(key)).(string)
+	return val.(string), nil
 }
 
 func (tree *strBtree) ListKeys() []string {

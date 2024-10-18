@@ -23,10 +23,10 @@ const (
 )
 
 type Store interface {
-	Get(txn transaction.Transaction, key common.Key) any
-	Set(txn transaction.Transaction, key common.Key, value any) (isInserted bool)
-	Delete(txn transaction.Transaction, key common.Key) bool
-	Count(txn transaction.Transaction) int
+	Get(txn transaction.Transaction, key common.Key) (any, error)
+	Set(txn transaction.Transaction, key common.Key, value any) (isInserted bool, err error)
+	Delete(txn transaction.Transaction, key common.Key) (bool, error)
+	Count(txn transaction.Transaction) (int, error)
 }
 
 type DB struct {
@@ -257,25 +257,40 @@ func (d *DB) ListStores() ([]string, error) {
 	return d.Ctl.ListStores(), nil
 }
 
-func (d *DB) GetStore(txn transaction.Transaction, name string) Store {
+func (d *DB) GetStore(txn transaction.Transaction, name string) (Store, error) {
 	return d.Ctl.GetStore(txn, name)
 }
 
-func (d *DB) StoreGet(txnID transaction.TxnID, store string, key common.Key) any {
+func (d *DB) StoreGet(txnID transaction.TxnID, store string, key common.Key) (any, error) {
 	txn := d.Tm.GetByID(txnID)
-	s := d.GetStore(txn, store)
+
+	s, err := d.GetStore(txn, store)
+	if err != nil {
+		return nil, err
+	}
+
 	return s.Get(txn, key)
 }
 
-func (d *DB) StoreSet(txnID transaction.TxnID, store string, key common.Key, value any) (isInserted bool) {
+func (d *DB) StoreSet(txnID transaction.TxnID, store string, key common.Key, value any) (isInserted bool, err error) {
 	txn := d.Tm.GetByID(txnID)
-	s := d.GetStore(txn, store)
+
+	s, err := d.GetStore(txn, store)
+	if err != nil {
+		return false, err
+	}
+
 	return s.Set(txn, key, value)
 }
 
-func (d *DB) StoreDelete(txnID transaction.TxnID, store string, key common.Key) bool {
+func (d *DB) StoreDelete(txnID transaction.TxnID, store string, key common.Key) (bool, error) {
 	txn := d.Tm.GetByID(txnID)
-	s := d.GetStore(txn, store)
+
+	s, err := d.GetStore(txn, store)
+	if err != nil {
+		return false, err
+	}
+
 	return s.Delete(txn, key)
 }
 

@@ -144,8 +144,12 @@ func (tree *BTree) GetPager() *Pager2 {
 	return tree.pager
 }
 
-func (tree *BTree) Insert(txn transaction.Transaction, key common.Key, value any) {
-	i, stack := tree.FindAndGetStack(txn, key, Insert)
+func (tree *BTree) Insert(txn transaction.Transaction, key common.Key, value any) error {
+	i, stack, err := tree.FindAndGetStack(txn, key, Insert)
+	if err != nil {
+		return err
+	}
+
 	rootLocked := false
 	if len(stack) > 0 && stack[0].Index == -1 {
 		defer tree.rootEntryLock.Unlock()
@@ -163,18 +167,34 @@ func (tree *BTree) Insert(txn transaction.Transaction, key common.Key, value any
 	for len(stack) > 0 {
 		popped := stack[len(stack)-1].Node
 		stack = stack[:len(stack)-1]
-		i, _ := tree.FindKey(txn, popped, key)
-		popped.InsertAt(txn, i, rightKey, rightNod)
+		i, _, err := tree.findKey(txn, popped, key)
+		if err != nil {
+			return err
+		}
+
+		if err := popped.InsertAt(txn, i, rightKey, rightNod); err != nil {
+			return err
+		}
 
 		if tree.isOverFlow(popped) {
-			rightNod, _, rightKey = tree.splitNode(txn, popped)
+			var err error
+			rightNod, _, rightKey, err = tree.splitNode(txn, popped)
+			if err != nil {
+				return err
+			}
+
 			if rootLocked && popped.GetPageId() == tree.getRoot(txn) {
 				leftNode := popped
 
 				newRoot, err := tree.pager.NewInternalNode(txn, leftNode.GetPageId())
-				CheckErr(err)
+				if err != nil {
+					return err
+				}
 
-				newRoot.InsertAt(txn, 0, rightKey, rightNod.(Pointer))
+				if err := newRoot.InsertAt(txn, 0, rightKey, rightNod.(Pointer)); err != nil {
+					return err
+				}
+
 				tree.setRoot(txn, newRoot.GetPageId())
 
 				newRoot.Release()
@@ -186,10 +206,16 @@ func (tree *BTree) Insert(txn transaction.Transaction, key common.Key, value any
 			break
 		}
 	}
+
+	return nil
 }
 
-func (tree *BTree) Set(txn transaction.Transaction, key common.Key, value any) (isInserted bool) {
-	i, stack := tree.FindAndGetStack(txn, key, Insert)
+func (tree *BTree) Set(txn transaction.Transaction, key common.Key, value any) (isInserted bool, err error) {
+	i, stack, err := tree.FindAndGetStack(txn, key, Insert)
+	if err != nil {
+		return false, err
+	}
+
 	rootLocked := false
 	if len(stack) > 0 && stack[0].Index == -1 {
 		defer tree.rootEntryLock.Unlock()
@@ -202,10 +228,13 @@ func (tree *BTree) Set(txn transaction.Transaction, key common.Key, value any) (
 		// top of stack is the leaf node
 		topOfStack := stack[len(stack)-1]
 		leafNode := topOfStack.Node
-		leafNode.SetValueAt(txn, topOfStack.Index, value)
+		if err := leafNode.SetValueAt(txn, topOfStack.Index, value); err != nil {
+			return false, err
+		}
+
 		stack = stack[:len(stack)-1]
 		topOfStack.Node.Release()
-		return false
+		return false, nil
 	}
 
 	var rightNod = value
@@ -214,19 +243,36 @@ func (tree *BTree) Set(txn transaction.Transaction, key common.Key, value any) (
 	for len(stack) > 0 {
 		popped := stack[len(stack)-1].Node
 		stack = stack[:len(stack)-1]
-		i, _ := tree.FindKey(txn, popped, key)
-		popped.InsertAt(txn, i, rightKey, rightNod)
+
+		i, _, err := tree.findKey(txn, popped, key)
+		if err != nil {
+			return false, err
+		}
+
+		if err := popped.InsertAt(txn, i, rightKey, rightNod); err != nil {
+			return false, err
+		}
 
 		if tree.isOverFlow(popped) {
-			rightNod, _, rightKey = tree.splitNode(txn, popped)
+			var err error
+			rightNod, _, rightKey, err = tree.splitNode(txn, popped)
+			if err != nil {
+				return false, err
+			}
+
 			popped.Release()
 			if rootLocked && popped.GetPageId() == tree.getRoot(txn) {
 				leftNode := popped
 
 				newRoot, err := tree.pager.NewInternalNode(txn, leftNode.GetPageId())
-				CheckErr(err)
+				if err != nil {
+					return false, err
+				}
 
-				newRoot.InsertAt(txn, 0, rightKey, rightNod.(Pointer))
+				if err := newRoot.InsertAt(txn, 0, rightKey, rightNod.(Pointer)); err != nil {
+					return false, err
+				}
+
 				tree.setRoot(txn, newRoot.GetPageId())
 				newRoot.Release()
 			}
@@ -236,11 +282,15 @@ func (tree *BTree) Set(txn transaction.Transaction, key common.Key, value any) (
 		}
 	}
 
-	return true
+	return true, nil
 }
 
-func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
-	i, stack := tree.FindAndGetStack(txn, key, Delete)
+func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) (bool, error) {
+	i, stack, err := tree.FindAndGetStack(txn, key, Delete)
+	if err != nil {
+		return false, err
+	}
+
 	rootLocked := false
 	if len(stack) > 0 && stack[0].Index == -1 {
 		defer tree.rootEntryLock.Unlock()
@@ -249,7 +299,7 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 	}
 	defer func() { release(stack) }()
 	if i == nil {
-		return false
+		return false, nil
 	}
 
 	// IMPORTANT NOTE: freeing pages should be delayed because if txn fails, during rollback, recovery should allocate the exact
@@ -267,14 +317,20 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 		popped := stack[len(stack)-1].Node
 		stack = stack[:len(stack)-1]
 		if popped.IsLeaf() {
-			index, _ := tree.FindKey(txn, popped, key)
-			popped.DeleteAt(txn, index)
+			index, _, err := tree.findKey(txn, popped, key)
+			if err != nil {
+				return false, err
+			}
+
+			if err := popped.DeleteAt(txn, index); err != nil {
+				return false, err
+			}
 		}
 
 		if len(stack) == 0 {
 			// if no parent left in stack(this is correct only if popped is root) it is done
 			popped.Release()
-			return true
+			return true, nil
 		}
 
 		if tree.isUnderFlow(popped) {
@@ -284,37 +340,57 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 			// fetch siblings to merge or distribute with. do not forget to release them.
 			var rightSibling, leftSibling, merged nodeReleaser
 			if indexAtParent > 0 {
-				leftSibling = tree.pager.GetNodeReleaser(txn, parent.GetValueAt(txn, indexAtParent-1).(Pointer), Delete) //leftSibling = parent.Pointers[indexAtParent-1].(*InternalNode)
+				v, err := parent.GetValueAt(txn, indexAtParent-1)
+				if err != nil {
+					return false, err
+				}
+
+				leftSibling = tree.pager.GetNodeReleaser(txn, v.(Pointer), Delete) //leftSibling = parent.Pointers[indexAtParent-1].(*InternalNode)
 			}
 			if indexAtParent+1 < (parent.KeyLen() + 1) { // +1 is the length of pointers
-				rightSibling = tree.pager.GetNodeReleaser(txn, parent.GetValueAt(txn, indexAtParent+1).(Pointer), Delete) //rightSibling = parent.Pointers[indexAtParent+1].(*InternalNode)
+				v, err := parent.GetValueAt(txn, indexAtParent+1)
+				if err != nil {
+					return false, err
+				}
+
+				rightSibling = tree.pager.GetNodeReleaser(txn, v.(Pointer), Delete) //rightSibling = parent.Pointers[indexAtParent+1].(*InternalNode)
 			}
 
 			// try redistribute
 			// TODO: redistribute based on byte size
 			if rightSibling != nil && tree.canRedistribute(popped, rightSibling) {
-				tree.redistribute(txn, popped, rightSibling, parent)
+				if err := tree.redistribute(txn, popped, rightSibling, parent); err != nil {
+					return false, err
+				}
+
 				popped.Release()
 				rightSibling.Release()
 
 				if leftSibling != nil {
 					leftSibling.Release()
 				}
-				return true
+
+				return true, nil
 			} else if leftSibling != nil && tree.canRedistribute(popped, leftSibling) {
-				tree.redistribute(txn, leftSibling, popped, parent)
+				if err := tree.redistribute(txn, leftSibling, popped, parent); err != nil {
+					return false, err
+				}
 				popped.Release()
 				leftSibling.Release()
 
 				if rightSibling != nil {
 					rightSibling.Release()
 				}
-				return true
+
+				return true, nil
 			}
 
 			// if redistribution is not valid merge
 			if rightSibling != nil {
-				tree.mergeNodes(txn, popped, rightSibling, parent)
+				if err := tree.mergeNodes(txn, popped, rightSibling, parent); err != nil {
+					return false, err
+				}
+
 				merged = popped
 
 				toFree = append(toFree, rightSibling)
@@ -325,7 +401,10 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 					leftSibling.Release()
 				}
 			} else if leftSibling != nil {
-				tree.mergeNodes(txn, leftSibling, popped, parent)
+				if err := tree.mergeNodes(txn, leftSibling, popped, parent); err != nil {
+					return false, err
+				}
+
 				merged = leftSibling
 
 				leftSibling.Release()
@@ -335,7 +414,7 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 				common.Assert(popped.IsLeaf(), "Both siblings are null for an internal node! This should not be possible except for root")
 				popped.Release()
 				// NOTE: maybe log here while debugging? if it is a leaf node its both left and right nodes can be nil
-				return true
+				return true, nil
 			}
 			if rootLocked && parent.GetPageId() == tree.getRoot(txn) && parent.KeyLen() == 0 {
 				tree.setRoot(txn, merged.GetPageId())
@@ -346,16 +425,20 @@ func (tree *BTree) Delete(txn transaction.Transaction, key common.Key) bool {
 		}
 	}
 
-	return true
+	return true, nil
 }
 
-func (tree *BTree) Get(txn transaction.Transaction, key common.Key) any {
-	res, stack := tree.FindAndGetStack(txn, key, Read)
+func (tree *BTree) Get(txn transaction.Transaction, key common.Key) (any, error) {
+	res, stack, err := tree.FindAndGetStack(txn, key, Read)
+	if err != nil {
+		return nil, err
+	}
+
 	for _, pair := range stack {
 		pair.Node.Release()
 	}
 
-	return res
+	return res, nil
 }
 
 func (tree *BTree) FindBetween(start, end common.Key, limit int) []any {
@@ -377,24 +460,30 @@ func (tree *BTree) FindBetween(start, end common.Key, limit int) []any {
 	return res
 }
 
-func (tree *BTree) Height(txn transaction.Transaction) int {
+func (tree *BTree) Height(txn transaction.Transaction) (int, error) {
 	pager := tree.pager
 	var currentNode = tree.GetRoot(txn, Read)
 	acc := 0
 	for {
 		if currentNode.IsLeaf() {
 			currentNode.Release()
-			return acc + 1
+			return acc + 1, nil
 		} else {
 			old := currentNode
-			currentNode = pager.GetNodeReleaser(txn, currentNode.GetValueAt(txn, 0).(Pointer), Read)
+
+			v, err := currentNode.GetValueAt(txn, 0)
+			if err != nil {
+				return 0, err
+			}
+
+			currentNode = pager.GetNodeReleaser(txn, v.(Pointer), Read)
 			old.Release()
 		}
 		acc++
 	}
 }
 
-func (tree *BTree) Count(txn transaction.Transaction) int {
+func (tree *BTree) Count(txn transaction.Transaction) (int, error) {
 	tree.rootEntryLock.RLock()
 	n := tree.GetRoot(txn, Read)
 	tree.rootEntryLock.RUnlock()
@@ -403,7 +492,13 @@ func (tree *BTree) Count(txn transaction.Transaction) int {
 			break
 		}
 		old := n
-		n = tree.pager.GetNodeReleaser(txn, n.GetValueAt(txn, 0).(Pointer), Read)
+
+		v, err := n.GetValueAt(txn, 0)
+		if err != nil {
+			return 0, err
+		}
+
+		n = tree.pager.GetNodeReleaser(txn, v.(Pointer), Read)
 		old.Release()
 	}
 
@@ -422,7 +517,7 @@ func (tree *BTree) Count(txn transaction.Transaction) int {
 		old.Release()
 	}
 
-	return num
+	return num, nil
 }
 
 func (tree *BTree) Print(txn transaction.Transaction) {
@@ -443,7 +538,9 @@ func (tree *BTree) Print(txn transaction.Transaction) {
 		}
 
 		pointers := make([]Pointer, 0)
-		vals := node.GetValues(txn)
+		vals, err := node.GetValues(txn)
+		common.PanicIfErr(err)
+
 		for _, val := range vals {
 			pointers = append(pointers, val.(Pointer))
 		}
@@ -461,22 +558,37 @@ func (tree *BTree) Print(txn transaction.Transaction) {
 	}
 }
 
-func (tree *BTree) findAndGetStack(txn transaction.Transaction, node nodeReleaser, key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value any, stackOut []NodeIndexPair) {
+func (tree *BTree) findAndGetStack(txn transaction.Transaction, node nodeReleaser, key common.Key, stackIn []NodeIndexPair, mode TraverseMode) (value any, stackOut []NodeIndexPair, err error) {
 	if node.IsLeaf() {
-		i, found := tree.FindKey(txn, node, key)
-		stackOut = append(stackIn, NodeIndexPair{node, i})
-		if !found {
-			return nil, stackOut
+		i, found, err := tree.findKey(txn, node, key)
+		if err != nil {
+			return nil, nil, err
 		}
 
-		return node.GetValueAt(txn, i), stackOut
+		stackOut = append(stackIn, NodeIndexPair{node, i})
+		if !found {
+			return nil, stackOut, nil
+		}
+
+		v, err := node.GetValueAt(txn, i)
+		return v, stackOut, err
 	} else {
-		i, found := tree.FindKey(txn, node, key)
+		i, found, err := tree.findKey(txn, node, key)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		if found {
 			i++
 		}
 		stackOut = append(stackIn, NodeIndexPair{node, i})
-		pointer := node.GetValueAt(txn, i).(Pointer)
+
+		v, err := node.GetValueAt(txn, i)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		pointer := v.(Pointer)
 		childNode := tree.pager.GetNodeReleaser(txn, pointer, mode)
 
 		if mode == Read {
@@ -507,14 +619,18 @@ func (tree *BTree) findAndGetStack(txn transaction.Transaction, node nodeRelease
 			}
 		}
 
-		res, stackOut := tree.findAndGetStack(txn, childNode, key, stackOut, mode)
-		return res, stackOut
+		res, stackOut, err := tree.findAndGetStack(txn, childNode, key, stackOut, mode)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		return res, stackOut, nil
 	}
 }
 
 // FindAndGetStack is used to recursively find the given key, and it also passes a stack object recursively to
 // keep the path it followed down to leaf node. value is nil when key does not exist.
-func (tree *BTree) FindAndGetStack(txn transaction.Transaction, key common.Key, mode TraverseMode) (value any, stackOut []NodeIndexPair) {
+func (tree *BTree) FindAndGetStack(txn transaction.Transaction, key common.Key, mode TraverseMode) (value any, stackOut []NodeIndexPair, err error) {
 	var stack []NodeIndexPair
 	tree.rootEntryLock.Lock()
 	root := tree.GetRoot(txn, mode)
@@ -528,53 +644,112 @@ func (tree *BTree) FindAndGetStack(txn transaction.Transaction, key common.Key, 
 	return tree.findAndGetStack(txn, root, key, stack, mode)
 }
 
-func (tree *BTree) mergeInternalNodes(txn transaction.Transaction, p, rightNode, parent node) {
+func (tree *BTree) mergeInternalNodes(txn transaction.Transaction, p, rightNode, parent node) error {
 	var i int
-	for i = 0; parent.GetValueAt(txn, i).(Pointer) != p.GetPageId(); i++ {
+	for i = 0; ; i++ {
+		v, err := parent.GetValueAt(txn, i)
+		if err != nil {
+			return err
+		}
+
+		if v.(Pointer) == p.GetPageId() {
+			break
+		}
 	}
 
 	for ii := 0; ii < rightNode.KeyLen()+1; ii++ {
 		var k common.Key
+		var err error
 		if ii == 0 {
-			k = parent.GetKeyAt(txn, i)
+			k, err = parent.GetKeyAt(txn, i)
+			if err != nil {
+				return err
+			}
+
 		} else {
-			k = rightNode.GetKeyAt(txn, ii-1)
+			k, err = rightNode.GetKeyAt(txn, ii-1)
+			if err != nil {
+				return err
+			}
 		}
-		v := rightNode.GetValueAt(txn, ii)
-		p.InsertAt(txn, p.KeyLen(), k, v)
+		v, err := rightNode.GetValueAt(txn, ii)
+		if err != nil {
+			return err
+		}
+
+		if err := p.InsertAt(txn, p.KeyLen(), k, v); err != nil {
+			return err
+		}
 	}
-	parent.DeleteAt(txn, i)
+	if err := parent.DeleteAt(txn, i); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (tree *BTree) mergeLeafNodes(txn transaction.Transaction, p, rightNode, parent node) {
+func (tree *BTree) mergeLeafNodes(txn transaction.Transaction, p, rightNode, parent node) error {
 	var i int
-	for i = 0; parent.GetValueAt(txn, i).(Pointer) != p.GetPageId(); i++ {
+	for i = 0; ; i++ {
+		v, err := parent.GetValueAt(txn, i)
+		if err != nil {
+			return err
+		}
+
+		if v.(Pointer) == p.GetPageId() {
+			break
+		}
 	}
 
 	for i := 0; i < rightNode.KeyLen(); i++ {
-		p.InsertAt(txn, p.KeyLen(), rightNode.GetKeyAt(txn, i), rightNode.GetValueAt(txn, i))
+		k, err := rightNode.GetKeyAt(txn, i)
+		if err != nil {
+			return err
+		}
+
+		v, err := rightNode.GetValueAt(txn, i)
+		if err != nil {
+			return err
+		}
+
+		if err := p.InsertAt(txn, p.KeyLen(), k, v); err != nil {
+			return err
+		}
 	}
 
-	parent.DeleteAt(txn, i)
+	if err := parent.DeleteAt(txn, i); err != nil {
+		return err
+	}
+
 	leftHeader := p.GetHeader()
 	leftHeader.Right = rightNode.GetHeader().Right
 	p.SetHeader(txn, leftHeader)
+
+	return nil
 }
 
 // mergeNodes merges two nodes into one. Left node holds all the values after merge and rightNode becomes empty. Caller
 // should free rightNode.
-func (tree *BTree) mergeNodes(txn transaction.Transaction, p, rightNode, parent node) {
+func (tree *BTree) mergeNodes(txn transaction.Transaction, p, rightNode, parent node) error {
 	if p.IsLeaf() {
-		tree.mergeLeafNodes(txn, p, rightNode, parent)
+		return tree.mergeLeafNodes(txn, p, rightNode, parent)
 	} else {
-		tree.mergeInternalNodes(txn, p, rightNode, parent)
+		return tree.mergeInternalNodes(txn, p, rightNode, parent)
 	}
 }
 
-func (tree *BTree) redistributeInternalNodes(txn transaction.Transaction, leftNode, rightNode, parent node) {
+func (tree *BTree) redistributeInternalNodes(txn transaction.Transaction, leftNode, rightNode, parent node) error {
 	// find left node pointer in the parent
 	var i int
-	for i = 0; parent.GetValueAt(txn, i).(Pointer) != leftNode.GetPageId(); i++ {
+	for i = 0; ; i++ {
+		v, err := parent.GetValueAt(txn, i)
+		if err != nil {
+			return err
+		}
+
+		if v.(Pointer) == leftNode.GetPageId() {
+			break
+		}
 	}
 
 	totalFillFactor := leftNode.FillFactor() + rightNode.FillFactor()
@@ -583,9 +758,32 @@ func (tree *BTree) redistributeInternalNodes(txn transaction.Transaction, leftNo
 	if leftNode.FillFactor() < fillFactorAfterRedistribute {
 		// insert new keys to left
 		for {
-			leftNode.InsertAt(txn, leftNode.KeyLen(), parent.GetKeyAt(txn, i), rightNode.GetValueAt(txn, 0))
-			parent.SetKeyAt(txn, i, rightNode.GetKeyAt(txn, 0))
-			cutFromInternalNode(txn, rightNode)
+			k, err := parent.GetKeyAt(txn, i)
+			if err != nil {
+				return err
+			}
+
+			v, err := rightNode.GetValueAt(txn, 0)
+			if err != nil {
+				return err
+			}
+
+			if err := leftNode.InsertAt(txn, leftNode.KeyLen(), k, v); err != nil {
+				return err
+			}
+
+			k0, err := rightNode.GetKeyAt(txn, 0)
+			if err != nil {
+				return err
+			}
+
+			if err := parent.SetKeyAt(txn, i, k0); err != nil {
+				return err
+			}
+
+			if err := cutFromInternalNode(txn, rightNode); err != nil {
+				return err
+			}
 
 			if rightNode.FillFactor() <= fillFactorAfterRedistribute {
 				break
@@ -593,21 +791,54 @@ func (tree *BTree) redistributeInternalNodes(txn transaction.Transaction, leftNo
 		}
 	} else {
 		for {
-			pushToInternalNode(txn, rightNode, leftNode.GetValueAt(txn, leftNode.KeyLen()), parent.GetKeyAt(txn, i))
-			parent.SetKeyAt(txn, i, leftNode.GetKeyAt(txn, leftNode.KeyLen()-1))
-			leftNode.DeleteAt(txn, leftNode.KeyLen()-1)
+			v, err := leftNode.GetValueAt(txn, leftNode.KeyLen())
+			if err != nil {
+				return err
+			}
+
+			k, err := parent.GetKeyAt(txn, i)
+			if err != nil {
+				return err
+			}
+
+			if err := pushToInternalNode(txn, rightNode, v, k); err != nil {
+				return err
+			}
+
+			k, err = leftNode.GetKeyAt(txn, leftNode.KeyLen()-1)
+			if err != nil {
+				return err
+			}
+
+			if err := parent.SetKeyAt(txn, i, k); err != nil {
+				return err
+			}
+
+			if err := leftNode.DeleteAt(txn, leftNode.KeyLen()-1); err != nil {
+				return err
+			}
 
 			if leftNode.FillFactor() <= fillFactorAfterRedistribute {
 				break
 			}
 		}
 	}
+
+	return nil
 }
 
-func (tree *BTree) redistributeLeafNodes(txn transaction.Transaction, leftNode, rightNode, parent node) {
+func (tree *BTree) redistributeLeafNodes(txn transaction.Transaction, leftNode, rightNode, parent node) error {
 	// find left node pointer in the parent
 	var i int
-	for i = 0; parent.GetValueAt(txn, i).(Pointer) != leftNode.GetPageId(); i++ {
+	for i = 0; ; i++ {
+		v, err := parent.GetValueAt(txn, i)
+		if err != nil {
+			return err
+		}
+
+		if v.(Pointer) == leftNode.GetPageId() {
+			break
+		}
 	}
 
 	totalFillFactor := leftNode.FillFactor() + rightNode.FillFactor()
@@ -617,8 +848,23 @@ func (tree *BTree) redistributeLeafNodes(txn transaction.Transaction, leftNode, 
 	if leftNode.FillFactor() < totalFillFactorInLeftAfterRedistribute {
 		// insert new keys to left
 		for {
-			leftNode.InsertAt(txn, leftNode.KeyLen(), rightNode.GetKeyAt(txn, 0), rightNode.GetValueAt(txn, 0))
-			rightNode.DeleteAt(txn, 0)
+			k, err := rightNode.GetKeyAt(txn, 0)
+			if err != nil {
+				return err
+			}
+
+			v, err := rightNode.GetValueAt(txn, 0)
+			if err != nil {
+				return err
+			}
+
+			if err := leftNode.InsertAt(txn, leftNode.KeyLen(), k, v); err != nil {
+				return err
+			}
+
+			if err := rightNode.DeleteAt(txn, 0); err != nil {
+				return err
+			}
 
 			if leftNode.FillFactor() >= totalFillFactorInLeftAfterRedistribute {
 				break
@@ -626,8 +872,23 @@ func (tree *BTree) redistributeLeafNodes(txn transaction.Transaction, leftNode, 
 		}
 	} else {
 		for {
-			rightNode.InsertAt(txn, 0, leftNode.GetKeyAt(txn, leftNode.KeyLen()-1), leftNode.GetValueAt(txn, leftNode.KeyLen()-1))
-			leftNode.DeleteAt(txn, leftNode.KeyLen()-1)
+			k, err := leftNode.GetKeyAt(txn, leftNode.KeyLen()-1)
+			if err != nil {
+				return err
+			}
+
+			v, err := leftNode.GetValueAt(txn, leftNode.KeyLen()-1)
+			if err != nil {
+				return err
+			}
+
+			if err := rightNode.InsertAt(txn, 0, k, v); err != nil {
+				return err
+			}
+
+			if err := leftNode.DeleteAt(txn, leftNode.KeyLen()-1); err != nil {
+				return err
+			}
 
 			if rightNode.FillFactor() >= totalFillFactorInRightAfterRedistribute {
 				break
@@ -635,35 +896,57 @@ func (tree *BTree) redistributeLeafNodes(txn transaction.Transaction, leftNode, 
 		}
 	}
 
-	parent.SetKeyAt(txn, i, rightNode.GetKeyAt(txn, 0))
+	k0, err := rightNode.GetKeyAt(txn, 0)
+	if err != nil {
+		return err
+	}
+
+	if err := parent.SetKeyAt(txn, i, k0); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func (tree *BTree) redistribute(txn transaction.Transaction, p, rightNode, parent node) {
+func (tree *BTree) redistribute(txn transaction.Transaction, p, rightNode, parent node) error {
 	if p.IsLeaf() {
-		tree.redistributeLeafNodes(txn, p, rightNode, parent)
+		return tree.redistributeLeafNodes(txn, p, rightNode, parent)
 	} else {
-		tree.redistributeInternalNodes(txn, p, rightNode, parent)
+		return tree.redistributeInternalNodes(txn, p, rightNode, parent)
 	}
 }
 
-func (tree *BTree) splitInternalNode(txn transaction.Transaction, p node) (right Pointer, keyAtLeft common.Key, keyAtRight common.Key) {
+func (tree *BTree) splitInternalNode(txn transaction.Transaction, p node) (right Pointer, keyAtLeft common.Key, keyAtRight common.Key, err error) {
 	fillFactor := p.FillFactor()
 	minFillFactorAfterSplit := fillFactor / 2
 
 	// create right node and insert into it
 	rightNode, err := tree.pager.NewInternalNode(txn, Pointer(0))
-	CheckErr(err)
+	if err != nil {
+		return 0, nil, nil, err
+	}
 
 	defer rightNode.Release()
 
 	keys := make([]common.Key, 0)
 	values := make([]any, 0)
 	for {
-		k, v := p.GetKeyAt(txn, p.KeyLen()-1), p.GetValueAt(txn, p.KeyLen())
+		k, err := p.GetKeyAt(txn, p.KeyLen()-1)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+
+		v, err := p.GetValueAt(txn, p.KeyLen())
+		if err != nil {
+			return 0, nil, nil, err
+		}
+
 		keys = append(keys, k)
 		values = append(values, v)
 
-		p.DeleteAt(txn, p.KeyLen()-1)
+		if err := p.DeleteAt(txn, p.KeyLen()-1); err != nil {
+			return 0, nil, nil, err
+		}
 
 		if p.FillFactor() <= minFillFactorAfterSplit+1 {
 			break
@@ -672,37 +955,70 @@ func (tree *BTree) splitInternalNode(txn transaction.Transaction, p node) (right
 
 	// keyAtLeft is the last key in left node after split and keyAtRight is the key which is pushed up. it is actually
 	// not in rightNode poor naming :(
-	keyAtLeft = p.GetKeyAt(txn, p.KeyLen()-1)
-	keyAtRight = keys[len(keys)-1]
-
-	rightNode.SetValueAt(txn, 0, values[len(values)-1])
-	for i := len(values) - 2; i >= 0; i-- {
-		rightNode.InsertAt(txn, len(values)-2-i, keys[i], values[i])
+	keyAtLeft, err = p.GetKeyAt(txn, p.KeyLen()-1)
+	if err != nil {
+		return 0, nil, nil, err
 	}
 
-	return rightNode.GetPageId(), keyAtLeft, keyAtRight
+	keyAtRight = keys[len(keys)-1]
+
+	if err := rightNode.SetValueAt(txn, 0, values[len(values)-1]); err != nil {
+		return 0, nil, nil, err
+	}
+
+	for i := len(values) - 2; i >= 0; i-- {
+		if err := rightNode.InsertAt(txn, len(values)-2-i, keys[i], values[i]); err != nil {
+			return 0, nil, nil, err
+		}
+	}
+
+	return rightNode.GetPageId(), keyAtLeft, keyAtRight, nil
 }
 
-func (tree *BTree) splitLeafNode(txn transaction.Transaction, p node) (right Pointer, keyAtLeft common.Key, keyAtRight common.Key) {
+func (tree *BTree) splitLeafNode(txn transaction.Transaction, p node) (right Pointer, keyAtLeft common.Key, keyAtRight common.Key, err error) {
 	fillFactor := p.FillFactor()
 	minFillFactorAfterSplit := fillFactor / 2
 
 	rightNode, err := tree.pager.NewLeafNode(txn)
-	CheckErr(err)
+	if err != nil {
+		return 0, nil, nil, err
+	}
 
 	defer rightNode.Release()
 
 	for {
-		rightNode.InsertAt(txn, 0, p.GetKeyAt(txn, p.KeyLen()-1), p.GetValueAt(txn, p.KeyLen()-1))
-		p.DeleteAt(txn, p.KeyLen()-1)
+		k, err := p.GetKeyAt(txn, p.KeyLen()-1)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+
+		v, err := p.GetValueAt(txn, p.KeyLen()-1)
+		if err != nil {
+			return 0, nil, nil, err
+		}
+
+		if err := rightNode.InsertAt(txn, 0, k, v); err != nil {
+			return 0, nil, nil, err
+		}
+
+		if err := p.DeleteAt(txn, p.KeyLen()-1); err != nil {
+			return 0, nil, nil, err
+		}
 
 		if rightNode.FillFactor() >= minFillFactorAfterSplit {
 			break
 		}
 	}
 
-	keyAtLeft = p.GetKeyAt(txn, p.KeyLen()-1)
-	keyAtRight = rightNode.GetKeyAt(txn, 0)
+	keyAtLeft, err = p.GetKeyAt(txn, p.KeyLen()-1)
+	if err != nil {
+		return 0, nil, nil, err
+	}
+
+	keyAtRight, err = rightNode.GetKeyAt(txn, 0)
+	if err != nil {
+		return 0, nil, nil, err
+	}
 
 	leftHeader, rightHeader := p.GetHeader(), rightNode.GetHeader()
 	rightHeader.Right = leftHeader.Right
@@ -711,10 +1027,10 @@ func (tree *BTree) splitLeafNode(txn transaction.Transaction, p node) (right Poi
 	p.SetHeader(txn, leftHeader)
 	rightNode.SetHeader(txn, rightHeader)
 
-	return rightNode.GetPageId(), keyAtLeft, keyAtRight
+	return rightNode.GetPageId(), keyAtLeft, keyAtRight, nil
 }
 
-func (tree *BTree) splitNode(txn transaction.Transaction, p node) (right Pointer, keyAtLeft common.Key, keyAtRight common.Key) {
+func (tree *BTree) splitNode(txn transaction.Transaction, p node) (right Pointer, keyAtLeft common.Key, keyAtRight common.Key, err error) {
 	if p.IsLeaf() {
 		return tree.splitLeafNode(txn, p)
 	} else {
@@ -722,22 +1038,41 @@ func (tree *BTree) splitNode(txn transaction.Transaction, p node) (right Pointer
 	}
 }
 
-func (tree *BTree) FindKey(txn transaction.Transaction, p node, key common.Key) (index int, found bool) {
+func (tree *BTree) findKey(txn transaction.Transaction, p node, key common.Key) (index int, found bool, err error) {
 	h := p.GetHeader()
+	var sortErr error
+
+	// TODO: better error handling
 	i := sort.Search(int(h.KeyLen), func(i int) bool {
-		return key.Less(p.GetKeyAt(txn, i))
+		if sortErr != nil {
+			return false
+		}
+
+		k, err := p.GetKeyAt(txn, i)
+		if err != nil {
+			sortErr = err
+			return false
+		}
+
+		return key.Less(k)
 	})
 
-	if i > 0 && !p.GetKeyAt(txn, i-1).Less(key) {
-		return i - 1, true
+	if sortErr != nil {
+		return 0, false, sortErr
 	}
-	return i, false
-}
 
-func release(stack []NodeIndexPair) {
-	for _, pair := range stack {
-		pair.Node.Release()
+	if i > 0 {
+		k, err := p.GetKeyAt(txn, i-1)
+		if err != nil {
+			return 0, false, err
+		}
+
+		if !k.Less(key) {
+			return i - 1, true, nil
+		}
 	}
+
+	return i, false, nil
 }
 
 func (tree *BTree) isOverFlow(sp node) bool {
@@ -764,12 +1099,42 @@ func (tree *BTree) safeForSplit(sp node) bool {
 	return sp.FillFactor()+1 < tree.overFlowThreshold
 }
 
-func pushToInternalNode(txn transaction.Transaction, node node, val any, key common.Key) {
-	node.InsertAt(txn, 0, key, node.GetValueAt(txn, 0))
-	node.SetValueAt(txn, 0, val)
+func pushToInternalNode(txn transaction.Transaction, node node, val any, key common.Key) error {
+	v, err := node.GetValueAt(txn, 0)
+	if err != nil {
+		return err
+	}
+
+	if err := node.InsertAt(txn, 0, key, v); err != nil {
+		return err
+	}
+
+	if err := node.SetValueAt(txn, 0, val); err != nil {
+		return err
+	}
+
+	return nil
 }
 
-func cutFromInternalNode(txn transaction.Transaction, node node) {
-	node.SetValueAt(txn, 0, node.GetValueAt(txn, 1))
-	node.DeleteAt(txn, 0)
+func cutFromInternalNode(txn transaction.Transaction, node node) error {
+	v, err := node.GetValueAt(txn, 1)
+	if err != nil {
+		return err
+	}
+
+	if err := node.SetValueAt(txn, 0, v); err != nil {
+		return err
+	}
+
+	if err := node.DeleteAt(txn, 0); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func release(stack []NodeIndexPair) {
+	for _, pair := range stack {
+		pair.Node.Release()
+	}
 }

@@ -74,7 +74,10 @@ func TestConcurrent_Inserts_With_MemPager(t *testing.T) {
 	}
 	wg.Wait()
 
-	assert.Equal(t, len(inserted), tree.Count(transaction.TxnTODO()))
+	c, err := tree.Count(transaction.TxnTODO())
+	assert.NoError(t, err)
+	assert.Equal(t, len(inserted), c)
+
 	// assert they are sorted
 	it := NewTreeIterator(transaction.TxnNoop(), tree)
 	var prev common.Key = StringKey("")
